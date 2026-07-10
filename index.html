@@ -82,6 +82,9 @@
     -webkit-appearance:none}
   #search input:focus{outline:none;border-color:var(--accent)}
   #search input::placeholder{color:var(--ink-dim)}
+  #loc-btn{flex:0 0 auto;border-color:var(--accent);color:var(--accent);font-weight:700;
+    white-space:nowrap}
+  #loc-btn:active{background:var(--accent);color:#06231e}
   .badges{display:flex;gap:8px;margin-left:auto;align-items:center;overflow-x:auto;
     scrollbar-width:none}
   .badges::-webkit-scrollbar{display:none}
@@ -216,8 +219,14 @@
     border-top-color:var(--accent);border-radius:50%;animation:sp .7s linear infinite}
   @keyframes sp{to{transform:rotate(360deg)}}
   /* ---------- SITREP briefing card ---------- */
-  #sitrep{bottom:calc(12px + var(--sa-b));left:50%;margin-left:-195px;width:390px;
-    max-height:44vh;top:auto}
+  /* SITREP: a bottom bar spanning the gap between the two side panels,
+     one third of the viewport tall; the map padding keeps content centred
+     in the open area above it. */
+  #sitrep{bottom:calc(10px + var(--sa-b));top:auto;margin:0;
+    left:calc(286px + var(--sa-l));right:calc(354px + var(--sa-r));width:auto;
+    height:33vh;max-height:33vh}
+  #sit-body{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));
+    gap:0 12px;align-content:start;padding:6px 4px}
   #sit-head{display:flex;align-items:center;gap:8px;padding:10px 12px;cursor:pointer;
     border-bottom:1px solid var(--line);flex:0 0 auto;min-height:40px}
   #sit-head b{color:var(--accent);font-size:12px;letter-spacing:.8px}
@@ -226,6 +235,7 @@
   #sit-head .chev{color:var(--ink-dim);transition:transform .2s}
   #sitrep.collapsed .chev{transform:rotate(180deg)}
   #sitrep.collapsed #sit-body{display:none}
+  #sitrep.collapsed{height:auto;max-height:none}
   #sit-body{overflow-y:auto;padding:4px 0;-webkit-overflow-scrolling:touch}
   .sit-row{display:flex;align-items:center;gap:9px;padding:6px 12px;font-size:11px;min-height:32px}
   .sit-row .ic{flex:0 0 18px;text-align:center}
@@ -239,6 +249,14 @@
   .sit-row.alert s1{color:var(--warn)}
   .sit-row.danger s1{color:var(--danger)}
   .sit-empty{padding:14px 12px;font-size:11px;color:var(--ink-dim);line-height:1.5}
+  /* ---- minimalist ALL-CAPS chrome. Units opt out via .u ---- */
+  #brand,.sec-h,.layer label,#radio-tabs button,.rrow .rmain b,#sit-head b,
+  .rpane-head,.btn,.mbtn,.pop h4,.pop .kv span,.badge,#mnav button,#tuner-node,
+  .sit-row .tx s1,#cast-head,#atc-head,#search button,.sit-row .act{text-transform:uppercase}
+  .u{text-transform:none!important;letter-spacing:0;font-style:normal}
+  .sit-row .tx s1{letter-spacing:.3px}
+  #brand small{text-transform:none}
+
   #user-dot{width:16px;height:16px;border-radius:50%;background:var(--accent);
     border:2.5px solid #fff;box-shadow:0 0 0 0 rgba(55,224,201,.55);animation:pulse 2.2s infinite}
   @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(55,224,201,.55)}70%{box-shadow:0 0 0 16px rgba(55,224,201,0)}100%{box-shadow:0 0 0 0 rgba(55,224,201,0)}}
@@ -267,8 +285,9 @@
     #brand small{display:none}
     #topbar{gap:8px}
     .badges{max-width:46vw}
-    #sitrep{width:auto!important;margin-left:0!important;left:0!important;
-      bottom:calc(54px + var(--sa-b))!important;max-height:64vh!important}
+    #sitrep{width:auto!important;margin-left:0!important;left:0!important;right:0!important;
+      bottom:calc(54px + var(--sa-b))!important;height:auto!important;max-height:64vh!important}
+    #sit-body{grid-template-columns:1fr}
     .maplibregl-ctrl-bottom-right{bottom:calc(58px + var(--sa-b))}
   }
   @media (max-width:520px){
@@ -284,8 +303,9 @@
   <div id="brand">see<span style="color:var(--accent2)">hear</span> <small>keyless osint</small></div>
   <form id="search" onsubmit="return doSearch(event)">
     <input id="q" placeholder="place or lat,lon…" autocomplete="off" enterkeyhint="search">
-    <button class="btn sm" type="submit">go</button>
+    <button class="btn sm" type="submit">GO</button>
   </form>
+  <button class="btn sm" id="loc-btn" title="center on my location">⌖&nbsp;ME</button>
   <div class="badges">
     <div class="badge" id="kp-badge" title="NOAA SWPC planetary K-index (geomagnetic activity)">
       <span class="dot" id="kp-dot"></span>Kp <b id="kp-val">–</b>
@@ -356,9 +376,13 @@
       <div id="tuner-bands"></div>
       <div id="smeter-wrap"><div id="smeter"></div><span id="smeter-val">S–</span></div>
       <div id="tuner-ctl">
+        <button class="btn sm" id="t-nearest" title="tune the closest receiver to you">◎ NEAREST</button>
+        <button class="btn sm" id="t-scan" title="band-scan across the HF spectrum">SCAN</button>
+      </div>
+      <div id="tuner-ctl">
         <button class="btn sm" id="t-connect">CONNECT</button>
         <button class="btn sm" id="t-stop" disabled>STOP</button>
-        <a class="btn sm" id="t-native" target="_blank" rel="noopener" style="display:none">native ↗</a>
+        <a class="btn sm" id="t-native" target="_blank" rel="noopener" style="display:none">NATIVE ↗</a>
       </div>
       <div id="tuner-status">select a receiver to begin</div>
     </div>
@@ -457,7 +481,13 @@ function havKm(lat1,lon1,lat2,lon2){
     Math.cos(lat1*d)*Math.cos(lat2*d)*Math.sin((lon2-lon1)*d/2)**2;
   return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
-const fmtKm = km => km<1?Math.round(km*1000)+' m':km<100?km.toFixed(1)+' km':Math.round(km)+' km';
+// Imperial units. U() wraps a unit token so it stays lowercase inside
+// ALL-CAPS chrome (see .u in CSS). Distances in mi/ft, temp °F, wind mph.
+const U = s => `<span class="u">${s}</span>`;
+const fmtMi = km => { const mi=km*0.621371;
+  return mi<0.5?Math.round(mi*5280)+U(' ft'):mi<100?mi.toFixed(1)+U(' mi'):Math.round(mi)+U(' mi'); };
+const cToF = c => Math.round(c*9/5+32);
+const kmhToMph = k => Math.round(k*0.621371);
 
 // ---- ADS-B: airplanes.live primary, adsb.fi fallback (adsb.lol is down).
 // Both share the readsb /v2 schema: {ac:[{hex,flight,lat,lon,alt_baro,gs,...}]}
@@ -597,7 +627,7 @@ defLayer({
       havKm(USER.lat,USER.lon,f.geometry.coordinates[1],f.geometry.coordinates[0])));
     return {type:'FeatureCollection',features:feats};
   },
-  popup:p=>acPopup(p)+`<div class="kv"><span>range</span>${p.km} km from you</div>`
+  popup:p=>acPopup(p)+`<div class="kv"><span>range</span>${fmtMi(p.km)} from you</div>`
 });
 
 defLayer({
@@ -805,6 +835,52 @@ defLayer({
   popup:p=>`<h4>🌋 ${escapeHtml(p.name)}</h4>
     <div class="kv"><span>summit</span>${p.elev} m</div>
     <div class="kv"><span>src</span>Smithsonian GVP (static)</div>`
+});
+
+defLayer({
+  id:'gdacs', label:'Global disasters', color:'#ff6a3d', group:'haz', refresh:1800, colored:true, defaultOff:true,
+  // GDACS — UN/EC global disaster alerts: quakes, cyclones, floods, volcanoes,
+  // droughts, wildfires; colour = alert level (green/orange/red). Keyless, CORS *.
+  loader: async ()=>{
+    const j=await getJSON('https://www.gdacs.org/gdacsapi/api/events/geteventlist/MAP',{timeout:20000});
+    const TYPE={EQ:'earthquake',TC:'cyclone',FL:'flood',VO:'volcano',DR:'drought',WF:'wildfire',TS:'tsunami'};
+    const LVL={Green:'#4be08a',Orange:'#ffb454',Red:'#ff5c6c'};
+    return {type:'FeatureCollection',features:(j.features||[])
+      .filter(f=>f.geometry&&f.geometry.type==='Point').map(f=>{
+        const p=f.properties||{};
+        return {type:'Feature',geometry:f.geometry,properties:{_kind:'gdacs',
+          _r:p.alertlevel==='Red'?8:p.alertlevel==='Orange'?6:4,
+          _col:LVL[p.alertlevel]||'#ffb454',
+          name:p.name||TYPE[p.eventtype]||'event',type:TYPE[p.eventtype]||p.eventtype,
+          level:p.alertlevel,country:p.country||'',
+          sev:(p.severitydata&&p.severitydata.severitytext)||''}};
+      })};
+  },
+  sized:true,
+  popup:p=>`<h4>🌀 ${escapeHtml(String(p.type).toUpperCase())} — ${escapeHtml(p.level)}</h4>
+    <div class="kv"><span>event</span>${escapeHtml(p.name)}</div>
+    ${p.country?`<div class="kv"><span>country</span>${escapeHtml(p.country)}</div>`:''}
+    ${p.sev?`<div class="kv"><span>severity</span>${escapeHtml(p.sev)}</div>`:''}
+    <div class="kv"><span>src</span>GDACS (UN/EC)</div>`
+});
+
+defLayer({
+  id:'launch', label:'Rocket launches', color:'#c77dff', group:'haz', refresh:3600, defaultOff:true,
+  // upcoming orbital launches worldwide, plotted at the pad. Launch Library 2
+  // (thespacedevs) — keyless, CORS *, anonymous rate-limited so we poll hourly.
+  loader: async ()=>{
+    const j=await getJSON('https://ll.thespacedevs.com/2.2.0/launch/upcoming/?limit=40&hide_recent_previous=true',{timeout:20000});
+    return {type:'FeatureCollection',features:(j.results||[])
+      .filter(r=>r.pad&&r.pad.latitude&&r.pad.longitude).map(r=>({
+        type:'Feature',geometry:{type:'Point',coordinates:[+r.pad.longitude,+r.pad.latitude]},
+        properties:{_kind:'launch',name:r.name,net:r.net||'',pad:(r.pad.name||''),
+          prov:(r.launch_service_provider||{}).name||'',status:(r.status||{}).abbrev||''}}))};
+  },
+  popup:p=>`<h4>🚀 ${escapeHtml(p.name)}</h4>
+    ${p.prov?`<div class="kv"><span>provider</span>${escapeHtml(p.prov)}</div>`:''}
+    <div class="kv"><span>T-0 (UTC)</span>${escapeHtml(String(p.net).slice(0,16).replace('T',' '))}</div>
+    <div class="kv"><span>pad</span>${escapeHtml(p.pad)}</div>
+    <div class="kv"><span>status</span>${escapeHtml(p.status)}</div>`
 });
 
 /* ---------------- Geopolitics / OSINT ---------------- */
@@ -1018,8 +1094,8 @@ async function openDossier(lngLat){
     const res=Object.assign({},...(await Promise.all(tasks)));
 
     if(res.wx&&res.wx.temperature_2m!=null)
-      html+=`<div class="kv"><span>weather</span>${res.wx.temperature_2m}°C · `+
-        `${Math.round(res.wx.wind_speed_10m)} km/h · ${WMO[res.wx.weather_code]||''}</div>`;
+      html+=`<div class="kv"><span>weather</span>${cToF(res.wx.temperature_2m)}${U('°F')} · `+
+        `${kmhToMph(res.wx.wind_speed_10m)}${U(' mph')} · ${WMO[res.wx.weather_code]||''}</div>`;
     if(res.country){
       const c=Array.isArray(res.country)?res.country[0]:res.country;
       if(c){
@@ -1169,6 +1245,32 @@ async function locate(){
 }
 geoCtl.on('geolocate',p=>setUserFix(p.coords.latitude,p.coords.longitude,'gps',null));
 
+// "center on me": fly to the fix (respecting panel padding); if none yet,
+// kick off IP + GPS location and prompt for precise GPS.
+function centerOnMe(){
+  if(USER.lat!=null){
+    gl.flyTo({center:[USER.lon,USER.lat],zoom:USER.src==='gps'?11:8.5,speed:1.6});
+  } else {
+    toast('LOCATING…','');
+    locate();
+    try{ geoCtl.trigger(); }catch(e){}
+  }
+}
+$('#loc-btn').addEventListener('click',centerOnMe);
+
+// Map padding keeps the geographic centre inside the open area between the
+// panels (desktop only; on mobile the panels are overlay sheets).
+function setMapPadding(){
+  if(window.matchMedia('(max-width:900px)').matches){
+    gl.setPadding({top:0,right:0,bottom:0,left:0}); return;
+  }
+  const sh=$('#sitrep');
+  const bottom=(sh&&sh.offsetParent!==null)?Math.round(sh.getBoundingClientRect().height)+22:24;
+  gl.setPadding({top:60,left:286,right:354,bottom});
+}
+window.addEventListener('resize',()=>{ clearTimeout(window.__pad);
+  window.__pad=setTimeout(setMapPadding,200); });
+
 function setUserFix(lat,lon,src,meta){
   const first=USER.lat==null;
   if(!first&&src==='ip'&&USER.src==='gps') return; // never downgrade gps -> ip
@@ -1251,7 +1353,7 @@ async function sitrepTick(){
     row('danger','⚠',escapeHtml(a.event),
       al.length>1?('+ '+(al.length-1)+' more alerts at your position'):escapeHtml(String(a.headline||'').slice(0,60)));
   } else if(USER.cc==='US'||!USER.cc){
-    row('','✓','no weather alerts at your position','NWS point query');
+    row('','✓','NO ACTIVE ALERTS','NWS point query — your position clear');
   }
 
   // -- local conditions --
@@ -1261,79 +1363,85 @@ async function sitrepTick(){
       wxCache.d=w.current; }catch(e){}
   }
   if(wxCache.d) row('','🌦',
-    wxCache.d.temperature_2m+'°C · '+Math.round(wxCache.d.wind_speed_10m)+' km/h · '+(WMO[wxCache.d.weather_code]||''),
-    'local conditions');
+    cToF(wxCache.d.temperature_2m)+U('°F')+' · '+kmhToMph(wxCache.d.wind_speed_10m)+U(' mph')+' · '+(WMO[wxCache.d.weather_code]||''),
+    'LOCAL CONDITIONS');
 
   // -- air picture --
   const near=gl.getSource('src-nearair');
   const nearN=near&&near._data?(near._data.features||[]).length:0;
   if(nearN){
     const nn=nearestIn('src-nearair',lat,lon);
-    row('','✈',nearN+' aircraft within 100 nm',
-      nn?('closest: '+escapeHtml(nn.f.properties.flight)+' · '+fmtKm(nn.km)+' · '+nn.f.properties.alt+' ft'):'' ,
+    row('','✈',nearN+' AIRCRAFT IN RANGE',
+      nn?('closest '+escapeHtml(nn.f.properties.flight)+' · '+fmtMi(nn.km)+' · '+nn.f.properties.alt+U(' ft')):'' ,
       `<button class="act" data-act="fly" data-ll="${nn?nn.f.geometry.coordinates.join(','):''}">VIEW</button>`);
   }
   const milN=countWithin('src-mil',lat,lon,300);
   if(milN){
     const nm=nearestIn('src-mil',lat,lon);
-    row('alert','🎖',milN+' military aircraft within 300 km',
-      nm?('closest: '+escapeHtml(nm.f.properties.flight)+' · '+fmtKm(nm.km)):'',
+    row('alert','🎖',milN+' MILITARY AIRCRAFT NEARBY',
+      nm?('closest '+escapeHtml(nm.f.properties.flight)+' · '+fmtMi(nm.km)):'',
       nm?`<button class="act" data-act="fly" data-ll="${nm.f.geometry.coordinates.join(',')}">VIEW</button>`:'');
   }
   const sosSrc=gl.getSource('src-sos');
   const sosN=sosSrc&&sosSrc._data?(sosSrc._data.features||[]).length:0;
   if(sosN){
     const ns=nearestIn('src-sos',lat,lon);
-    row('danger','🚨',sosN+' emergency squawk'+(sosN>1?'s':'')+' worldwide',
-      ns?('nearest: '+escapeHtml(ns.f.properties.flight)+' ('+ns.f.properties.code+') · '+fmtKm(ns.km)):'',
+    row('danger','🚨',sosN+' EMERGENCY SQUAWK'+(sosN>1?'S':'')+' WORLDWIDE',
+      ns?('nearest '+escapeHtml(ns.f.properties.flight)+' ('+ns.f.properties.code+') · '+fmtMi(ns.km)):'',
       ns?`<button class="act" data-act="fly" data-ll="${ns.f.geometry.coordinates.join(',')}">VIEW</button>`:'');
   }
   const shSrc=gl.getSource('src-ships');
   const shN=shSrc&&shSrc._data?(shSrc._data.features||[]).length:0;
   if(shN){
     const nsh=nearestIn('src-ships',lat,lon);
-    row('','🚢',shN+' vessels tracked (AIS)',
-      nsh?('nearest: MMSI '+escapeHtml(String(nsh.f.properties.mmsi))+' · '+fmtKm(nsh.km)):'',
+    row('','🚢',shN+' VESSELS TRACKED',
+      nsh?('nearest MMSI '+escapeHtml(String(nsh.f.properties.mmsi))+' · '+fmtMi(nsh.km)):'',
       nsh?`<button class="act" data-act="fly" data-ll="${nsh.f.geometry.coordinates.join(',')}">VIEW</button>`:'');
   }
 
   // -- ground truth --
   const nq=nearestIn('src-quakes',lat,lon);
-  if(nq) row(nq.km<300?'alert':'','🌍',
-    'M'+nq.f.properties.mag+' quake · '+fmtKm(nq.km)+' away',
+  if(nq) row(nq.km<480?'alert':'','🌍',
+    'M'+nq.f.properties.mag+' EARTHQUAKE · '+fmtMi(nq.km),
     escapeHtml(String(nq.f.properties.place||''))+' · '+fmtTime(nq.f.properties.time),
     `<button class="act" data-act="fly" data-ll="${nq.f.geometry.coordinates.slice(0,2).join(',')}">VIEW</button>`);
+  const ng=nearestIn('src-gdacs',lat,lon);
+  if(ng&&ng.km<2400) row(ng.f.properties.level==='Red'?'danger':ng.f.properties.level==='Orange'?'alert':'','🌀',
+    (ng.f.properties.type||'DISASTER').toUpperCase()+' · '+fmtMi(ng.km),
+    escapeHtml(String(ng.f.properties.name||'').slice(0,60)),
+    `<button class="act" data-act="fly" data-ll="${ng.f.geometry.coordinates.join(',')}">VIEW</button>`);
   const ne=nearestIn('src-eonet',lat,lon);
-  if(ne&&ne.km<1500) row(ne.km<200?'alert':'','🔥',
-    escapeHtml(ne.f.properties.cat)+' · '+fmtKm(ne.km)+' away',
+  if(ne&&ne.km<2400) row(ne.km<320?'alert':'','🔥',
+    (ne.f.properties.cat||'EVENT').toUpperCase()+' · '+fmtMi(ne.km),
     escapeHtml(String(ne.f.properties.title||'').slice(0,60)),
     `<button class="act" data-act="fly" data-ll="${ne.f.geometry.coordinates.join(',')}">VIEW</button>`);
 
   // -- audio picture --
   if(mhzCur){
     const s=mhzSystems.find(x=>x.shortName===mhzCur);
-    row('','📟','monitoring: '+escapeHtml(s?(s.name||mhzCur):mhzCur),
+    row('','📟','MONITORING '+escapeHtml(s?(s.name||mhzCur):mhzCur),
       autoTuned?'auto-tuned to your area · police/fire':'police/fire trunked audio');
   } else if(mhzSystems.length){
-    row('','📟',mhzSystems.length+' police/fire systems available','open RADIO → pick or scan');
+    row('','📟',mhzSystems.length+' POLICE / FIRE SYSTEMS',
+      'open RADIO → pick or scan',`<button class="act" data-act="police">OPEN</button>`);
   }
   const na=nearestIn('src-atc',lat,lon);
-  if(na) row('','🛬','ATC: '+escapeHtml(na.f.properties.name)+' · '+fmtKm(na.km),
-    escapeHtml(na.f.properties.icao)+' tower — live controller audio',
+  if(na) row('','🛬','ATC '+escapeHtml(na.f.properties.name),
+    escapeHtml(na.f.properties.icao)+' tower · '+fmtMi(na.km),
     `<button class="act" data-act="atc" data-icao="${escapeHtml(na.f.properties.icao)}">LISTEN</button>`);
   const nk=nearestIn('src-kiwi',lat,lon);
-  if(nk) row('','📻','HF radio: '+escapeHtml(nk.f.properties.name)+' · '+fmtKm(nk.km),
-    'in-page shortwave tuner 0–30 MHz',
+  if(nk) row('','📻','SHORTWAVE RX '+escapeHtml(nk.f.properties.name),
+    'in-page HF tuner · '+fmtMi(nk.km),
     `<button class="act" data-act="tune" data-host="${escapeHtml(nk.f.properties.host)}" data-name="${escapeHtml(nk.f.properties.name)}">TUNE</button>`);
   const bcSrc=gl.getSource('src-broadcast');
   const bcN=bcSrc&&bcSrc._data?(bcSrc._data.features||[]).length:0;
-  row('','📡',bcN?bcN+' broadcast stations in range':'40k+ broadcast stations',
-    'internet radio — every station, click to play',
+  row('','📡',bcN?bcN+' BROADCAST STATIONS':'40K+ BROADCAST STATIONS',
+    'internet radio — click to play',
     `<button class="act" data-act="cast">OPEN</button>`);
 
   // -- space weather hint --
   if(KP!=null&&KP>=5&&Math.abs(lat)>=48)
-    row('alert','🌌','aurora possible at your latitude tonight','Kp '+KP+' geomagnetic storm in progress');
+    row('alert','🌌','AURORA POSSIBLE TONIGHT','Kp '+KP+' geomagnetic storm in progress');
 
   $('#sit-body').innerHTML=rows.length?rows.join(''):
     '<div class="sit-empty">No signals resolved yet — feeds are still loading.</div>';
@@ -1361,6 +1469,10 @@ $('#sit-body').addEventListener('click',e=>{
     switchRadioTab('cast'); if(!castLoaded){castLoaded=true;loadCast('');}
     if(window.matchMedia('(max-width:900px)').matches) openSheet('radio');
   }
+  if(act==='police'){
+    switchRadioTab('police');
+    if(window.matchMedia('(max-width:900px)').matches) openSheet('radio');
+  }
 });
 function switchRadioTab(t){
   const btn=document.querySelector(`#radio-tabs button[data-t="${t}"]`);
@@ -1368,8 +1480,10 @@ function switchRadioTab(t){
 }
 $('#sit-head').addEventListener('click',()=>{
   // collapse toggle on desktop; on mobile the sheet grip handles closing
-  if(!window.matchMedia('(max-width:900px)').matches)
+  if(!window.matchMedia('(max-width:900px)').matches){
     $('#sitrep').classList.toggle('collapsed');
+    setMapPadding();
+  }
 });
 
 /* =====================================================================
@@ -1430,7 +1544,7 @@ async function pollCalls(){
         time:c.time||c.start_time,len:c.len||c.length||0};
       mhzQueue.push(call); addCallRow(call);
     }
-    trimList();
+    sortCalls(); trimList();
     if(!mhzPlaying) playNext();
     const s=mhzSystems.find(x=>x.shortName===mhzCur);
     $('#mhz-status').innerHTML='▶ '+escapeHtml(s?(s.name||mhzCur):mhzCur)+
@@ -1443,12 +1557,18 @@ async function pollCalls(){
 function addCallRow(call){
   const list=$('#mhz-list');
   const row=el('div','rrow'); row.dataset.id=call.id;
+  row.dataset.t=new Date(call.time).getTime()||0;
   const label=call.tgName||('TG '+call.tg);
   row.innerHTML=`<div class="rmain"><b>${escapeHtml(label)}</b>
-    <span>TG ${escapeHtml(String(call.tg))} · ${fmtTime(call.time)} · ${call.len||'?'}s</span></div>
+    <span>TG ${escapeHtml(String(call.tg))} · ${fmtTime(call.time)} · ${call.len||'?'}${U('s')}</span></div>
     <button class="btn sm">▶</button>`;
   row.onclick=()=>playCall(call,row);
-  list.insertBefore(row,list.firstChild); // newest on top visually
+  list.insertBefore(row,list.firstChild);
+}
+function sortCalls(){ // guarantee newest call at the very top
+  const list=$('#mhz-list');
+  [...list.children].sort((a,b)=>(+b.dataset.t||0)-(+a.dataset.t||0))
+    .forEach(r=>list.appendChild(r));
 }
 function trimList(){
   const list=$('#mhz-list');
@@ -1537,7 +1657,7 @@ const KIWI_BANDS=[['160m',1900,'lsb'],['80m',3700,'lsb'],['49mb',6100,'am'],['40
   ['19mb',15400,'am'],['16mb',17700,'am'],['15m',21100,'usb'],['13mb',21600,'am'],['11m',27200,'am']];
 
 const KW={host:null,name:null,ws:null,ctx:null,gain:null,adpcm:null,playAt:0,
-  rate:12000,mode:'am',freq:7100,live:false,keep:null};
+  rate:12000,mode:'am',freq:7100,live:false,keep:null,scan:false,scanTimer:null,scanIdx:0};
 
 function buildHF(){
   // band chips
@@ -1553,6 +1673,8 @@ function buildHF(){
   $('#t-freq').addEventListener('change',e=>{const v=parseFloat(e.target.value);if(isFinite(v))kwSetFreq(v);});
   $('#t-connect').onclick=kwConnect;
   $('#t-stop').onclick=kwStop;
+  $('#t-nearest').onclick=kwNearest;
+  $('#t-scan').onclick=kwScan;
   kwSetMode('am'); kwSetFreq(7100);
 
   // receiver list
@@ -1672,6 +1794,35 @@ function kwMeter(rssi){
 function kwStop(){ if(KW.ws){ try{KW.ws.close();}catch(e){} } kwCleanup();
   $('#tuner-status').textContent='stopped'; if($('#nowplaying').textContent.startsWith('📻'))
     $('#nowplaying').textContent='— idle —'; }
+
+// location-based nearest receiver: pick the closest KiwiSDR and tune it
+function kwNearest(){
+  if(USER.lat==null){ toast('NO POSITION FIX — TAP ⌖ ME','warn'); return; }
+  let best=null,bd=Infinity;
+  KIWI.forEach(k=>{ const d=havKm(USER.lat,USER.lon,k[2][0],k[2][1]); if(d<bd){bd=d;best=k;} });
+  if(!best) return;
+  gl.flyTo({center:[best[2][1],best[2][0]],zoom:5});
+  kwSelect(best[1],best[0]); kwConnect();
+  toast('NEAREST RX · '+best[0],'');
+  return best;
+}
+// band scanner: cycle the HF band plan on the current (or nearest) receiver
+function kwScan(){
+  KW.scan=!KW.scan; $('#t-scan').classList.toggle('on',KW.scan);
+  if(KW.scan){
+    if(!KW.host){ if(!kwNearest()){ KW.scan=false; $('#t-scan').classList.remove('on'); return; } }
+    else if(!KW.live) kwConnect();
+    KW.scanIdx=0;
+    const step=()=>{
+      const [lbl,khz,mode]=KIWI_BANDS[KW.scanIdx%KIWI_BANDS.length];
+      kwSetMode(mode); kwSetFreq(khz);
+      if(KW.live) $('#tuner-status').textContent='SCANNING · '+lbl+' · '+khz+' kHz '+mode.toUpperCase();
+      KW.scanIdx++;
+    };
+    step(); KW.scanTimer=setInterval(step,7000);
+  } else { if(KW.scanTimer){clearInterval(KW.scanTimer);KW.scanTimer=null;}
+    if(KW.live) $('#tuner-status').textContent='▶ '+KW.freq+' kHz '+KW.mode.toUpperCase(); }
+}
 function kwCleanup(){
   KW.live=false; if(KW.keep){clearInterval(KW.keep);KW.keep=null;}
   $('#t-connect').disabled=false; $('#t-connect').classList.remove('live');
@@ -1805,10 +1956,10 @@ async function loadMETARs(){
       if(!m.icaoId) return;
       METAR[m.icaoId]=m;
       const s=$(`[data-wx="${m.icaoId}"]`);
-      if(s) s.textContent=
-        (m.temp!=null?m.temp+'°C':'')+
-        (m.wdir!=null&&m.wspd!=null?' · '+m.wdir+'°/'+m.wspd+'kt':'')+
-        (m.visib?' · vis '+m.visib:'');
+      if(s) s.innerHTML=
+        (m.temp!=null?cToF(m.temp)+U('°F'):'')+
+        (m.wdir!=null&&m.wspd!=null?' · '+m.wdir+U('°')+'/'+m.wspd+U('kt'):'')+
+        (m.visib?' · '+m.visib+U('sm'):'');
     });
     $('#atc-head').textContent='LiveATC tower feeds · METARs live — ▶ tries inline, ↗ opens LiveATC.';
   }catch(e){
@@ -2017,8 +2168,10 @@ gl.on('load',()=>{
   loadKp();     setInterval(loadKp,120000);
   loadXray();   setInterval(loadXray,120000);
   loadKEV();
+  setMapPadding();
   locate();
-  toast('seehear online · 4 audio domains · '+LAYERS.length+' live feeds','');
+  setTimeout(setMapPadding,400); // re-measure once the SITREP card has content
+  toast('SEEHEAR ONLINE · 4 AUDIO DOMAINS · '+LAYERS.length+' LIVE FEEDS','');
 });
 </script>
 </body>

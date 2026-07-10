@@ -40,9 +40,15 @@ that refreshes every 60 s:
 - 📻 nearest shortwave receiver with a one-tap OPEN chip
 - 🌌 aurora-visibility hint when Kp ≥ 5 at your latitude
 
-Every row has a VIEW/LISTEN/OPEN action. Position is resolved client-side and
-never leaves the browser except as anonymous lat/lon parameters to the public
+Every row has a VIEW/LISTEN/OPEN/TUNE action. The **⌖ ME** button in the top
+bar recenters on you at any time. The SITREP is a bottom bar spanning the gap
+between the side panels (one-third of the viewport); the map keeps its content
+centred in the open area above it. Position is resolved client-side and never
+leaves the browser except as anonymous lat/lon parameters to the public
 weather APIs.
+
+Units are imperial (mi/ft, °F, mph) and the interface is set in a minimalist
+all-caps style, with measurement units left in natural case.
 
 ## Live map layers
 
@@ -55,7 +61,11 @@ weather APIs.
 | | ISS live position | wheretheiss.at | 15 s |
 | | Bright satellites + GPS constellation | CelesTrak TLE → SGP4 propagated in-browser | 60–120 s |
 | | Amtrak trains | amtraker v3 | 60 s |
+| | Ships / AIS | Digitraffic (Baltic, keyless) | 60 s |
 | Hazard | Natural events — wildfires, storms, volcanoes, ice | NASA EONET v3 | 10 min |
+| | Global disasters — quakes/cyclones/floods (alert-graded) | GDACS (UN/EC) | 30 min |
+| | Rocket launches (upcoming, at the pad) | Launch Library 2 | 60 min |
+| | Weather radar overlay | RainViewer | 5 min |
 | | Severe-weather alert polygons | NOAA/NWS | 2 min |
 | | Aurora forecast (≥40 % probability) | NOAA SWPC OVATION | 5 min |
 | | Holocene volcanoes | Smithsonian GVP (curated static) | — |
@@ -78,10 +88,13 @@ profile (RestCountries) + head of state (Wikidata SPARQL) + Wikipedia summary.
    calls auto-play newest-last through one `<audio>` element, with a scan mode
    that cycles systems. Unencrypted talkgroups only; expect the
    trunk-recorder delay.
-2. **Shortwave / Ham — KiwiSDR.** Public HF receivers worldwide as map pins;
-   tap to open that node's native web tuner (`:8073`) — 0–30 MHz, SSB/AM/CW.
-   (KiwiSDR audio is a WebSocket protocol with no plain URL, so pins open the
-   native tuner rather than reimplementing the WS client.)
+2. **Shortwave / Ham — full in-page KiwiSDR tuner.** Connects over the KiwiSDR
+   WebSocket protocol, decodes its IMA-ADPCM audio, and plays via Web Audio —
+   no plugin, no new tab. Frequency entry, AM/LSB/USB/CW/FM, 13 band presets,
+   live S-meter. **◎ NEAREST** tunes the closest receiver to your location;
+   **SCAN** band-scans the HF spectrum. Nodes are http/ws, so run seehear from
+   a local file (an https host blocks the mixed-content ws); a native-tuner
+   link is offered as fallback.
 3. **Aviation ATC — LiveATC + METARs.** 20 major world airports with live
    METAR weather (aviationweather.gov) inline in each row. ▶ tries the direct
    mp3 stream (`<audio>` playback isn't CORS-gated); ↗ opens LiveATC's
