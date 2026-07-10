@@ -1,0 +1,993 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>listenhear — keyless multi-domain OSINT + radio</title>
+
+<!-- ============================================================
+     listenhear — single self-contained OSINT + radio dashboard
+     ------------------------------------------------------------
+     Constraints (non-negotiable): one HTML file, no backend, no
+     build step, no API keys, no npm. Opens directly in a browser.
+     Vanilla JS + MapLibre GL (CDN) + satellite.js (CDN, SGP4).
+
+     CORS notes (browser-context reality, not just curl):
+       CORS-friendly (fetch works cross-origin):
+         USGS, CelesTrak, Amtrak(amtraker), NWS, NOAA SWPC,
+         DeepStateMap, Wikipedia, RestCountries, Nominatim, adsb.lol
+       Behind Cloudflare JS-challenge (works from residential
+         browser IPs, may 403 from datacenter/VPN IPs):
+         OpenMHz JSON API (systems/calls). Audio .m4a plays fine.
+       No CORS headers -> browser fetch blocked, kept with a note
+         and graceful failure so they never break the app:
+         abuse.ch (Feodo/URLhaus), CISA KEV, GVP web service, IODA.
+       DROPPED — require a key, violating the keyless rule:
+         OpenAQ v3 (401), NASA FIRMS (MAP_KEY), APRS.fi (key),
+         OpenSky/aisstream/Shodan/etc.
+       DROPPED — no keyless browser path:
+         APRS-IS (raw TCP), Meshtastic MQTT (broker creds + protobuf).
+
+     Audio fact used throughout: <audio> media loading is NOT gated
+     by CORS. Only fetch()/XHR of JSON is. So OpenMHz .m4a and any
+     LiveATC stream play cross-origin without ACAO headers.
+     ============================================================ -->
+
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="https://unpkg.com/satellite.js@5.0.0/dist/satellite.min.js"></script>
+
+<style>
+  :root{
+    --bg:#0a0e14; --panel:#0f1620; --panel2:#131c28; --line:#1e2b3a;
+    --ink:#c8d6e5; --ink-dim:#7d90a6; --accent:#37e0c9; --accent2:#ffb454;
+    --danger:#ff5c6c; --warn:#ffcb47; --ok:#4be08a; --live:#ff4d4d;
+    --mono:"SF Mono",ui-monospace,"Cascadia Code",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
+    font-family:var(--mono);font-size:13px;overflow:hidden}
+  #map{position:absolute;inset:0}
+  button{font-family:var(--mono);cursor:pointer}
+  a{color:var(--accent)}
+  ::-webkit-scrollbar{width:8px;height:8px}
+  ::-webkit-scrollbar-thumb{background:#233247;border-radius:4px}
+  ::-webkit-scrollbar-track{background:transparent}
+
+  /* ---------- top bar ---------- */
+  #topbar{position:absolute;top:0;left:0;right:0;height:44px;z-index:20;
+    display:flex;align-items:center;gap:12px;padding:0 12px;
+    background:linear-gradient(#0a0e14ee,#0a0e14cc);border-bottom:1px solid var(--line);
+    backdrop-filter:blur(6px)}
+  #brand{font-weight:700;letter-spacing:.5px;color:var(--accent)}
+  #brand small{color:var(--ink-dim);font-weight:400;letter-spacing:0}
+  #search{flex:1;max-width:340px;display:flex;gap:6px}
+  #search input{flex:1;background:var(--panel2);border:1px solid var(--line);
+    color:var(--ink);padding:6px 9px;border-radius:6px;font-family:var(--mono);font-size:12px}
+  #search input:focus{outline:none;border-color:var(--accent)}
+  .badges{display:flex;gap:8px;margin-left:auto;align-items:center;flex-wrap:wrap}
+  .badge{display:flex;align-items:center;gap:5px;background:var(--panel2);
+    border:1px solid var(--line);padding:4px 9px;border-radius:20px;font-size:11px;
+    color:var(--ink-dim);white-space:nowrap}
+  .badge b{color:var(--ink)}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--ink-dim)}
+
+  /* ---------- left: layers ---------- */
+  #layers{position:absolute;top:56px;left:12px;z-index:15;width:250px;
+    max-height:calc(100% - 72px);overflow:auto;background:var(--panel);
+    border:1px solid var(--line);border-radius:10px;padding:10px}
+  .sec-h{font-size:10px;letter-spacing:1.2px;color:var(--ink-dim);
+    text-transform:uppercase;margin:12px 2px 6px}
+  .sec-h:first-child{margin-top:2px}
+  .layer{display:flex;align-items:center;gap:8px;padding:5px 6px;border-radius:6px}
+  .layer:hover{background:var(--panel2)}
+  .layer .sw{width:10px;height:10px;border-radius:50%;flex:0 0 auto;box-shadow:0 0 6px currentColor}
+  .layer label{flex:1;cursor:pointer;user-select:none}
+  .layer .cnt{font-size:10px;color:var(--ink-dim);min-width:26px;text-align:right}
+  .layer input{accent-color:var(--accent);cursor:pointer}
+  .layer.off{opacity:.5}
+  .layer .warnflag{color:var(--warn);font-size:11px;cursor:help}
+
+  /* ---------- right: radio scanner ---------- */
+  #radio{position:absolute;top:56px;right:12px;z-index:15;width:320px;
+    max-height:calc(100% - 72px);display:flex;flex-direction:column;
+    background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  #radio-tabs{display:flex;border-bottom:1px solid var(--line)}
+  #radio-tabs button{flex:1;background:none;border:none;color:var(--ink-dim);
+    padding:9px 4px;font-size:11px;letter-spacing:.4px;border-bottom:2px solid transparent}
+  #radio-tabs button.active{color:var(--accent);border-bottom-color:var(--accent)}
+  #radio-tabs button:hover{color:var(--ink)}
+  .rpane{display:none;flex-direction:column;overflow:hidden}
+  .rpane.active{display:flex}
+  .rpane-head{padding:9px 11px;border-bottom:1px solid var(--line);font-size:11px;color:var(--ink-dim)}
+  .rpane-body{overflow:auto;max-height:46vh}
+  select,.btn{background:var(--panel2);border:1px solid var(--line);color:var(--ink);
+    border-radius:6px;padding:6px 8px;font-family:var(--mono);font-size:12px}
+  .btn{cursor:pointer}
+  .btn:hover{border-color:var(--accent)}
+  .btn.sm{padding:3px 8px;font-size:11px}
+  .btn.on{border-color:var(--accent);color:var(--accent)}
+  .rrow{display:flex;align-items:center;gap:8px;padding:7px 11px;border-bottom:1px solid #16202c;
+    cursor:pointer}
+  .rrow:hover{background:var(--panel2)}
+  .rrow .rmain{flex:1;min-width:0}
+  .rrow .rmain b{display:block;font-size:12px;color:var(--ink);white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis}
+  .rrow .rmain span{font-size:10px;color:var(--ink-dim)}
+  .rrow.playing{background:#12251f}
+  .rrow.playing .rmain b{color:var(--accent)}
+  #player{padding:10px 11px;border-top:1px solid var(--line);background:var(--panel2)}
+  #player audio{width:100%;height:34px}
+  #nowplaying{font-size:11px;color:var(--accent);margin-bottom:6px;min-height:14px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ctl{display:flex;gap:6px;align-items:center;padding:8px 11px}
+  .muted{color:var(--ink-dim)}
+  .note{font-size:10px;color:var(--ink-dim);padding:8px 11px;line-height:1.5;background:#0c141d}
+
+  /* ---------- dossier popup ---------- */
+  .maplibregl-popup-content{background:var(--panel);color:var(--ink);
+    border:1px solid var(--line);border-radius:8px;font-family:var(--mono);
+    box-shadow:0 8px 30px #000a;max-width:300px}
+  .maplibregl-popup-close-button{color:var(--ink-dim);font-size:16px}
+  .maplibregl-popup-tip{border-top-color:var(--panel)!important;border-bottom-color:var(--panel)!important}
+  .pop h4{margin:0 0 6px;color:var(--accent);font-size:13px}
+  .pop .kv{display:flex;gap:6px;font-size:11px;margin:2px 0}
+  .pop .kv span{color:var(--ink-dim);min-width:64px}
+  .pop .sub{font-size:11px;color:var(--ink);line-height:1.45;margin-top:6px;
+    max-height:120px;overflow:auto}
+  .pop .lnk{margin-top:7px;font-size:11px}
+
+  /* ---------- toast / log ---------- */
+  #toast{position:absolute;bottom:12px;left:12px;z-index:16;max-width:260px;
+    display:flex;flex-direction:column;gap:6px}
+  .tmsg{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--accent);
+    padding:7px 10px;border-radius:6px;font-size:11px;color:var(--ink);animation:sl .25s ease}
+  .tmsg.err{border-left-color:var(--danger)}
+  .tmsg.warn{border-left-color:var(--warn)}
+  @keyframes sl{from{transform:translateY(8px);opacity:0}to{transform:none;opacity:1}}
+  .spin{display:inline-block;width:9px;height:9px;border:2px solid #2a3a4d;
+    border-top-color:var(--accent);border-radius:50%;animation:sp .7s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+
+  #legend{position:absolute;bottom:12px;right:12px;z-index:14;font-size:10px;color:var(--ink-dim);
+    background:#0a0e14aa;padding:4px 8px;border-radius:6px;border:1px solid var(--line)}
+  @media (max-width:820px){
+    #layers{width:200px} #radio{width:260px}
+  }
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div id="topbar">
+  <div id="brand">listen<span style="color:var(--accent2)">hear</span> <small>keyless osint</small></div>
+  <form id="search" onsubmit="return doSearch(event)">
+    <input id="q" placeholder="search place / coords…" autocomplete="off">
+    <button class="btn sm" type="submit">go</button>
+  </form>
+  <div class="badges">
+    <div class="badge" id="kp-badge" title="NOAA SWPC planetary K-index (geomagnetic activity)">
+      <span class="dot" id="kp-dot"></span>Kp <b id="kp-val">–</b>
+    </div>
+    <div class="badge" id="kev-badge" title="CISA Known-Exploited Vulnerabilities (may be CORS-blocked)">
+      KEV <b id="kev-val">–</b>
+    </div>
+    <div class="badge" id="clock" title="UTC">UTC <b id="utc">--:--</b></div>
+  </div>
+</div>
+
+<div id="layers">
+  <div class="sec-h">Movement</div><div id="grp-move"></div>
+  <div class="sec-h">Hazard / Environment</div><div id="grp-haz"></div>
+  <div class="sec-h">Geopolitics / OSINT</div><div id="grp-geo"></div>
+  <div class="sec-h">Radio nodes</div><div id="grp-radio"></div>
+</div>
+
+<div id="radio">
+  <div id="radio-tabs">
+    <button data-t="police" class="active">POLICE/FIRE</button>
+    <button data-t="hf">SHORTWAVE</button>
+    <button data-t="atc">AVIATION ATC</button>
+  </div>
+
+  <!-- 1. Police / Fire — OpenMHz -->
+  <div class="rpane active" id="pane-police">
+    <div class="ctl">
+      <select id="mhz-sys" style="flex:1"><option>loading systems…</option></select>
+      <button class="btn sm" id="mhz-scan" title="cycle across systems">scan</button>
+    </div>
+    <div class="rpane-head" id="mhz-status">pick a system → live trunked calls auto-play newest-last</div>
+    <div class="rpane-body" id="mhz-list"></div>
+    <div class="note">OpenMHz · trunk-recorded, unencrypted talkgroups only · built-in delay.
+      JSON API sits behind Cloudflare — if the list stays empty it's an IP challenge; loads fine
+      from a normal browser. Audio itself is unrestricted.</div>
+  </div>
+
+  <!-- 2. Shortwave / Ham — KiwiSDR -->
+  <div class="rpane" id="pane-hf">
+    <div class="rpane-head">KiwiSDR public HF receivers — click to open that node's live tuner (new tab).</div>
+    <div class="rpane-body" id="hf-list"></div>
+    <div class="note">KiwiSDR audio is a WebSocket protocol (no plain URL), so per spec option (a):
+      pins + click-to-open the node's native web tuner at :8073. Curated public-node list;
+      the live directory isn't CORS/https-fetchable in-browser.</div>
+  </div>
+
+  <!-- 3. Aviation ATC — LiveATC -->
+  <div class="rpane" id="pane-atc">
+    <div class="rpane-head">LiveATC airport feeds — try inline, or open LiveATC's player.</div>
+    <div class="rpane-body" id="atc-list"></div>
+    <div class="note">Verified: LiveATC streams are mp3 and <audio> playback isn't CORS-gated, but
+      LiveATC may reject hotlinks by Referer. Each row tries inline first; the ↗ opens their
+      official player as fallback. This is the audio domain ShadowBroker doesn't cover.</div>
+  </div>
+
+  <div id="player">
+    <div id="nowplaying">— idle —</div>
+    <audio id="audio" controls preload="none"></audio>
+  </div>
+</div>
+
+<div id="toast"></div>
+<div id="legend">right-click a point → dossier · scroll to zoom</div>
+
+<script>
+"use strict";
+/* =====================================================================
+   0. small helpers
+   ===================================================================== */
+const $ = s => document.querySelector(s);
+const el = (t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
+function toast(msg,kind){
+  const t=el('div','tmsg'+(kind?' '+kind:''),msg);
+  $('#toast').appendChild(t);
+  setTimeout(()=>{t.style.transition='opacity .4s';t.style.opacity='0';setTimeout(()=>t.remove(),400);},4200);
+}
+// fetch JSON with timeout; throws on any failure so callers can degrade gracefully
+async function getJSON(url,opts={}){
+  const c=new AbortController(); const to=setTimeout(()=>c.abort(),opts.timeout||15000);
+  try{
+    const r=await fetch(url,{signal:c.signal,headers:opts.headers||{}});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    return await r.json();
+  } finally { clearTimeout(to); }
+}
+async function getText(url,opts={}){
+  const c=new AbortController(); const to=setTimeout(()=>c.abort(),opts.timeout||15000);
+  try{ const r=await fetch(url,{signal:c.signal}); if(!r.ok)throw new Error('HTTP '+r.status); return await r.text(); }
+  finally{ clearTimeout(to); }
+}
+const fmtTime = ts => new Date(ts).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+const escapeHtml = s => String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+/* =====================================================================
+   1. MAP + CARTO dark basemap  (keyless raster tiles)
+   ===================================================================== */
+const map = new maplibregl.Map({
+  container:'map',
+  style:{
+    version:8,
+    glyphs:'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
+    sources:{
+      carto:{
+        type:'raster', tileSize:256,
+        tiles:[
+          'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+          'https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+          'https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png'
+        ],
+        attribution:'© OpenStreetMap · © CARTO'
+      }
+    },
+    layers:[{id:'carto',type:'raster',source:'carto'}]
+  },
+  center:[10,25], zoom:2, minZoom:1.2, maxZoom:16,
+  renderWorldCopies:true, attributionControl:false
+});
+map.addControl(new maplibregl.AttributionControl({compact:true}));
+map.addControl(new maplibregl.NavigationControl({showCompass:false}),'bottom-right');
+try{ map.setProjection && map.setProjection({type:'globe'}); }catch(e){/* flat fallback */}
+
+/* =====================================================================
+   2. LAYER FRAMEWORK
+   Each layer: id,label,color,group,refresh(sec),loader()->GeoJSON,
+   geom('point'|'fill'),popup(props) and optional note (CORS/keyless).
+   Loaders throw on failure; the runner marks the layer errored and the
+   rest keep running — one dead feed never breaks the board.
+   ===================================================================== */
+const LAYERS = [];
+function defLayer(cfg){ LAYERS.push(cfg); }
+
+// ---- Movement ----
+defLayer({
+  id:'quakes', label:'Earthquakes ≥2.5', color:'#ff5c6c', group:'move', refresh:60,
+  loader: async ()=>{
+    const j=await getJSON('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_hour.geojson');
+    // already GeoJSON; enrich radius by magnitude
+    j.features.forEach(f=>{ f.properties._r = 3+(f.properties.mag||0)*2.2; f.properties._kind='quake'; });
+    return j;
+  },
+  sized:true,
+  popup:p=>`<h4>M ${p.mag} quake</h4>
+    <div class="kv"><span>place</span>${escapeHtml(p.place)}</div>
+    <div class="kv"><span>depth</span>${p.geo_depth??'?'} km</div>
+    <div class="kv"><span>time</span>${fmtTime(p.time)}</div>
+    <div class="lnk"><a href="${p.url}" target="_blank">USGS event ↗</a></div>`
+});
+
+defLayer({
+  id:'mil', label:'Military aircraft', color:'#ffb454', group:'move', refresh:60,
+  loader: async ()=>{
+    const j=await getJSON('https://api.adsb.lol/v2/mil');
+    const ac=(j.ac||j.aircraft||[]).filter(a=>a.lat!=null&&(a.lon!=null||a.lng!=null));
+    return { type:'FeatureCollection', features: ac.map(a=>({
+      type:'Feature', geometry:{type:'Point',coordinates:[a.lon??a.lng, a.lat]},
+      properties:{ _kind:'mil', flight:(a.flight||a.r||a.hex||'?').trim(),
+        type:a.t||'?', alt:a.alt_baro??a.alt_geom??'?', spd:a.gs??'?', sq:a.squawk||'' }
+    }))};
+  },
+  popup:p=>`<h4>✈ ${escapeHtml(p.flight)}</h4>
+    <div class="kv"><span>type</span>${escapeHtml(p.type)}</div>
+    <div class="kv"><span>alt</span>${p.alt} ft</div>
+    <div class="kv"><span>speed</span>${p.spd} kt</div>
+    <div class="kv"><span>squawk</span>${escapeHtml(p.sq||'—')}</div>`
+});
+
+defLayer({
+  id:'sats', label:'Satellites (SGP4)', color:'#7ee0ff', group:'move', refresh:60, defaultOff:true,
+  loader: async ()=>{
+    // CelesTrak TLE -> satellite.js SGP4 propagation to "now"
+    const txt=await getText('https://celestrak.org/NORAD/elements/gp.php?GROUP=visual&FORMAT=tle');
+    const lines=txt.split(/\r?\n/).filter(l=>l.trim().length);
+    const now=new Date(); const gmst=satellite.gstime(now);
+    const feats=[];
+    for(let i=0;i+2<lines.length;i+=3){
+      try{
+        const name=lines[i].trim();
+        const rec=satellite.twoline2satrec(lines[i+1],lines[i+2]);
+        const pv=satellite.propagate(rec,now); if(!pv.position) continue;
+        const gd=satellite.eciToGeodetic(pv.position,gmst);
+        let lon=satellite.degreesLong(gd.longitude), lat=satellite.degreesLat(gd.latitude);
+        if(!isFinite(lon)||!isFinite(lat)) continue;
+        feats.push({type:'Feature',geometry:{type:'Point',coordinates:[lon,lat]},
+          properties:{_kind:'sat',name,alt:Math.round(gd.height)}});
+      }catch(e){}
+    }
+    return {type:'FeatureCollection',features:feats};
+  },
+  popup:p=>`<h4>🛰 ${escapeHtml(p.name)}</h4>
+    <div class="kv"><span>alt</span>${p.alt} km</div>
+    <div class="kv"><span>src</span>CelesTrak TLE · SGP4</div>`
+});
+
+defLayer({
+  id:'amtrak', label:'Amtrak trains', color:'#4be08a', group:'move', refresh:60, defaultOff:true,
+  loader: async ()=>{
+    const j=await getJSON('https://api-v3.amtraker.com/v3/trains');
+    const feats=[];
+    Object.values(j).forEach(arr=>(Array.isArray(arr)?arr:[arr]).forEach(t=>{
+      if(t.lat==null||t.lon==null) return;
+      feats.push({type:'Feature',geometry:{type:'Point',coordinates:[t.lon,t.lat]},
+        properties:{_kind:'train',name:t.routeName||('#'+t.trainNum),num:t.trainNum,
+          vel:t.velocity!=null?Math.round(t.velocity)+' mph':'—'}});
+    }));
+    return {type:'FeatureCollection',features:feats};
+  },
+  popup:p=>`<h4>🚆 ${escapeHtml(p.name)}</h4>
+    <div class="kv"><span>train</span>#${escapeHtml(p.num)}</div>
+    <div class="kv"><span>speed</span>${escapeHtml(p.vel)}</div>`
+});
+
+// ---- Hazard / Environment ----
+defLayer({
+  id:'nws', label:'NWS severe alerts', color:'#ffcb47', group:'haz', refresh:120, geom:'fill',
+  loader: async ()=>{
+    const j=await getJSON('https://api.weather.gov/alerts/active?status=actual&message_type=alert');
+    j.features = (j.features||[]).filter(f=>f.geometry); // many alerts are zone-only (no geom)
+    j.features.forEach(f=>{ f.properties._kind='nws';
+      f.properties._title=f.properties.event; });
+    return j;
+  },
+  popup:p=>`<h4>⚠ ${escapeHtml(p.event)}</h4>
+    <div class="kv"><span>area</span>${escapeHtml((p.areaDesc||'').slice(0,80))}</div>
+    <div class="kv"><span>severity</span>${escapeHtml(p.severity)}</div>
+    <div class="sub">${escapeHtml((p.headline||'').slice(0,160))}</div>`
+});
+
+defLayer({
+  id:'volcano', label:'Holocene volcanoes', color:'#ff8a5c', group:'haz', refresh:0, defaultOff:true,
+  // Smithsonian GVP web service is 403/CORS-blocked from browsers, so per the
+  // spec's "(static)" tag we ship a curated Holocene subset — keyless, no fetch.
+  loader: async ()=> ({type:'FeatureCollection',features:VOLCANOES.map(v=>({
+    type:'Feature',geometry:{type:'Point',coordinates:[v[2],v[1]]},
+    properties:{_kind:'volcano',name:v[0],elev:v[3]}}))}),
+  popup:p=>`<h4>🌋 ${escapeHtml(p.name)}</h4>
+    <div class="kv"><span>summit</span>${p.elev} m</div>
+    <div class="kv"><span>src</span>Smithsonian GVP (static)</div>`
+});
+
+// ---- Geopolitics / OSINT ----
+defLayer({
+  id:'deepstate', label:'Ukraine frontline', color:'#ff5c6c', group:'geo', refresh:1800, geom:'fill', defaultOff:true,
+  loader: async ()=>{
+    // DeepStateMap: /api/history/last -> { map: FeatureCollection } (CORS *)
+    const j=await getJSON('https://deepstatemap.live/api/history/last');
+    let fc = j.map || (Array.isArray(j)&&j[0]&&j[0].map) || j;
+    if(!fc||!fc.features) throw new Error('unexpected shape');
+    fc.features = fc.features.filter(f=>f.geometry &&
+      (f.geometry.type==='Polygon'||f.geometry.type==='MultiPolygon'));
+    fc.features.forEach(f=>{f.properties=f.properties||{};f.properties._kind='deepstate';
+      f.properties._title=(f.properties.name||'frontline').split('///')[0];});
+    return fc;
+  },
+  fillColor:'#ff5c6c',
+  popup:p=>`<h4>Frontline</h4><div class="kv"><span>zone</span>${escapeHtml((p.name||'').split('///')[0])}</div>
+    <div class="kv"><span>src</span>DeepStateMap</div>`
+});
+
+defLayer({
+  id:'malware', label:'Malware C2 (abuse.ch)', color:'#c77dff', group:'geo', refresh:300, defaultOff:true,
+  note:'abuse.ch sends no CORS header — browser fetch is usually blocked; shown so the block is visible, not silent.',
+  loader: async ()=>{
+    // Feodo Tracker IP blocklist — has no coordinates, so we can't plot it as
+    // geo points. We surface it as a threat-count only (see badge on error/success).
+    const j=await getJSON('https://feodotracker.abuse.ch/downloads/ipblocklist.json');
+    const n=Array.isArray(j)?j.length:0;
+    toast(`abuse.ch Feodo: ${n} active C2 IPs`,'warn');
+    return {type:'FeatureCollection',features:[]}; // no geo -> nothing on map by design
+  },
+  popup:()=>''
+});
+
+/* =====================================================================
+   3. LAYER RUNTIME — sources, symbol layers, toggles, refresh loop
+   ===================================================================== */
+const LAYER_STATE = {}; // id -> {cnt, timer, on}
+
+function ensureMapLayer(cfg){
+  const sid='src-'+cfg.id;
+  if(map.getSource(sid)) return;
+  map.addSource(sid,{type:'geojson',data:{type:'FeatureCollection',features:[]}});
+  if(cfg.geom==='fill'){
+    map.addLayer({id:'ly-'+cfg.id,type:'fill',source:sid,
+      paint:{'fill-color':cfg.fillColor||cfg.color,'fill-opacity':0.28,'fill-outline-color':cfg.color}});
+    map.addLayer({id:'lyl-'+cfg.id,type:'line',source:sid,
+      paint:{'line-color':cfg.color,'line-width':1.4,'line-opacity':0.85}});
+  } else {
+    map.addLayer({id:'ly-'+cfg.id,type:'circle',source:sid,
+      paint:{
+        'circle-radius': cfg.sized? ['coalesce',['get','_r'],5] : 5,
+        'circle-color':cfg.color,
+        'circle-opacity':0.85,
+        'circle-stroke-color':'#0a0e14','circle-stroke-width':1
+      }});
+  }
+  map.setLayoutProperty('ly-'+cfg.id,'visibility',cfg.defaultOff?'none':'visible');
+  if(map.getLayer('lyl-'+cfg.id))
+    map.setLayoutProperty('lyl-'+cfg.id,'visibility',cfg.defaultOff?'none':'visible');
+}
+
+async function runLayer(cfg){
+  const st=LAYER_STATE[cfg.id];
+  const row=$('#row-'+cfg.id);
+  const cntEl=row&&row.querySelector('.cnt');
+  if(cntEl) cntEl.innerHTML='<span class="spin"></span>';
+  try{
+    const fc=await cfg.loader();
+    const src=map.getSource('src-'+cfg.id);
+    if(src) src.setData(fc);
+    st.cnt=(fc.features||[]).length;
+    if(cntEl) cntEl.textContent = st.cnt;
+    st.errored=false;
+  }catch(e){
+    st.errored=true;
+    if(cntEl) cntEl.innerHTML='<span style="color:var(--danger)" title="'+escapeHtml(e.message)+'">×</span>';
+    console.warn('[layer '+cfg.id+']',e.message);
+    // First failure only -> one toast, so CORS/keyless issues are visible not silent
+    if(!st.warned){ st.warned=true;
+      toast((cfg.label)+': feed unavailable ('+e.message+')'+(cfg.note?' — CORS/keyless':''),'err'); }
+  }
+}
+
+function scheduleLayer(cfg){
+  const st=LAYER_STATE[cfg.id];
+  runLayer(cfg);
+  if(cfg.refresh>0){
+    if(st.timer) clearInterval(st.timer);
+    st.timer=setInterval(()=>{ if(st.on) runLayer(cfg); }, cfg.refresh*1000);
+  }
+}
+
+function buildLayerPanel(){
+  const groups={move:'#grp-move',haz:'#grp-haz',geo:'#grp-geo'};
+  LAYERS.forEach(cfg=>{
+    LAYER_STATE[cfg.id]={cnt:0,timer:null,on:!cfg.defaultOff};
+    ensureMapLayer(cfg);
+    const row=el('div','layer'+(cfg.defaultOff?' off':''));
+    row.id='row-'+cfg.id;
+    row.innerHTML=`
+      <input type="checkbox" id="ck-${cfg.id}" ${cfg.defaultOff?'':'checked'}>
+      <span class="sw" style="color:${cfg.color};background:${cfg.color}"></span>
+      <label for="ck-${cfg.id}">${cfg.label}</label>
+      ${cfg.note?`<span class="warnflag" title="${escapeHtml(cfg.note)}">⚠</span>`:''}
+      <span class="cnt">–</span>`;
+    $(groups[cfg.group]).appendChild(row);
+    row.querySelector('input').addEventListener('change',ev=>{
+      const on=ev.target.checked; LAYER_STATE[cfg.id].on=on;
+      row.classList.toggle('off',!on);
+      const vis=on?'visible':'none';
+      map.setLayoutProperty('ly-'+cfg.id,'visibility',vis);
+      if(map.getLayer('lyl-'+cfg.id)) map.setLayoutProperty('lyl-'+cfg.id,'visibility',vis);
+      if(on && LAYER_STATE[cfg.id].cnt===0) scheduleLayer(cfg);
+    });
+  });
+}
+
+/* =====================================================================
+   4. POPUP DOSSIER — click a point for feed info; right-click anywhere
+      for a reference dossier (RestCountries + Wikipedia + Wikidata).
+   ===================================================================== */
+LAYERS.forEach(cfg=>{
+  const lid='ly-'+cfg.id;
+  map.on('click',lid,e=>{
+    const f=e.features[0]; const p=f.properties;
+    const html=cfg.popup?cfg.popup(p):'';
+    if(!html) return;
+    new maplibregl.Popup({closeButton:true,maxWidth:'300px'})
+      .setLngLat(f.geometry.type==='Point'?f.geometry.coordinates:e.lngLat)
+      .setHTML('<div class="pop">'+html+'</div>').addTo(map);
+  });
+  map.on('mouseenter',lid,()=>map.getCanvas().style.cursor='pointer');
+  map.on('mouseleave',lid,()=>map.getCanvas().style.cursor='');
+});
+
+map.on('contextmenu', async e=>{
+  const {lng,lat}=e.lngLat;
+  const pop=new maplibregl.Popup({closeButton:true,maxWidth:'300px'})
+    .setLngLat(e.lngLat)
+    .setHTML(`<div class="pop"><h4>Dossier</h4>
+      <div class="kv"><span>coords</span>${lat.toFixed(3)}, ${lng.toFixed(3)}</div>
+      <div class="sub"><span class="spin"></span> resolving place, country & summary…</div></div>`)
+    .addTo(map);
+  try{
+    // reverse geocode (Nominatim)
+    const g=await getJSON(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`,
+      {headers:{'Accept-Language':'en'}});
+    const a=g.address||{};
+    const cc=(a.country_code||'').toUpperCase();
+    const placeName=g.name||a.city||a.town||a.village||a.state||a.county||g.display_name||'unknown';
+    let html=`<h4>${escapeHtml(placeName)}</h4>
+      <div class="kv"><span>coords</span>${lat.toFixed(3)}, ${lng.toFixed(3)}</div>`;
+    if(a.country) html+=`<div class="kv"><span>country</span>${escapeHtml(a.country)}</div>`;
+
+    // parallel: country profile + head of state + wiki summary
+    const tasks=[];
+    if(cc) tasks.push(getJSON('https://restcountries.com/v3.1/alpha/'+cc).then(r=>({country:r})).catch(()=>({})));
+    tasks.push(getJSON('https://en.wikipedia.org/api/rest_v1/page/summary/'+
+      encodeURIComponent(placeName)).then(r=>({wiki:r})).catch(()=>({})));
+    if(cc) tasks.push(headOfState(a.country).then(h=>({hos:h})).catch(()=>({})));
+    const res=Object.assign({},...(await Promise.all(tasks)));
+
+    if(res.country){
+      const c=Array.isArray(res.country)?res.country[0]:res.country;
+      if(c){
+        html+=`<div class="kv"><span>capital</span>${escapeHtml((c.capital||[])[0]||'—')}</div>`;
+        html+=`<div class="kv"><span>pop</span>${(c.population||0).toLocaleString()}</div>`;
+        html+=`<div class="kv"><span>region</span>${escapeHtml(c.subregion||c.region||'—')}</div>`;
+      }
+    }
+    if(res.hos) html+=`<div class="kv"><span>head of st.</span>${escapeHtml(res.hos)}</div>`;
+    if(res.wiki&&res.wiki.extract) html+=`<div class="sub">${escapeHtml(res.wiki.extract.slice(0,260))}</div>`;
+    if(res.wiki&&res.wiki.content_urls)
+      html+=`<div class="lnk"><a target="_blank" href="${res.wiki.content_urls.desktop.page}">Wikipedia ↗</a></div>`;
+    pop.setHTML('<div class="pop">'+html+'</div>');
+  }catch(err){
+    pop.setHTML(`<div class="pop"><h4>Dossier</h4>
+      <div class="kv"><span>coords</span>${lat.toFixed(3)}, ${lng.toFixed(3)}</div>
+      <div class="sub" style="color:var(--danger)">lookup failed: ${escapeHtml(err.message)}</div></div>`);
+  }
+});
+
+// Wikidata SPARQL: head of state for a country name
+async function headOfState(countryName){
+  const q=`SELECT ?hosLabel WHERE{
+    ?c wdt:P31 wd:Q6256; rdfs:label "${countryName}"@en.
+    ?c wdt:P35 ?hos.
+    SERVICE wikibase:label{bd:serviceParam wikibase:language "en".}
+  } LIMIT 1`;
+  const url='https://query.wikidata.org/sparql?format=json&query='+encodeURIComponent(q);
+  const j=await getJSON(url,{timeout:9000});
+  const b=j.results.bindings[0];
+  return b?b.hosLabel.value:null;
+}
+
+/* =====================================================================
+   5. SEARCH BAR — Nominatim forward geocode, or "lat,lon"
+   ===================================================================== */
+async function doSearch(ev){
+  ev.preventDefault();
+  const q=$('#q').value.trim(); if(!q) return false;
+  const m=q.match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);
+  if(m){ map.flyTo({center:[+m[2],+m[1]],zoom:8}); return false; }
+  try{
+    const j=await getJSON('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q='+
+      encodeURIComponent(q),{headers:{'Accept-Language':'en'}});
+    if(!j.length){ toast('no match for "'+q+'"','warn'); return false; }
+    const r=j[0];
+    map.flyTo({center:[+r.lon,+r.lat],zoom:9});
+    new maplibregl.Popup().setLngLat([+r.lon,+r.lat])
+      .setHTML('<div class="pop"><h4>'+escapeHtml(r.display_name.split(',')[0])+'</h4>'+
+        '<div class="sub">'+escapeHtml(r.display_name)+'</div></div>').addTo(map);
+  }catch(e){ toast('geocode failed: '+e.message,'err'); }
+  return false;
+}
+
+/* =====================================================================
+   6. STATUS BADGES — NOAA SWPC Kp  &  CISA KEV count
+   ===================================================================== */
+async function loadKp(){
+  try{
+    const j=await getJSON('https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json');
+    // rows: either objects {Kp} or arrays; take the last numeric Kp
+    let kp=null;
+    for(let i=j.length-1;i>=0;i--){
+      const row=j[i]; const v=Array.isArray(row)?row[1]:row.Kp;
+      const n=parseFloat(v); if(isFinite(n)){kp=n;break;}
+    }
+    if(kp==null) throw new Error('no data');
+    $('#kp-val').textContent=kp.toFixed(1);
+    const dot=$('#kp-dot');
+    const col = kp>=7?'#ff5c6c':kp>=5?'#ffcb47':'#4be08a';
+    dot.style.background=col; dot.style.boxShadow='0 0 6px '+col;
+    $('#kp-badge').title=`Kp ${kp} — ${kp>=5?'geomagnetic STORM':'quiet/unsettled'} (NOAA SWPC)`;
+  }catch(e){ $('#kp-val').textContent='×'; }
+}
+async function loadKEV(){
+  // CISA KEV — often CORS-blocked from browsers; degrade to "n/a" silently-ish.
+  try{
+    const j=await getJSON('https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json',
+      {timeout:12000});
+    const n=(j.vulnerabilities||[]).length;
+    $('#kev-val').textContent=n.toLocaleString();
+    $('#kev-badge').title=`CISA: ${n} known-exploited CVEs in catalog`;
+  }catch(e){
+    $('#kev-val').textContent='n/a';
+    $('#kev-badge').title='CISA KEV blocked by CORS in-browser (no ACAO header)';
+  }
+}
+setInterval(()=>{ $('#utc').textContent=new Date().toISOString().slice(11,16); },1000);
+$('#utc').textContent=new Date().toISOString().slice(11,16);
+
+/* =====================================================================
+   7. RADIO DOMAIN 1 — OpenMHz police / fire  (THE CORE FEATURE)
+   pick a system -> poll /calls/newer -> queue new .m4a -> auto-play
+   newest-last through ONE <audio>. "scan" cycles across systems.
+   ===================================================================== */
+const audio=$('#audio');
+const OMHZ='https://api.openmhz.com';
+let mhzSystems=[], mhzCur=null, mhzSince=0, mhzQueue=[], mhzPlaying=false,
+    mhzPoll=null, mhzScan=false, mhzScanIdx=0, mhzSeen=new Set();
+
+async function loadSystems(){
+  try{
+    const j=await getJSON(OMHZ+'/systems');
+    mhzSystems=(j.systems||j||[]).filter(s=>s.shortName);
+    mhzSystems.sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+    const sel=$('#mhz-sys'); sel.innerHTML='';
+    sel.appendChild(el('option','','— select system ('+mhzSystems.length+') —'));
+    mhzSystems.forEach(s=>{
+      const o=el('option'); o.value=s.shortName;
+      o.textContent=(s.name||s.shortName)+(s.state?' · '+s.state:'');
+      sel.appendChild(o);
+    });
+    $('#mhz-status').textContent=mhzSystems.length+' systems · pick one to start scanning';
+  }catch(e){
+    $('#mhz-sys').innerHTML='<option>systems unavailable</option>';
+    $('#mhz-status').innerHTML='<span style="color:var(--danger)">OpenMHz API blocked ('+
+      escapeHtml(e.message)+') — Cloudflare IP challenge. Works from a normal browser.</span>';
+  }
+}
+
+function selectSystem(shortName){
+  mhzCur=shortName; mhzSince=0; mhzSeen.clear(); mhzQueue=[];
+  $('#mhz-list').innerHTML='';
+  const s=mhzSystems.find(x=>x.shortName===shortName);
+  $('#mhz-status').innerHTML='<span class="spin"></span> '+escapeHtml(s?(s.name||shortName):shortName)+' — listening for calls…';
+  if(mhzPoll) clearInterval(mhzPoll);
+  pollCalls();
+  mhzPoll=setInterval(pollCalls, 8000);
+}
+
+async function pollCalls(){
+  if(!mhzCur) return;
+  try{
+    const j=await getJSON(OMHZ+'/'+mhzCur+'/calls/newer?time='+(mhzSince||0));
+    const calls=j.calls||j||[];
+    // oldest-first so newest ends up last in the queue
+    calls.sort((a,b)=> new Date(a.time||a.start_time)-new Date(b.time||b.start_time));
+    let added=0;
+    for(const c of calls){
+      const id=c._id||c.id||c.url;
+      if(!id||mhzSeen.has(id)) continue;
+      mhzSeen.add(id); added++;
+      const t=new Date(c.time||c.start_time).getTime(); if(t>mhzSince) mhzSince=t;
+      const call={ id, url:c.url, tg:c.talkgroupNum||c.talkgroup||'?',
+        tgName:(c.talkgroupName||c.talkgroupAlpha||'').trim(), time:c.time||c.start_time,
+        len:c.len||c.length||0, sys:mhzCur };
+      mhzQueue.push(call); addCallRow(call);
+    }
+    if(added) trimList();
+    if(!mhzPlaying) playNext();
+    const s=mhzSystems.find(x=>x.shortName===mhzCur);
+    $('#mhz-status').innerHTML=`▶ ${escapeHtml(s?(s.name||mhzCur):mhzCur)} · ${mhzSeen.size} calls seen${mhzScan?' · SCAN':''}`;
+  }catch(e){
+    $('#mhz-status').innerHTML='<span style="color:var(--danger)">poll failed: '+escapeHtml(e.message)+'</span>';
+  }
+}
+
+function addCallRow(call){
+  const list=$('#mhz-list');
+  const row=el('div','rrow'); row.dataset.id=call.id;
+  const label=call.tgName?call.tgName:('TG '+call.tg);
+  row.innerHTML=`<div class="rmain"><b>${escapeHtml(label)}</b>
+    <span>TG ${escapeHtml(String(call.tg))} · ${fmtTime(call.time)} · ${call.len||'?'}s</span></div>
+    <button class="btn sm">▶</button>`;
+  row.onclick=()=>playCall(call,row);
+  list.insertBefore(row,list.firstChild); // newest on top visually
+}
+function trimList(){
+  const list=$('#mhz-list');
+  while(list.children.length>60) list.removeChild(list.lastChild);
+}
+
+function playNext(){
+  if(!mhzQueue.length){ mhzPlaying=false;
+    if(mhzScan) advanceScan(); return; }
+  const call=mhzQueue.shift();
+  const row=$('#mhz-list').querySelector(`[data-id="${CSS.escape(call.id)}"]`);
+  playCall(call,row,true);
+}
+
+function playCall(call,row,auto){
+  document.querySelectorAll('.rrow.playing').forEach(r=>r.classList.remove('playing'));
+  if(row) row.classList.add('playing');
+  mhzPlaying=true;
+  audio.src=call.url;
+  const label=call.tgName||('TG '+call.tg);
+  $('#nowplaying').textContent='📟 '+label+' · '+fmtTime(call.time);
+  audio.play().catch(e=>{
+    $('#nowplaying').textContent='autoplay blocked — press ▶ on the player';
+  });
+}
+
+audio.addEventListener('ended',()=>{
+  document.querySelectorAll('.rrow.playing').forEach(r=>r.classList.remove('playing'));
+  // continue the police queue if that's what's active
+  if(mhzActiveDomain()) playNext(); else { mhzPlaying=false; $('#nowplaying').textContent='— idle —'; }
+});
+audio.addEventListener('error',()=>{ if(mhzActiveDomain()){ mhzPlaying=false; playNext(); } });
+function mhzActiveDomain(){ return $('#pane-police').classList.contains('active') && mhzCur; }
+
+$('#mhz-sys').addEventListener('change',e=>{ if(e.target.value){ mhzScan=false; $('#mhz-scan').classList.remove('on'); selectSystem(e.target.value);} });
+$('#mhz-scan').addEventListener('click',()=>{
+  mhzScan=!mhzScan; $('#mhz-scan').classList.toggle('on',mhzScan);
+  if(mhzScan){ if(!mhzSystems.length){toast('systems not loaded','warn');mhzScan=false;return;}
+    mhzScanIdx=0; advanceScan(true); toast('scan mode: cycling systems','warn'); }
+});
+function advanceScan(force){
+  if(!mhzScan) return;
+  // move to next system when the current one runs dry
+  mhzScanIdx=(mhzScanIdx+1)%mhzSystems.length;
+  const sys=mhzSystems[mhzScanIdx];
+  $('#mhz-sys').value=sys.shortName;
+  selectSystem(sys.shortName);
+}
+
+/* =====================================================================
+   8. RADIO DOMAIN 2 — KiwiSDR HF nodes (curated) -> pins + new-tab tuner
+   ===================================================================== */
+function buildHF(){
+  const list=$('#hf-list');
+  KIWI.forEach(k=>{                       // k = [name, host, [lat,lon], locLabel]
+    const row=el('div','rrow');
+    row.innerHTML=`<div class="rmain"><b>${escapeHtml(k[0])}</b>
+      <span>${escapeHtml(k[3])} · HF 0–30 MHz</span></div><button class="btn sm">↗</button>`;
+    row.onclick=()=>{
+      map.flyTo({center:[k[2][1],k[2][0]],zoom:5});
+      window.open('http://'+k[1],'_blank');   // open the node's native :8073 tuner
+    };
+    list.appendChild(row);
+  });
+}
+
+/* =====================================================================
+   9. RADIO DOMAIN 3 — LiveATC aviation ATC
+   Try inline <audio> (media isn't CORS-gated); ↗ opens LiveATC's player
+   as fallback when they reject the hotlink by Referer.
+   ===================================================================== */
+let atcPlaying=null;
+function buildATC(){
+  const list=$('#atc-list');
+  LIVEATC.forEach(a=>{
+    const row=el('div','rrow');
+    row.innerHTML=`<div class="rmain"><b>${escapeHtml(a.name)}</b>
+      <span>${escapeHtml(a.icao)} · ${escapeHtml(a.desc)}</span></div>
+      <button class="btn sm play">▶</button>
+      <button class="btn sm" title="open LiveATC player">↗</button>`;
+    const [playBtn,extBtn]=row.querySelectorAll('button');
+    playBtn.onclick=(e)=>{e.stopPropagation();playATC(a,row);};
+    extBtn.onclick=(e)=>{e.stopPropagation();window.open(a.page,'_blank');};
+    row.onclick=()=>map.flyTo({center:[a.lon,a.lat],zoom:8});
+    list.appendChild(row);
+  });
+}
+function playATC(a,row){
+  document.querySelectorAll('#atc-list .rrow.playing').forEach(r=>r.classList.remove('playing'));
+  row.classList.add('playing');
+  mhzPlaying=false; // hand the <audio> element over to ATC
+  atcPlaying=a;
+  audio.src=a.stream;
+  $('#nowplaying').textContent='🛬 '+a.name+' ('+a.icao+')';
+  audio.play().catch(()=>{
+    $('#nowplaying').innerHTML='LiveATC hotlink blocked — opening their player ↗';
+    window.open(a.page,'_blank');
+  });
+  // if the stream 404s/blocks quickly, fall back to their page
+  const t=setTimeout(()=>{ if(audio.readyState===0 && atcPlaying===a){
+    $('#nowplaying').innerHTML='stream stalled — use ↗ for LiveATC player'; } },6000);
+  audio.addEventListener('playing',()=>clearTimeout(t),{once:true});
+}
+
+/* =====================================================================
+   10. RADIO NODE MAP LAYERS (KiwiSDR + LiveATC pins) + tab switching
+   ===================================================================== */
+function initRadioPins(){
+  const kiwiFC={type:'FeatureCollection',features:KIWI.map(k=>({
+    type:'Feature',geometry:{type:'Point',coordinates:[k[2][1],k[2][0]]},
+    properties:{_kind:'kiwi',name:k[0],host:k[1],loc:k[3]}}))};
+  const atcFC={type:'FeatureCollection',features:LIVEATC.map(a=>({
+    type:'Feature',geometry:{type:'Point',coordinates:[a.lon,a.lat]},
+    properties:{_kind:'atc',name:a.name,icao:a.icao,page:a.page,stream:a.stream}}))};
+
+  map.addSource('src-kiwi',{type:'geojson',data:kiwiFC});
+  map.addLayer({id:'ly-kiwi',type:'circle',source:'src-kiwi',
+    paint:{'circle-radius':5,'circle-color':'#37e0c9','circle-opacity':0.9,
+      'circle-stroke-color':'#0a0e14','circle-stroke-width':1.5}});
+  map.addSource('src-atc',{type:'geojson',data:atcFC});
+  map.addLayer({id:'ly-atc',type:'circle',source:'src-atc',
+    paint:{'circle-radius':5,'circle-color':'#ffb454','circle-opacity':0.9,
+      'circle-stroke-color':'#0a0e14','circle-stroke-width':1.5}});
+
+  map.on('click','ly-kiwi',e=>{
+    const p=e.features[0].properties;
+    new maplibregl.Popup().setLngLat(e.features[0].geometry.coordinates)
+      .setHTML(`<div class="pop"><h4>📻 ${escapeHtml(p.name)}</h4>
+        <div class="kv"><span>loc</span>${escapeHtml(p.loc)}</div>
+        <div class="lnk"><a target="_blank" href="http://${escapeHtml(p.host)}">open KiwiSDR tuner ↗</a></div></div>`).addTo(map);
+  });
+  map.on('click','ly-atc',e=>{
+    const p=e.features[0].properties;
+    new maplibregl.Popup().setLngLat(e.features[0].geometry.coordinates)
+      .setHTML(`<div class="pop"><h4>🛬 ${escapeHtml(p.name)}</h4>
+        <div class="kv"><span>icao</span>${escapeHtml(p.icao)}</div>
+        <div class="lnk"><a target="_blank" href="${escapeHtml(p.page)}">LiveATC player ↗</a></div></div>`).addTo(map);
+  });
+  ['ly-kiwi','ly-atc'].forEach(l=>{
+    map.on('mouseenter',l,()=>map.getCanvas().style.cursor='pointer');
+    map.on('mouseleave',l,()=>map.getCanvas().style.cursor='');
+  });
+
+  // radio-node toggles in the left panel
+  const g=$('#grp-radio');
+  [['kiwi','KiwiSDR HF nodes','#37e0c9',KIWI.length],
+   ['atc','LiveATC airports','#ffb454',LIVEATC.length]].forEach(([id,label,color,n])=>{
+    const row=el('div','layer');
+    row.innerHTML=`<input type="checkbox" id="ck-${id}" checked>
+      <span class="sw" style="color:${color};background:${color}"></span>
+      <label for="ck-${id}">${label}</label><span class="cnt">${n}</span>`;
+    g.appendChild(row);
+    row.querySelector('input').addEventListener('change',ev=>{
+      map.setLayoutProperty('ly-'+id,'visibility',ev.target.checked?'visible':'none');
+      row.classList.toggle('off',!ev.target.checked);
+    });
+  });
+}
+
+// radio tab switching
+document.querySelectorAll('#radio-tabs button').forEach(b=>{
+  b.onclick=()=>{
+    document.querySelectorAll('#radio-tabs button').forEach(x=>x.classList.remove('active'));
+    document.querySelectorAll('.rpane').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+    $('#pane-'+b.dataset.t).classList.add('active');
+  };
+});
+
+/* =====================================================================
+   11. STATIC DATA — curated, keyless (no fetch): volcanoes, KiwiSDR, ATC
+   ===================================================================== */
+// [name, lat, lon, summit_m]
+const VOLCANOES=[
+  ['Etna',37.751,14.993,3357],['Vesuvius',40.821,14.426,1281],['Stromboli',38.789,15.213,924],
+  ['Santorini',36.404,25.396,367],['Eyjafjallajökull',63.633,-19.633,1651],['Hekla',63.983,-19.700,1491],
+  ['Grímsvötn',64.416,-17.316,1725],['Mount St. Helens',46.200,-122.180,2549],['Kilauea',19.421,-155.287,1247],
+  ['Mauna Loa',19.475,-155.608,4170],['Mount Rainier',46.853,-121.760,4392],['Yellowstone',44.430,-110.670,2805],
+  ['Popocatépetl',19.023,-98.622,5426],['Colima',19.514,-103.620,3850],['Fuego',14.473,-90.880,3763],
+  ['Nevado del Ruiz',4.892,-75.324,5279],['Cotopaxi',-0.677,-78.436,5911],['Villarrica',-39.420,-71.930,2847],
+  ['Sabancaya',-15.787,-71.857,5960],['Erebus',-77.530,167.170,3794],['Nyiragongo',-1.520,29.250,3470],
+  ['Ol Doinyo Lengai',-2.764,35.914,2962],['Piton de la Fournaise',-21.244,55.708,2632],
+  ['Fuji',35.361,138.727,3776],['Sakurajima',31.585,130.657,1117],['Aso',32.884,131.104,1592],
+  ['Taal',14.002,120.993,311],['Mayon',13.257,123.685,2462],['Pinatubo',15.130,120.350,1486],
+  ['Merapi',-7.540,110.446,2910],['Krakatau',-6.102,105.423,813],['Semeru',-8.108,112.922,3657],
+  ['Agung',-8.343,115.508,2997],['Tambora',-8.250,118.000,2850],['Rinjani',-8.420,116.470,3726],
+  ['White Island',-37.520,177.180,321],['Ruapehu',-39.281,175.564,2797],['Ambrym',-16.250,168.120,1334],
+  ['Yasur',-19.532,169.447,361],['Klyuchevskoy',56.056,160.642,4754],['Shiveluch',56.653,161.360,3283],
+  ['Bezymianny',55.972,160.595,2882],['Karymsky',54.049,159.443,1536],['Bardarbunga',64.633,-17.516,2009]
+];
+// [name, host(:port opens tuner), [lat,lon], locationLabel, port?]
+const KIWI=[
+  ['G8JNJ Rural UK','sdr.g8jnj.net',[51.05,-2.6],'Somerset, UK'],
+  ['Northern Utah SDR','sdrutah.org',[41.7,-111.8],'Utah, USA'],
+  ['KFS Half Moon Bay','kfs.gr:8074',[37.46,-122.44],'California, USA'],
+  ['SM0TGU Sweden','sm0tgu.no-ip.org:8073',[59.3,18.0],'Stockholm, SE'],
+  ['DL0AO Germany','dl0ao.ddns.net:8073',[49.5,11.0],'Bavaria, DE'],
+  ['ZL Kaikoura NZ','kiwisdr.owdjim.gen.nz:8073',[-42.4,173.68],'Kaikoura, NZ'],
+  ['VE6JY Alberta','ve6jy.ddns.net:8073',[53.3,-113.3],'Alberta, CA'],
+  ['JA Tokyo','nagoya.ddns.net:8073',[35.68,139.76],'Tokyo, JP'],
+  ['ZS Cape Town','za.kiwisdr.com:8073',[-33.9,18.4],'Cape Town, ZA'],
+  ['VK Sydney','sdr.vk2.org:8073',[-33.87,151.2],'Sydney, AU'],
+  ['PY Brazil','py2wm.ddns.net:8073',[-23.5,-46.6],'São Paulo, BR'],
+  ['LU Argentina','lu.kiwisdr.com:8073',[-34.6,-58.4],'Buenos Aires, AR'],
+  ['OH Finland','oh6bg.kiwisdr.com:8073',[63.1,21.6],'Vaasa, FI'],
+  ['9V Singapore','sg.kiwisdr.com:8073',[1.35,103.8],'Singapore'],
+  ['4X Israel','il.kiwisdr.com:8073',[32.08,34.78],'Tel Aviv, IL'],
+  ['VU India','vu.kiwisdr.com:8073',[19.07,72.88],'Mumbai, IN'],
+  ['W Alaska','ak.kiwisdr.com:8073',[61.2,-149.9],'Anchorage, USA'],
+  ['LA Norway','la.kiwisdr.com:8073',[59.9,10.7],'Oslo, NO'],
+  ['EA Spain','ea.kiwisdr.com:8073',[40.4,-3.7],'Madrid, ES'],
+  ['HB9 Switzerland','hb9.kiwisdr.com:8073',[47.4,8.5],'Zürich, CH']
+];
+// LiveATC feeds. stream = best-effort direct mp3; page = official player fallback.
+const LIVEATC=[
+  {name:'New York KennedyTwr',icao:'KJFK',lat:40.64,lon:-73.78,desc:'JFK Tower',
+    stream:'https://s1-bos.liveatc.net/kjfk_twr',page:'https://www.liveatc.net/hlisten.php?mount=kjfk_twr&icao=kjfk'},
+  {name:'Los Angeles Twr',icao:'KLAX',lat:33.94,lon:-118.41,desc:'LAX Tower',
+    stream:'https://s1-fmt2.liveatc.net/klax1',page:'https://www.liveatc.net/hlisten.php?mount=klax1&icao=klax'},
+  {name:'Chicago OHare',icao:'KORD',lat:41.98,lon:-87.90,desc:"O'Hare Tower",
+    stream:'https://s1-bos.liveatc.net/kord_twr',page:'https://www.liveatc.net/hlisten.php?mount=kord_twr&icao=kord'},
+  {name:'Atlanta Twr',icao:'KATL',lat:33.64,lon:-84.43,desc:'Hartsfield Tower',
+    stream:'https://s1-bos.liveatc.net/katl_twr',page:'https://www.liveatc.net/hlisten.php?mount=katl_twr&icao=katl'},
+  {name:'London Heathrow',icao:'EGLL',lat:51.47,lon:-0.46,desc:'Heathrow Tower',
+    stream:'https://s1-fmt2.liveatc.net/egll_twr',page:'https://www.liveatc.net/hlisten.php?mount=egll_twr&icao=egll'},
+  {name:'Boston Logan',icao:'KBOS',lat:42.36,lon:-71.01,desc:'Logan Tower',
+    stream:'https://s1-bos.liveatc.net/kbos_twr',page:'https://www.liveatc.net/hlisten.php?mount=kbos_twr&icao=kbos'},
+  {name:'San Francisco',icao:'KSFO',lat:37.62,lon:-122.38,desc:'SFO Tower',
+    stream:'https://s1-fmt2.liveatc.net/ksfo_twr',page:'https://www.liveatc.net/hlisten.php?mount=ksfo_twr&icao=ksfo'},
+  {name:'Miami Twr',icao:'KMIA',lat:25.79,lon:-80.29,desc:'Miami Tower',
+    stream:'https://s1-bos.liveatc.net/kmia_twr',page:'https://www.liveatc.net/hlisten.php?mount=kmia_twr&icao=kmia'},
+  {name:'Dallas FortWorth',icao:'KDFW',lat:32.90,lon:-97.04,desc:'DFW Tower',
+    stream:'https://s1-fmt2.liveatc.net/kdfw_twr',page:'https://www.liveatc.net/hlisten.php?mount=kdfw_twr&icao=kdfw'},
+  {name:'Toronto Pearson',icao:'CYYZ',lat:43.68,lon:-79.63,desc:'Pearson Tower',
+    stream:'https://s1-bos.liveatc.net/cyyz_twr',page:'https://www.liveatc.net/hlisten.php?mount=cyyz_twr&icao=cyyz'},
+  {name:'Amsterdam Schiphol',icao:'EHAM',lat:52.31,lon:4.76,desc:'Schiphol',
+    stream:'https://s1-fmt2.liveatc.net/eham_app',page:'https://www.liveatc.net/hlisten.php?mount=eham_app&icao=eham'},
+  {name:'Sydney Kingsford',icao:'YSSY',lat:-33.95,lon:151.18,desc:'Sydney Tower',
+    stream:'https://s1-fmt2.liveatc.net/yssy_twr',page:'https://www.liveatc.net/hlisten.php?mount=yssy2&icao=yssy'}
+];
+
+/* =====================================================================
+   12. BOOT
+   ===================================================================== */
+map.on('load',()=>{
+  buildLayerPanel();
+  LAYERS.forEach(cfg=>{ if(!cfg.defaultOff) scheduleLayer(cfg); });
+  initRadioPins();
+  buildHF();
+  buildATC();
+  loadSystems();
+  loadKp(); setInterval(loadKp,120000);
+  loadKEV();
+  toast('listenhear online · 3 audio domains + '+LAYERS.length+' map feeds','');
+});
+</script>
+</body>
+</html>
