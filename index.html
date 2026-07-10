@@ -99,7 +99,9 @@
   .layer .sw{width:10px;height:10px;border-radius:50%;flex:0 0 auto;box-shadow:0 0 7px currentColor}
   .layer label{flex:1;cursor:pointer;user-select:none;-webkit-user-select:none}
   .layer .cnt{font-size:10px;color:var(--ink-dim);min-width:30px;text-align:right}
-  .layer input{accent-color:var(--accent);cursor:pointer;width:16px;height:16px;flex:0 0 auto}
+  .layer input{accent-color:#8a99a8;cursor:pointer;width:16px;height:16px;flex:0 0 auto}
+  .layer .pic{width:20px;height:20px;flex:0 0 auto;object-fit:contain}
+  .layer .pic.emj{display:flex;align-items:center;justify-content:center;font-size:15px;line-height:1}
   .layer.off{opacity:.5}
   .layer .warnflag{color:var(--warn);font-size:11px;cursor:help}
   #panel-foot{padding:9px 12px;border-top:1px solid var(--line);font-size:10px;
@@ -263,10 +265,11 @@
   /* ---------- mobile bottom navigation + sheets ---------- */
   #mnav{display:none}
   @media (max-width:900px), (pointer:coarse) and (max-width:1100px){
+    /* map stops at the nav bar so no tiles bleed under it */
+    #map{bottom:calc(54px + var(--sa-b))}
     #mnav{position:absolute;left:0;right:0;bottom:0;z-index:30;display:flex;
       height:calc(54px + var(--sa-b));padding:0 var(--sa-r) var(--sa-b) var(--sa-l);
-      background:#000000f5;border-top:1px solid var(--line);
-      backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+      background:#000;border-top:1px solid var(--line)}
     #mnav button{flex:1;background:none;border:none;color:var(--ink-dim);
       font-size:10px;letter-spacing:.6px;display:flex;flex-direction:column;
       align-items:center;justify-content:center;gap:3px;min-height:44px}
@@ -575,17 +578,40 @@ function shapeIcon(color,pts,px){
   x.closePath(); x.fill(); x.stroke();
   return x.getImageData(0,0,s,s);
 }
+// same silhouette as a data-URL, for the OBJECTS panel (matches the map icon)
+function shapeURL(color,pts){
+  const s=40,c=document.createElement('canvas');c.width=c.height=s;
+  const x=c.getContext('2d');x.translate(s/2,s/2);const u=s/32;
+  x.fillStyle=color;x.strokeStyle='rgba(3,8,14,.7)';x.lineWidth=u*1.3;x.lineJoin='round';
+  x.beginPath();pts.forEach((p,i)=>{const X=p[0]*u,Y=p[1]*u;i?x.lineTo(X,Y):x.moveTo(X,Y);});
+  x.closePath();x.fill();x.stroke();return c.toDataURL();
+}
+// OBJECTS-panel icon HTML that mirrors the on-map marker for each layer
+function panelIconHTML(cfg){
+  const ic=cfg.icon||'';
+  if(ic.startsWith('ac-')) return `<img class="pic" src="${shapeURL(cfg.color,PLANE)}">`;
+  if(ic==='ship')      return `<img class="pic" src="${shapeURL(cfg.color,SHIP)}">`;
+  if(ic==='veh-train') return `<img class="pic" src="${shapeURL(cfg.color,TRAIN)}">`;
+  const em={'ico-fire':'🔥','ico-disaster':'⚠️','ico-iss':'🛰️','ico-volcano':'🌋',
+    'ico-launch':'🚀','ico-antenna':'📡','ico-cam':'📷','ico-news':'📰'}[ic];
+  if(em) return `<span class="pic emj">${em}</span>`;
+  return `<span class="sw" style="color:${cfg.color};background:${cfg.color}"></span>`;
+}
 // plane silhouette, nose up
 const PLANE=[[0,-15],[-1.6,-6],[-13,3],[-13,6],[-1.6,3.5],[-1.6,11],[-5,14.5],[-5,16],[0,14],
   [5,16],[5,14.5],[1.6,11],[1.6,3.5],[13,6],[13,3],[1.6,-6]];
 // ship hull, bow up
 const SHIP=[[0,-15],[5.5,-5],[5.5,11],[3,15],[-3,15],[-5.5,11],[-5.5,-5]];
+// train / locomotive, nose up
+const TRAIN=[[0,-14],[5,-9],[6,-8],[6,12],[4,15],[-4,15],[-6,12],[-6,-8],[-5,-9]];
 function addImg(name,data){ if(!gl.hasImage(name)) gl.addImage(name,data,{pixelRatio:2}); }
+const YEL='#ffce4d';
 function registerIcons(){
   addImg('ac-mil',   shapeIcon('#ff4455',PLANE));   // military = red
-  addImg('ac-near',  shapeIcon('#2fe07a',PLANE));   // civil aircraft = green
-  addImg('ac-sos',   shapeIcon('#ff2d55',PLANE,44));
-  addImg('ship',     shapeIcon('#37e0a8',SHIP));
+  addImg('ac-near',  shapeIcon(YEL,PLANE));         // civil aircraft = yellow
+  addImg('ac-sos',   shapeIcon('#ff2d55',PLANE,44));// emergency = red
+  addImg('ship',     shapeIcon(YEL,SHIP));          // ships = yellow
+  addImg('veh-train',shapeIcon(YEL,TRAIN));         // trains = yellow
   const E={'ico-fire':'🔥','ico-volcano':'🌋','ico-cyclone':'🌀','ico-flood':'🌊',
     'ico-quake':'🟠','ico-drought':'🏜️','ico-ice':'🧊','ico-storm':'⛈️','ico-dust':'🌫️',
     'ico-launch':'🚀','ico-antenna':'📡','ico-radio':'📻','ico-atc':'🛬','ico-iss':'🛰️',
@@ -629,7 +655,7 @@ defLayer({
 });
 
 defLayer({
-  id:'nearair', label:'Aircraft', color:'#2fe07a', group:'air', refresh:30,
+  id:'nearair', label:'Aircraft', color:'#ffce4d', group:'air', refresh:30,
   icon:'ac-near', rotate:true, iconSize:0.6,
   // all civil (non-military) aircraft in the current map view (refetched on pan)
   loader: async ()=>{
@@ -675,7 +701,7 @@ defLayer({
 });
 
 defLayer({
-  id:'ships', label:'Ships / AIS', color:'#48d1a0', group:'surface', refresh:60, defaultOff:true,
+  id:'ships', label:'Ships / AIS', color:'#ffce4d', group:'surface', refresh:60, defaultOff:true,
   icon:'ship', rotate:true, iconSize:0.5,
   note:'Digitraffic AIS is keyless & global-schema but covers the Baltic / Gulf of Finland only — the honest keyless ship feed (global AIS all needs a paid key).',
   loader: async ()=>{
@@ -756,7 +782,7 @@ defLayer({
 });
 
 defLayer({
-  id:'amtrak', label:'Amtrak trains', color:'#4be08a', group:'surface', refresh:60, defaultOff:true, icon:'ico-train', iconSize:0.5,
+  id:'amtrak', label:'Amtrak trains', color:'#ffce4d', group:'surface', refresh:60, defaultOff:true, icon:'veh-train', iconSize:0.6,
   loader: async ()=>{
     const j=await getJSON('https://api-v3.amtraker.com/v3/trains');
     const feats=[];
@@ -1128,9 +1154,9 @@ function buildLayerPanel(){
     row.id='row-'+cfg.id;
     row.innerHTML=`
       <input type="checkbox" id="ck-${cfg.id}" ${cfg.defaultOff?'':'checked'}>
-      <span class="sw" style="color:${cfg.color};background:${cfg.color}"></span>
+      ${panelIconHTML(cfg)}
       <label for="ck-${cfg.id}">${cfg.label}</label>
-      ${cfg.note?`<span class="warnflag" title="${escapeHtml(cfg.note)}">⚠</span>`:''}
+      ${cfg.note?`<span class="warnflag" title="${escapeHtml(cfg.note)}">ⓘ</span>`:''}
       <span class="cnt">–</span>`;
     $(groups[cfg.group]).appendChild(row);
     row.querySelector('input').addEventListener('change',ev=>{
@@ -1591,7 +1617,9 @@ async function loadSystems(){
 }
 
 function selectSystem(shortName){
-  mhzCur=shortName; mhzSince=0; mhzSeen.clear(); mhzQueue=[];
+  // start from the last ~20 min so we get RECENT calls, not the oldest in the
+  // archive (time=0 returns calls newer-than-epoch = the very first ones).
+  mhzCur=shortName; mhzSince=Date.now()-20*60*1000; mhzSeen.clear(); mhzQueue=[];
   $('#mhz-list').innerHTML='';
   const s=mhzSystems.find(x=>x.shortName===shortName);
   $('#mhz-status').innerHTML='<span class="spin"></span> '+
@@ -1749,16 +1777,52 @@ function buildHF(){
   $('#t-nearest').onclick=kwNearest;
   $('#t-scan').onclick=kwScan;
   kwSetMode('am'); kwSetFreq(7100);
-
-  // receiver list
-  const list=$('#hf-list');
-  KIWI.forEach(k=>{                       // k = [name, host, [lat,lon], locLabel]
+  rebuildHFList();
+}
+// receiver list (nearest-first when located; capped for DOM performance)
+function rebuildHFList(){
+  const list=$('#hf-list'); if(!list) return;
+  list.innerHTML='';
+  let arr=KIWI_LIST.slice();
+  if(USER.lat!=null) arr.sort((a,b)=>havKm(USER.lat,USER.lon,a[2][0],a[2][1])-havKm(USER.lat,USER.lon,b[2][0],b[2][1]));
+  arr.slice(0,300).forEach(k=>{
     const row=el('div','rrow'); row.dataset.host=k[1];
+    const dist=USER.lat!=null?' · '+fmtMi(havKm(USER.lat,USER.lon,k[2][0],k[2][1])):'';
     row.innerHTML=`<div class="rmain"><b>${escapeHtml(k[0])}</b>
-      <span>${escapeHtml(k[3])} · HF 0–30 MHz</span></div><button class="btn sm">tune</button>`;
-    row.onclick=()=>{ gl.flyTo({center:[k[2][1],k[2][0]],zoom:5}); kwSelect(k[1],k[0]); };
+      <span>${escapeHtml(k[3]||'HF 0–30 MHz')}${dist}</span></div><button class="btn sm">tune</button>`;
+    row.onclick=()=>{ gl.flyTo({center:[k[2][1],k[2][0]],zoom:6}); kwSelect(k[1],k[0]); };
     list.appendChild(row);
   });
+}
+// full public KiwiSDR directory via linkfanel (a global-assigning JS file, so
+// loadable by <script> tag without CORS). Falls back to the curated list.
+function loadKiwiDirectory(){
+  const kiwiRow=e=>{
+    const g=/(-?\d+\.?\d*)[,\s]+(-?\d+\.?\d*)/.exec(e.gps||''); if(!g) return null;
+    const lat=+g[1],lon=+g[2];
+    if(!isFinite(lat)||!isFinite(lon)||(Math.abs(lat)<0.01&&Math.abs(lon)<0.01)) return null;
+    if(e.offline==='yes'||e.status==='inactive') return null;
+    const host=String(e.url||'').replace(/^https?:\/\//,'').replace(/\/$/,''); if(!host) return null;
+    const clean=s=>String(s||'').replace(/[^\x20-\x7E]/g,'').trim();
+    const name=clean((e.name||host).split('|')[0]).slice(0,40)||host;
+    return [name,host,[lat,lon],clean((e.name||'').split('|').slice(-1)[0]).slice(0,28)];
+  };
+  const s=document.createElement('script');
+  s.src='http://rx.linkfanel.net/kiwisdr_com.js';
+  s.onload=()=>{ try{
+    const list=(window.kiwisdr_com||[]).map(kiwiRow).filter(Boolean);
+    if(list.length<50) return;
+    KIWI_LIST=list;
+    const src=gl.getSource('src-kiwi');
+    if(src) src.setData({type:'FeatureCollection',features:KIWI_LIST.map(k=>({type:'Feature',
+      geometry:{type:'Point',coordinates:[k[2][1],k[2][0]]},
+      properties:{_kind:'kiwi',name:k[0],host:k[1],loc:k[3]}}))});
+    rebuildHFList();
+    const cnt=$('#cnt-kiwi'); if(cnt) cnt.textContent=KIWI_LIST.length;
+    toast('KIWISDR DIRECTORY · '+KIWI_LIST.length+' RECEIVERS','');
+  }catch(err){ console.warn('[kiwi dir]',err.message); } };
+  s.onerror=()=>console.warn('[kiwi dir] blocked (https/offline) — using curated list');
+  document.head.appendChild(s);
 }
 function kwSelect(host,name){
   if(KW.live) kwStop();
@@ -1872,7 +1936,7 @@ function kwStop(){ if(KW.ws){ try{KW.ws.close();}catch(e){} } kwCleanup();
 function kwNearest(){
   if(USER.lat==null){ toast('NO POSITION FIX — TAP ⌖ ME','warn'); return; }
   let best=null,bd=Infinity;
-  KIWI.forEach(k=>{ const d=havKm(USER.lat,USER.lon,k[2][0],k[2][1]); if(d<bd){bd=d;best=k;} });
+  KIWI_LIST.forEach(k=>{ const d=havKm(USER.lat,USER.lon,k[2][0],k[2][1]); if(d<bd){bd=d;best=k;} });
   if(!best) return;
   gl.flyTo({center:[best[2][1],best[2][0]],zoom:5});
   kwSelect(best[1],best[0]); kwConnect();
@@ -1972,7 +2036,7 @@ function initRadar(){
   const g=$('#grp-hazard');
   const row=el('div','layer off');
   row.innerHTML=`<input type="checkbox" id="ck-radar">
-    <span class="sw" style="color:#3fa9ff;background:#3fa9ff"></span>
+    <span class="pic emj">🌧️</span>
     <label for="ck-radar">Weather radar</label><span class="cnt">◐</span>`;
   g.appendChild(row);
   row.querySelector('input').addEventListener('change',ev=>{
@@ -2046,7 +2110,7 @@ async function loadMETARs(){
    10. RADIO NODE PINS on the map (KiwiSDR + LiveATC)
    ===================================================================== */
 function initRadioPins(){
-  const kiwiFC={type:'FeatureCollection',features:KIWI.map(k=>({
+  const kiwiFC={type:'FeatureCollection',features:KIWI_LIST.map(k=>({
     type:'Feature',geometry:{type:'Point',coordinates:[k[2][1],k[2][0]]},
     properties:{_kind:'kiwi',name:k[0],host:k[1],loc:k[3]}}))};
   const atcFC={type:'FeatureCollection',features:LIVEATC.map(a=>({
@@ -2083,12 +2147,12 @@ function initRadioPins(){
   });
 
   const g=$('#grp-signals');
-  [['kiwi','KiwiSDR receivers','#2fe07a',KIWI.length],
-   ['atc','LiveATC towers','#ff4455',LIVEATC.length]].forEach(([id,label,color,n])=>{
+  [['kiwi','KiwiSDR receivers','📻',KIWI_LIST.length],
+   ['atc','LiveATC towers','🛬',LIVEATC.length]].forEach(([id,label,emj,n])=>{
     const row=el('div','layer');
     row.innerHTML=`<input type="checkbox" id="ck-${id}" checked>
-      <span class="sw" style="color:${color};background:${color}"></span>
-      <label for="ck-${id}">${label}</label><span class="cnt">${n}</span>`;
+      <span class="pic emj">${emj}</span>
+      <label for="ck-${id}">${label}</label><span class="cnt" id="cnt-${id}">${n}</span>`;
     g.appendChild(row);
     row.querySelector('input').addEventListener('change',ev=>{
       gl.setLayoutProperty('ly-'+id,'visibility',ev.target.checked?'visible':'none');
@@ -2189,7 +2253,22 @@ const CAMS=[
   ['Shibuya Crossing, Tokyo',35.659,139.700,'https://www.youtube.com/watch?v=Bfw2mgQ0f1s'],
   ['Old Faithful, Yellowstone',44.460,-110.828,'https://www.nps.gov/yell/learn/photosmultimedia/webcams.htm'],
   ['Niagara Falls',43.083,-79.075,'https://www.earthcam.com/usa/newyork/niagarafalls/?cam=niagarafalls'],
-  ['Venice Beach, CA',33.985,-118.469,'https://www.earthcam.com/usa/california/venice/?cam=venicebeach']
+  ['Venice Beach, CA',33.985,-118.469,'https://www.earthcam.com/usa/california/venice/?cam=venicebeach'],
+  ['Chicago, IL',41.889,-87.624,'https://www.earthcam.com/usa/illinois/chicago/?cam=chicago_hd'],
+  ['Nashville, TN',36.161,-86.778,'https://www.earthcam.com/usa/tennessee/nashville/?cam=nashville'],
+  ['Key West, FL',24.556,-81.805,'https://www.earthcam.com/usa/florida/keywest/?cam=sloppyjoes'],
+  ['Dublin, Ireland',53.347,-6.259,'https://www.earthcam.com/world/ireland/dublin/?cam=templebar'],
+  ['London, Tower Bridge',51.505,-0.075,'https://www.skylinewebcams.com/en/webcam/united-kingdom/england/london/tower-bridge.html'],
+  ['Paris, Eiffel Tower',48.858,2.294,'https://www.skylinewebcams.com/en/webcam/france/ile-de-france/paris/tour-eiffel.html'],
+  ['Rome, Trevi',41.901,12.483,'https://www.skylinewebcams.com/en/webcam/italia/lazio/roma/fontana-di-trevi.html'],
+  ['Barcelona, Sagrada',41.404,2.174,'https://www.skylinewebcams.com/en/webcam/espana/cataluna/barcelona/sagrada-familia.html'],
+  ['Dubai, Marina',25.080,55.140,'https://www.skylinewebcams.com/en/webcam/united-arab-emirates/dubai/dubai/dubai-marina.html'],
+  ['Sydney, Harbour',-33.857,151.215,'https://www.skylinewebcams.com/en/webcam/australia/new-south-wales/sydney/sydney-harbour.html'],
+  ['Rio de Janeiro',-22.951,-43.210,'https://www.skylinewebcams.com/en/webcam/brasil/rio-de-janeiro/rio-de-janeiro/copacabana.html'],
+  ['Jerusalem, Western Wall',31.777,35.234,'https://www.skylinewebcams.com/en/webcam/israel/jerusalem-district/jerusalem/western-wall.html'],
+  ['Reykjavik, Iceland',64.146,-21.942,'https://www.skylinewebcams.com/en/webcam/island/hofudborgarsvaedid/reykjavik/reykjavik.html'],
+  ['Venice, Rialto',45.438,12.336,'https://www.skylinewebcams.com/en/webcam/italia/veneto/venezia/canal-grande.html'],
+  ['Amsterdam, Canals',52.373,4.890,'https://www.skylinewebcams.com/en/webcam/nederland/noord-holland/amsterdam/amsterdam.html']
 ];
 // [name, lat, lon, summit_m] — Smithsonian GVP Holocene subset
 const VOLCANOES=[
@@ -2233,6 +2312,7 @@ const KIWI=[
   ['EA Spain','ea.kiwisdr.com:8073',[40.4,-3.7],'Madrid, ES'],
   ['HB9 Switzerland','hb9.kiwisdr.com:8073',[47.4,8.5],'Zürich, CH']
 ];
+let KIWI_LIST=KIWI; // replaced by the full public directory at boot
 // LiveATC feeds. stream = best-effort direct mp3; page = official player fallback.
 const LIVEATC=[
   {name:'New York Kennedy',icao:'KJFK',lat:40.64,lon:-73.78,desc:'Tower',
@@ -2274,7 +2354,25 @@ const LIVEATC=[
   {name:'Tokyo Haneda',icao:'RJTT',lat:35.55,lon:139.78,desc:'Tower',
     stream:'https://s1-fmt2.liveatc.net/rjtt_twr',page:'https://www.liveatc.net/hlisten.php?mount=rjtt_twr&icao=rjtt'},
   {name:'Sydney Kingsford',icao:'YSSY',lat:-33.95,lon:151.18,desc:'Tower',
-    stream:'https://s1-fmt2.liveatc.net/yssy_twr',page:'https://www.liveatc.net/hlisten.php?mount=yssy2&icao=yssy'}
+    stream:'https://s1-fmt2.liveatc.net/yssy_twr',page:'https://www.liveatc.net/hlisten.php?mount=yssy2&icao=yssy'},
+  // extended set — stream is a best-effort _twr guess, ↗ always opens LiveATC's
+  // search page for the airport (works regardless of exact mount name)
+  ...[['Newark','KEWR',40.69,-74.17],['LaGuardia','KLGA',40.78,-73.87],['Washington Dulles','KIAD',38.95,-77.46],
+   ['Washington Reagan','KDCA',38.85,-77.04],['Philadelphia','KPHL',39.87,-75.24],['Detroit','KDTW',42.21,-83.35],
+   ['Minneapolis','KMSP',44.88,-93.22],['Charlotte','KCLT',35.21,-80.94],['Houston Bush','KIAH',29.99,-95.34],
+   ['Salt Lake City','KSLC',40.79,-111.98],['Portland','KPDX',45.59,-122.60],['San Diego','KSAN',32.73,-117.19],
+   ['Orlando','KMCO',28.43,-81.31],['Fort Lauderdale','KFLL',26.07,-80.15],['Vancouver','CYVR',49.19,-123.18],
+   ['Montreal','CYUL',45.47,-73.74],['Calgary','CYYC',51.11,-114.02],['Mexico City','MMMX',19.44,-99.07],
+   ['Frankfurt','EDDF',50.04,8.56],['Munich','EDDM',48.35,11.79],['Paris CDG','LFPG',49.01,2.55],
+   ['Madrid','LEMD',40.47,-3.56],['Barcelona','LEBL',41.30,2.08],['Rome Fiumicino','LIRF',41.80,12.24],
+   ['Vienna','LOWW',48.11,16.57],['Copenhagen','EKCH',55.62,12.65],['Oslo','ENGM',60.19,11.10],
+   ['Manchester','EGCC',53.35,-2.28],['Gatwick','EGKK',51.15,-0.19],['Brussels','EBBR',50.90,4.48],
+   ['Singapore Changi','WSSS',1.36,103.99],['Bangkok','VTBS',13.68,100.75],['Delhi','VIDP',28.57,77.10],
+   ['Dubai','OMDB',25.25,55.36],['Johannesburg','FAOR',-26.13,28.24],['São Paulo','SBGR',-23.43,-46.47],
+   ['Auckland','NZAA',-37.01,174.79],['Melbourne','YMML',-37.67,144.84]].map(a=>({
+    name:a[0],icao:a[1],lat:a[2],lon:a[3],desc:'Tower',
+    stream:'https://s1-fmt2.liveatc.net/'+a[1].toLowerCase()+'_twr',
+    page:'https://www.liveatc.net/search/?icao='+a[1].toLowerCase()}))
 ];
 
 /* =====================================================================
@@ -2293,6 +2391,7 @@ gl.on('load',()=>{
   });
   initRadioPins();
   initRadar();
+  loadKiwiDirectory();
   buildHF();
   buildATC();
   loadSystems();

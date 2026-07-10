@@ -112,7 +112,9 @@ profile (RestCountries) + head of state (Wikidata SPARQL) + Wikipedia summary.
    trunk-recorder delay.
 2. **Shortwave / Ham — full in-page KiwiSDR tuner.** Connects over the KiwiSDR
    WebSocket protocol, decodes its IMA-ADPCM audio, and plays via Web Audio —
-   no plugin, no new tab. Frequency entry, AM/LSB/USB/CW/FM, 13 band presets,
+   no plugin, no new tab. The **entire public receiver directory** (~600 nodes)
+   loads from linkfanel's global-assigning JS file (no CORS needed), falling
+   back to a curated list. Frequency entry, AM/LSB/USB/CW/FM, 13 band presets,
    live S-meter. **◎ NEAREST** tunes the closest receiver to your location;
    **SCAN** band-scans the HF spectrum. Nodes are http/ws, so run seehear from
    a local file (an https host blocks the mixed-content ws); a native-tuner
