@@ -70,7 +70,7 @@
 
   /* ---------- status badges (in SITREP header) ---------- */
   .badge{display:flex;align-items:center;gap:4px;background:var(--panel2);
-    border:1px solid var(--line);padding:4px 8px;border-radius:5px;font-size:10px;
+    border:1px solid var(--line);padding:4px 8px;border-radius:5px;font-size:13px;
     color:var(--ink-dim);white-space:nowrap;flex:0 0 auto}
   .badge b{color:var(--ink)}
   .dot{width:7px;height:7px;border-radius:50%;background:var(--ink-dim)}
@@ -88,12 +88,12 @@
   #sitrep{top:0;right:0;left:auto;width:320px;bottom:0;
     padding-right:var(--sa-r);border-left:1px solid var(--line)}
   #obj-head{flex:0 0 auto;display:flex;align-items:center;gap:8px;padding:11px 12px;
-    border-bottom:1px solid var(--line);font-size:12px;letter-spacing:2px;color:var(--accent);
+    border-bottom:1px solid var(--line);font-size:13px;letter-spacing:2px;color:var(--accent);
     font-weight:700}
-  #obj-head .brand{color:var(--ink-dim);letter-spacing:.5px;font-weight:400;margin-left:auto;font-size:10px}
+  #obj-head .brand{color:var(--ink-dim);letter-spacing:.5px;font-weight:400;margin-left:auto;font-size:13px}
 
   .sheet-grip{display:none}
-  .sec-h{font-size:10px;letter-spacing:1.2px;color:var(--ink-dim);
+  .sec-h{font-size:13px;letter-spacing:1.2px;color:var(--ink-dim);
     text-transform:uppercase;margin:12px 2px 6px}
   .sec-h:first-child{margin-top:2px}
   .layer{display:flex;align-items:center;gap:9px;padding:7px 6px;border-radius:8px;
@@ -101,25 +101,29 @@
   .layer:hover{background:var(--panel2)}
   .layer .sw{width:10px;height:10px;border-radius:50%;flex:0 0 auto;box-shadow:0 0 7px currentColor}
   .layer label{flex:1;cursor:pointer;user-select:none;-webkit-user-select:none}
-  .layer .cnt{font-size:10px;color:var(--ink-dim);min-width:30px;text-align:right}
+  .layer .cnt{font-size:13px;color:var(--ink-dim);min-width:30px;text-align:right}
   .layer input{accent-color:#8a99a8;cursor:pointer;width:16px;height:16px;flex:0 0 auto}
   .layer .pic{width:20px;height:20px;flex:0 0 auto;object-fit:contain}
   .layer .pic.emj{display:flex;align-items:center;justify-content:center;font-size:15px;line-height:1}
   .layer.off{opacity:.5}
-  .layer .warnflag{color:var(--warn);font-size:11px;cursor:help}
-  #panel-foot{padding:9px 12px;border-top:1px solid var(--line);font-size:10px;
+  .layer .warnflag{color:var(--warn);font-size:13px;cursor:help}
+  #panel-foot{padding:9px 12px;border-top:1px solid var(--line);font-size:13px;
     color:var(--ink-dim);line-height:1.5}
 
-  /* ---------- emergency broadcast footer (auto-tuned, no controls) ---------- */
-  #emg{padding:9px 12px calc(9px + var(--sa-b)/2);border-top:1px solid var(--line);
+  /* ---------- emergency broadcast footer (NOAA weather radio, auto-tuned) ---------- */
+  #emg{padding:10px 12px calc(10px + var(--sa-b)/2);border-top:1px solid var(--line);
     background:var(--panel2);flex:0 0 auto}
-  #emg-label{font-size:9px;letter-spacing:1.4px;color:var(--live);text-transform:uppercase;
-    display:flex;align-items:center;gap:6px;margin-bottom:5px;font-weight:700}
-  #emg-label .lz{width:7px;height:7px;border-radius:50%;background:var(--live);
-    box-shadow:0 0 0 0 rgba(255,68,85,.6);animation:pulse 2.2s infinite}
-  #emg-name{font-size:11px;color:var(--accent);white-space:nowrap;overflow:hidden;
-    text-overflow:ellipsis;min-height:14px;margin-bottom:6px}
-  #emg-sub{font-size:9px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;
+  #emg-top{display:flex;align-items:center;gap:10px}
+  #emg-toggle{flex:0 0 auto;width:38px;height:38px;padding:0;font-size:16px;line-height:1;
+    background:var(--panel);border:1px solid var(--accent);color:var(--accent);border-radius:9px;
+    display:flex;align-items:center;justify-content:center}
+  #emg-toggle:active{background:var(--accent);color:#00140a}
+  #emg-meta{flex:1;min-width:0}
+  #emg-label{font-size:13px;letter-spacing:1.4px;color:var(--live);margin-bottom:3px;font-weight:700;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #emg-name{font-size:13px;color:var(--accent);white-space:nowrap;overflow:hidden;
+    text-overflow:ellipsis;min-height:16px}
+  #emg-sub{font-size:13px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;
     text-overflow:ellipsis}
   #audio{display:none}
 
@@ -131,18 +135,18 @@
   .maplibregl-popup-anchor-bottom .maplibregl-popup-tip{border-top-color:#000}
   .maplibregl-popup-anchor-top .maplibregl-popup-tip{border-bottom-color:#000}
   .pop h4{margin:0 0 6px;color:var(--accent);font-size:13px}
-  .pop .kv{display:flex;gap:6px;font-size:11px;margin:2px 0}
+  .pop .kv{display:flex;gap:6px;font-size:13px;margin:2px 0}
   .pop .kv span{color:var(--ink-dim);min-width:66px;flex:0 0 auto}
-  .pop .sub{font-size:11px;color:var(--ink);line-height:1.45;margin-top:6px;
+  .pop .sub{font-size:13px;color:var(--ink);line-height:1.45;margin-top:6px;
     max-height:120px;overflow:auto}
-  .pop .lnk{margin-top:7px;font-size:11px}
+  .pop .lnk{margin-top:7px;font-size:13px}
 
   /* ---------- toasts ---------- */
   #toast{position:absolute;top:calc(var(--topbar-h) + 10px);left:50%;transform:translateX(-50%);
     z-index:25;max-width:min(320px,86vw);display:flex;flex-direction:column;gap:6px;
     align-items:center;pointer-events:none}
   .tmsg{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--accent);
-    padding:8px 11px;border-radius:8px;font-size:11px;color:var(--ink);animation:sl .25s ease}
+    padding:8px 11px;border-radius:8px;font-size:13px;color:var(--ink);animation:sl .25s ease}
   .tmsg.err{border-left-color:var(--danger)}
   .tmsg.warn{border-left-color:var(--warn)}
   @keyframes sl{from{transform:translateY(8px);opacity:0}to{transform:none;opacity:1}}
@@ -154,37 +158,40 @@
   #sit-title.alert{color:var(--warn)!important}
   #sit-head{display:flex;align-items:center;gap:8px;padding:11px 12px;
     border-bottom:1px solid var(--line);flex:0 0 auto;min-height:44px}
-  #sit-head .title{color:var(--accent);font-size:12px;letter-spacing:2px;font-weight:700;
+  #sit-head .title{color:var(--accent);font-size:13px;letter-spacing:2px;font-weight:700;
     flex:0 0 auto}
   #utc-badge{flex:0 0 auto}
-  #sit-head .loc{margin-left:auto;color:var(--ink);font-size:10px;white-space:nowrap;
+  #sit-head .loc{margin-left:auto;color:var(--ink);font-size:13px;white-space:nowrap;
     overflow:hidden;text-overflow:ellipsis;max-width:44%;text-align:right;flex:0 1 auto}
-  #loc-btn{flex:0 0 auto;width:28px;height:28px;padding:0;font-size:15px;line-height:1;
-    background:var(--panel2);border:1px solid var(--accent);color:var(--accent);border-radius:7px;
-    display:flex;align-items:center;justify-content:center}
+  /* center-on-me: floating control at the bottom-right corner of the map
+     (the open area sits just left of the 320px right panel) */
+  #loc-btn{position:absolute;z-index:16;right:calc(334px + var(--sa-r));bottom:16px;
+    width:42px;height:42px;padding:0;font-size:20px;line-height:1;
+    background:var(--panel);border:1px solid var(--accent);color:var(--accent);border-radius:9px;
+    display:flex;align-items:center;justify-content:center;
+    backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
   #loc-btn:active{background:var(--accent);color:#00140a}
   #sit-body{display:flex;flex-direction:column;align-content:start;
     overflow-y:auto;padding:4px 0;-webkit-overflow-scrolling:touch;flex:1 1 auto;min-height:0}
-  .sit-row{display:flex;align-items:center;gap:9px;padding:7px 12px;font-size:11px;min-height:34px;
+  .sit-row{display:flex;align-items:center;gap:9px;padding:7px 12px;font-size:13px;min-height:34px;
     border-bottom:1px solid #10171f}
   .sit-row .ic{flex:0 0 18px;text-align:center}
   .sit-row .tx{flex:1;min-width:0;line-height:1.4}
   .sit-row .tx s1{display:block;color:var(--ink)}
-  .sit-row .tx s2{display:block;color:var(--ink-dim);font-size:10px}
+  .sit-row .tx s2{display:block;color:var(--ink-dim);font-size:13px}
   .sit-row .act{flex:0 0 auto;background:var(--panel2);border:1px solid var(--accent);
-    color:var(--accent);border-radius:14px;padding:4px 11px;font-size:10px;cursor:pointer;
+    color:var(--accent);border-radius:14px;padding:4px 11px;font-size:13px;cursor:pointer;
     letter-spacing:.5px;min-height:28px}
   .sit-row .act:active{background:var(--accent);color:#06231e}
   .sit-row.alert s1{color:var(--warn)}
   .sit-row.danger s1{color:var(--danger)}
-  .sit-empty{padding:14px 12px;font-size:11px;color:var(--ink-dim);line-height:1.5}
-  .sit-anom{grid-column:1/-1;font-size:10px;letter-spacing:1.4px;color:var(--danger);
+  .sit-empty{padding:14px 12px;font-size:13px;color:var(--ink-dim);line-height:1.5}
+  .sit-anom{grid-column:1/-1;font-size:13px;letter-spacing:1.4px;color:var(--danger);
     font-weight:700;padding:8px 12px 3px;border-top:1px solid #2a1520}
   .sit-anom:first-child{border-top:none}
   .sit-div{grid-column:1/-1;height:1px;background:var(--line);margin:5px 12px}
-  /* ---- minimalist ALL-CAPS chrome. Units opt out via .u ---- */
-  #obj-head,.sec-h,.layer label,#sit-head .title,.pop h4,.pop .kv span,.badge,#mnav button,
-  .sit-row .tx s1,.sit-row .tx s2,.sit-row .act,#panel-foot,#emg-label{text-transform:uppercase}
+  /* ---- minimalist: EVERYTHING is upper-case except unit tokens (.u) ---- */
+  body{text-transform:uppercase}
   .u{text-transform:none!important;letter-spacing:0;font-style:normal}
   .sit-row .tx s1{letter-spacing:.3px}
 
@@ -201,7 +208,7 @@
       height:calc(54px + var(--sa-b));padding:0 var(--sa-r) var(--sa-b) var(--sa-l);
       background:#000;border-top:1px solid var(--line)}
     #mnav button{flex:1;background:none;border:none;color:var(--ink-dim);
-      font-size:10px;letter-spacing:.6px;display:flex;flex-direction:column;
+      font-size:13px;letter-spacing:.6px;display:flex;flex-direction:column;
       align-items:center;justify-content:center;gap:3px;min-height:44px}
     #mnav button .ic{font-size:18px;line-height:1}
     #mnav button.active{color:var(--accent)}
@@ -215,9 +222,11 @@
     .sheet-grip::before{content:"";display:block;width:38px;height:4px;border-radius:2px;
       background:#2a3a4d;margin:0 auto}
     .maplibregl-ctrl-bottom-right{bottom:calc(58px + var(--sa-b))}
+    /* map is full-width on mobile; keep the button above the bottom nav */
+    #loc-btn{right:calc(14px + var(--sa-r));bottom:calc(54px + var(--sa-b) + 14px)}
   }
   @media (max-width:520px){
-    .badge{padding:3px 6px;font-size:9px}
+    .badge{padding:3px 6px}
   }
 </style>
 </head>
@@ -233,7 +242,6 @@
     <div class="sec-h">Maritime &amp; rail</div><div id="grp-surface"></div>
     <div class="sec-h">Space</div><div id="grp-space"></div>
     <div class="sec-h">Earth &amp; hazard</div><div id="grp-hazard"></div>
-    <div class="sec-h">Conflict &amp; cyber</div><div id="grp-conflict"></div>
   </div>
   <div id="panel-foot"><span style="opacity:.6">© OpenStreetMap · CARTO</span></div>
 </div>
@@ -245,18 +253,25 @@
     <span class="title" id="sit-title">◈ SITREP</span>
     <span class="badge" id="utc-badge" title="UTC"><b id="utc">--:--</b></span>
     <span class="loc" id="sit-loc">LOCATING…</span>
-    <button id="loc-btn" title="center map on my location">⌖</button>
   </div>
   <div id="sit-body">
     <div class="sit-empty">ACQUIRING POSITION…</div>
   </div>
   <div id="emg">
-    <div id="emg-label"><span class="lz"></span>Emergency broadcast · auto-tuned</div>
-    <div id="emg-name">— locating nearest signal —</div>
-    <div id="emg-sub"></div>
+    <div id="emg-top">
+      <button id="emg-toggle" title="play / pause">▶</button>
+      <div id="emg-meta">
+        <div id="emg-label">NOAA weather radio</div>
+        <div id="emg-name">— locating nearest station —</div>
+        <div id="emg-sub"></div>
+      </div>
+    </div>
     <audio id="audio" preload="none"></audio>
   </div>
 </div>
+
+<!-- center-on-me: floating control, bottom-right of the map -->
+<button id="loc-btn" title="center map on my location">⌖</button>
 
 <!-- mobile bottom navigation -->
 <div id="mnav">
@@ -873,26 +888,6 @@ defLayer({
     <div class="kv"><span>src</span>NOAA / NWS</div>`
 });
 
-/* ---------------- Geopolitics / OSINT ---------------- */
-defLayer({
-  id:'deepstate', label:'Ukraine frontline', color:'#ff5c6c', group:'conflict', refresh:1800, geom:'fill', defaultOff:true,
-  loader: async ()=>{
-    const j=await getJSON('https://deepstatemap.live/api/history/last');
-    let fc=j.map||(Array.isArray(j)&&j[0]&&j[0].map)||j;
-    if(!fc||!fc.features) throw new Error('unexpected shape');
-    fc.features=fc.features.filter(f=>f.geometry&&
-      (f.geometry.type==='Polygon'||f.geometry.type==='MultiPolygon'));
-    fc.features.forEach(f=>{f.properties=f.properties||{};f.properties._kind='deepstate';});
-    return fc;
-  },
-  popup:p=>`<h4>Frontline zone</h4>
-    <div class="kv"><span>name</span>${escapeHtml(String(p.name||'').split('///')[0]||'—')}</div>
-    <div class="kv"><span>src</span>DeepStateMap (~30 min)</div>`
-});
-
-
-
-
 /* =====================================================================
    3. LAYER RUNTIME — sources, styles, toggles, refresh loop
    ===================================================================== */
@@ -974,7 +969,7 @@ function scheduleLayer(cfg){
 
 function buildLayerPanel(){
   const groups={air:'#grp-air',surface:'#grp-surface',space:'#grp-space',
-    hazard:'#grp-hazard',conflict:'#grp-conflict'};
+    hazard:'#grp-hazard'};
   LAYERS.forEach(cfg=>{
     LAYER_STATE[cfg.id]={cnt:0,timer:null,on:!cfg.defaultOff,started:!cfg.defaultOff};
     ensureMapLayer(cfg);
@@ -1262,29 +1257,56 @@ $('#sit-body').addEventListener('click',e=>{
   }
 });
 /* =====================================================================
-   7. EMERGENCY BROADCAST — auto-tuned, no controls (THE CORE FEATURE)
-   The nearest geolocated emergency broadcast to the DETECTED location is
-   played automatically and re-tuned every time that location changes.
-   radio-browser.info is the only keyless, CORS-* geolocated radio index;
-   we pull a global pool of emergency / public-safety / weather / news
-   stations that carry coordinates, rank by great-circle distance (weighted
-   toward the more emergency-specific tags) and play the winner through one
-   hidden <audio>. <audio> media loading is not CORS-gated, so the stream
-   plays cross-origin even without ACAO headers.
+   7. EMERGENCY BROADCAST — NOAA WEATHER RADIO, auto-tuned (THE CORE FEATURE)
+   The nearest NOAA Weather Radio (NWR All Hazards) station to the DETECTED
+   location plays automatically and re-tunes whenever that location changes;
+   a ▶/⏸ button lets you stop/start it. NWR is US-only. radio-browser.info is
+   the keyless, CORS-* index — it carries ~18 streamable NWR feeds, ~6 with
+   coordinates and the rest with a city/state in the name, so we geolocate the
+   rest to a US state centroid. <audio> media loading isn't CORS-gated, so the
+   stream plays cross-origin without ACAO headers.
    ===================================================================== */
 const audio=$('#audio');
 // mirror servers — one dead host never stops the retune
 const RB_HOSTS=['https://de1.api.radio-browser.info','https://nl1.api.radio-browser.info',
   'https://at1.api.radio-browser.info'];
-// tag -> relevance weight (smaller = preferred). A dedicated emergency feed
-// beats a plain news station unless the news station is much closer.
-const EMG_TAGS=[
-  {tag:'emergency',w:0.35},{tag:'emergency & public safety',w:0.35},
-  {tag:'public safety',w:0.45},{tag:'civil defense',w:0.4},
-  {tag:'noaa',w:0.4},{tag:'weather',w:0.6},{tag:'news',w:1}];
-let emgPool=null;         // merged station pool (fetched once, cached when non-empty)
+// radio-browser searches that surface NWR feeds; matched names must look NWR
+const NWR_TERMS=['name=noaa','name=weather%20radio','tag=weather%20radio','tag=noaa','name=nwr'];
+const NWR_RE=/noaa|weather radio|nwr/i;
+// state-centroid geolocation for NWR feeds that lack coordinates
+const US_STATES=[
+ ['AL','ALABAMA',32.8,-86.8],['AK','ALASKA',64.0,-152.0],['AZ','ARIZONA',34.3,-111.7],
+ ['AR','ARKANSAS',34.9,-92.4],['CA','CALIFORNIA',37.2,-119.3],['CO','COLORADO',39.0,-105.5],
+ ['CT','CONNECTICUT',41.6,-72.7],['DE','DELAWARE',39.0,-75.5],['FL','FLORIDA',28.6,-82.4],
+ ['GA','GEORGIA',32.6,-83.4],['HI','HAWAII',20.3,-156.4],['ID','IDAHO',44.4,-114.6],
+ ['IL','ILLINOIS',40.0,-89.2],['IN','INDIANA',39.9,-86.3],['IA','IOWA',42.0,-93.5],
+ ['KS','KANSAS',38.5,-98.4],['KY','KENTUCKY',37.5,-85.3],['LA','LOUISIANA',31.0,-92.0],
+ ['ME','MAINE',45.4,-69.2],['MD','MARYLAND',39.0,-76.8],['MA','MASSACHUSETTS',42.3,-71.8],
+ ['MI','MICHIGAN',44.3,-85.4],['MN','MINNESOTA',46.3,-94.3],['MS','MISSISSIPPI',32.7,-89.7],
+ ['MO','MISSOURI',38.4,-92.5],['MT','MONTANA',47.0,-109.6],['NE','NEBRASKA',41.5,-99.8],
+ ['NV','NEVADA',39.3,-116.6],['NH','NEW HAMPSHIRE',43.7,-71.6],['NJ','NEW JERSEY',40.2,-74.7],
+ ['NM','NEW MEXICO',34.4,-106.1],['NY','NEW YORK',42.9,-75.5],['NC','NORTH CAROLINA',35.5,-79.4],
+ ['ND','NORTH DAKOTA',47.5,-100.5],['OH','OHIO',40.3,-82.8],['OK','OKLAHOMA',35.6,-97.5],
+ ['OR','OREGON',43.9,-120.6],['PA','PENNSYLVANIA',40.9,-77.8],['RI','RHODE ISLAND',41.7,-71.5],
+ ['SC','SOUTH CAROLINA',33.9,-80.9],['SD','SOUTH DAKOTA',44.4,-100.2],['TN','TENNESSEE',35.9,-86.4],
+ ['TX','TEXAS',31.5,-99.3],['UT','UTAH',39.3,-111.7],['VT','VERMONT',44.1,-72.7],
+ ['VA','VIRGINIA',37.5,-78.9],['WA','WASHINGTON',47.4,-120.5],['WV','WEST VIRGINIA',38.6,-80.6],
+ ['WI','WISCONSIN',44.6,-89.9],['WY','WYOMING',43.0,-107.6],['DC','WASHINGTON DC',38.9,-77.0]];
+const CITY_HINT=[['ATL',33.75,-84.39],['NEW YORK CITY',40.71,-74.0],['STILLWATER',36.12,-97.06]];
+function geocodeNWR(name){
+  const up=name.toUpperCase();
+  for(const [k,la,lo] of CITY_HINT) if(up.includes(k)) return [la,lo];
+  let m=up.match(/,\s*([A-Z]{2})\b/);
+  if(m){ const st=US_STATES.find(s=>s[0]===m[1]); if(st) return [st[2],st[3]]; }
+  for(const s of US_STATES) if(up.includes(s[1])) return [s[2],s[3]];
+  m=up.match(/\b([A-Z]{2})\b/);
+  if(m){ const st=US_STATES.find(s=>s[0]===m[1]); if(st) return [st[2],st[3]]; }
+  return null;
+}
+let emgPool=null;         // NWR station pool (fetched once, cached when non-empty)
 let emgPoolPromise=null;  // shared in-flight fetch so concurrent callers wait as one
 let emgCur=null;          // stationuuid currently tuned
+let emgPaused=false;      // user intent from the ▶/⏸ button
 
 async function rbGet(path){
   let err;
@@ -1298,20 +1320,16 @@ function loadEmgPool(){
   if(emgPoolPromise) return emgPoolPromise;
   emgPoolPromise=(async()=>{
     const byId={};
-    const results=await Promise.allSettled(EMG_TAGS.map(t=>
-      rbGet('/json/stations/search?tag='+encodeURIComponent(t.tag)+
-        '&has_geo_info=true&hidebroken=true&limit=2000&order=clickcount&reverse=true')));
-    results.forEach((r,i)=>{
+    const results=await Promise.allSettled(NWR_TERMS.map(t=>
+      rbGet('/json/stations/search?'+t+'&hidebroken=true&limit=800')));
+    results.forEach(r=>{
       if(r.status!=='fulfilled'||!Array.isArray(r.value)) return;
-      const w=EMG_TAGS[i].w;
       r.value.forEach(s=>{
-        const lat=+s.geo_lat, lon=+s.geo_long, url=s.url_resolved||s.url;
-        if(!isFinite(lat)||!isFinite(lon)||!url) return;
-        const prev=byId[s.stationuuid];
-        if(prev){ prev.w=Math.min(prev.w,w); return; } // keep the strongest weight
-        byId[s.stationuuid]={id:s.stationuuid,name:(s.name||'station').trim(),
-          url,lat,lon,cc:s.countrycode||'',
-          tags:(s.tags||'').split(',').filter(Boolean).slice(0,3).join(', '),w};
+        const name=(s.name||'').trim(), url=s.url_resolved||s.url;
+        if(!url||!NWR_RE.test(name)||byId[s.stationuuid]) return; // NOAA/NWR only
+        let lat=+s.geo_lat, lon=+s.geo_long;
+        if(!isFinite(lat)||!isFinite(lon)){ const g=geocodeNWR(name); if(!g) return; lat=g[0]; lon=g[1]; }
+        byId[s.stationuuid]={id:s.stationuuid,name,url,lat,lon};
       });
     });
     const pool=Object.values(byId);
@@ -1322,21 +1340,18 @@ function loadEmgPool(){
   return emgPoolPromise;
 }
 
-// Pick + play the nearest emergency broadcast to (lat,lon). Called on every
-// location change. If the winner is already tuned, it's left playing.
+// Pick + play the nearest NOAA Weather Radio station to (lat,lon). Called on
+// every location change; if the winner is already tuned it's left playing.
 async function emergencyTune(lat,lon){
   if(lat==null||lon==null) return;
   const pool=await loadEmgPool();
   if(!pool||!pool.length){
-    $('#emg-name').textContent='no emergency signal found';
-    setTimeout(()=>{ emgPool=null; if(USER.lat!=null) emergencyTune(USER.lat,USER.lon); },30000);
+    $('#emg-name').textContent='no NOAA station found';
+    setTimeout(()=>{ emgPoolPromise=null; if(USER.lat!=null) emergencyTune(USER.lat,USER.lon); },30000);
     return;
   }
-  let best=null,bs=Infinity;
-  pool.forEach(s=>{
-    const score=havKm(lat,lon,s.lat,s.lon)*s.w;   // weighted great-circle distance
-    if(score<bs){ bs=score; best={s,km:havKm(lat,lon,s.lat,s.lon)}; }
-  });
+  let best=null,bd=Infinity;
+  pool.forEach(s=>{ const d=havKm(lat,lon,s.lat,s.lon); if(d<bd){bd=d;best={s,km:d};} });
   if(!best) return;
   updateEmgLabel(best);
   if(best.s.id===emgCur) return;                   // already on the nearest — keep playing
@@ -1344,16 +1359,20 @@ async function emergencyTune(lat,lon){
   playEmergency(best.s);
 }
 function updateEmgLabel(best){
-  const s=best.s;
-  $('#emg-name').textContent='📻 '+s.name;
-  $('#emg-sub').innerHTML=(s.cc?escapeHtml(s.cc)+' · ':'')+fmtMi(best.km)+' away'+
-    (s.tags?' · '+escapeHtml(s.tags):'');
+  $('#emg-name').textContent=best.s.name;
+  $('#emg-sub').innerHTML=fmtMi(best.km)+' away';   // fmtMi keeps units in .u (lowercase)
 }
 function playEmergency(s){
   audio.src=s.url;
-  const p=audio.play();
-  if(p&&p.catch) p.catch(()=>{}); // autoplay may be blocked until a user gesture
+  if(!emgPaused){ const p=audio.play(); if(p&&p.catch) p.catch(()=>{}); $('#emg-toggle').textContent='⏸'; }
 }
+// ▶/⏸ play-pause control
+function setEmgPaused(p){
+  emgPaused=p; $('#emg-toggle').textContent=p?'▶':'⏸';
+  if(p){ try{audio.pause();}catch(e){} }
+  else { const q=audio.play(); if(q&&q.catch) q.catch(()=>{}); }
+}
+$('#emg-toggle').addEventListener('click',()=>setEmgPaused(!emgPaused));
 // Live streams don't "end"; on a stream error, drop that station and retune to
 // the next-nearest so a dead feed never leaves the board silent.
 let emgErrTs=0;
@@ -1364,11 +1383,11 @@ audio.addEventListener('error',()=>{
   emgCur=null;
   if(USER.lat!=null) emergencyTune(USER.lat,USER.lon);
 });
-// Browsers block audio autoplay until the page has seen a user gesture. Retry
-// the moment one happens — this is an unlock, not a control. No buttons.
+// Browsers defer autoplay until the page sees a user gesture — resume on the
+// first one (unless the user has explicitly paused).
 ['pointerdown','touchstart','keydown'].forEach(ev=>
   window.addEventListener(ev,()=>{
-    if(emgCur&&audio.paused){ const p=audio.play(); if(p&&p.catch) p.catch(()=>{}); }
+    if(!emgPaused&&emgCur&&audio.paused){ const p=audio.play(); if(p&&p.catch) p.catch(()=>{}); }
   },{passive:true}));
 
 // Aircraft are now worldwide (global grid), so only the US flood gauges — which

@@ -36,9 +36,12 @@ between them:
 - **SITREP** (right) — the "at a glance" intelligence briefing, plus the
   auto-tuned emergency broadcast pinned at its foot.
 
-There is no top chrome and no bottom bar. The map itself is chrome-free — no
-on-map control widgets — with zoom by scroll/pinch and recenter via the ⌖
-button in the SITREP header.
+There is no top chrome and no bottom bar. The map is otherwise chrome-free —
+zoom by scroll/pinch, and a single **⌖ recenter button floats at the
+bottom-right corner of the map**.
+
+The whole interface is set in **upper case** (only measurement units stay in
+natural case), at one uniform minimum text size, for a dense minimalist read.
 
 ## SITREP — situational awareness at a glance
 
@@ -62,29 +65,28 @@ disasters…).
 - 🌀 nearest global disaster (GDACS)
 
 Every row has a VIEW action that flies the map there. The header carries a UTC
-clock, your resolved location, and a **⌖** button that recenters on you.
-Position is resolved client-side and never leaves the browser.
+clock and your resolved location. Position is resolved client-side and never
+leaves the browser.
 
 Units are imperial (mi/ft, °F, mph) and the interface is set in a minimalist
 all-caps style, with measurement units left in natural case.
 
-## Emergency broadcast — auto-tuned, no controls
+## Emergency broadcast — NOAA Weather Radio, auto-tuned
 
-Pinned at the foot of the SITREP panel is a single, control-free emergency
-radio feed. sitrep pulls a global pool of geolocated
-**emergency / public-safety / weather / civil-defense / news** stations from
-**radio-browser.info** (the only keyless, CORS-friendly geolocated radio
-index), ranks them by great-circle distance **weighted toward the more
-emergency-specific tags**, and plays the single nearest match through one
-hidden `<audio>` element. There are no buttons: it tunes itself on the first
-location fix and **re-tunes automatically every time the detected location
-changes**. If a stream dies it silently drops that station and falls back to
-the next-nearest.
+Pinned at the foot of the SITREP panel is the nearest **NOAA Weather Radio
+(NWR All Hazards)** station — the actual government emergency weather
+broadcast, not a music or talk station. sitrep pulls the NWR feeds from
+**radio-browser.info** (the keyless, CORS-friendly index), geolocates each one
+(by its coordinates, or by the US state in its name when coordinates are
+missing), plays the closest to your detected location through one `<audio>`
+element, and **re-tunes automatically every time that location changes**. A
+single **▶/⏸ button** stops and starts it; if a stream dies it drops that
+station and falls back to the next-nearest.
 
-> `<audio>` media loading is not gated by CORS, so the chosen stream plays
-> cross-origin without ACAO headers. Browsers only defer autoplay until the
-> first user gesture on the page — after that first tap/click it starts on its
-> own.
+> NWR is US-only, so outside the US the closest station is simply the nearest
+> US transmitter. `<audio>` media loading is not gated by CORS, so the stream
+> plays cross-origin without ACAO headers; browsers only defer autoplay until
+> the first user gesture on the page.
 
 ## Live map layers
 
@@ -105,7 +107,6 @@ the next-nearest.
 | | Natural events — wildfires, storms, volcanoes, ice | NASA EONET v3 | 10 min |
 | | River / flood gauges (in view) | USGS water services | 10 min |
 | | Holocene volcanoes | Smithsonian GVP (curated static) | — |
-| Conflict | Ukraine frontline | DeepStateMap | 30 min |
 
 Earthquakes come from a **single** live source (EMSC) — the old USGS "24 h"
 layer was a duplicate and was removed. **Warnings** are worldwide across the two
