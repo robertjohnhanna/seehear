@@ -1511,8 +1511,13 @@ async function sitrepTick(){
     dist(worldQ)+' away · '+fmtTime(worldQ.properties.time),flyBtn(worldQ)]);
   const worldRed=featsIn('src-gdacs').filter(f=>f.properties.level==='Red'&&!isIn(f));
   if(worldRed.length){ const nr=worldRed.slice().sort((x,y)=>havKm(lat,lon,x.geometry.coordinates[1],x.geometry.coordinates[0])-havKm(lat,lon,y.geometry.coordinates[1],y.geometry.coordinates[0]))[0];
-    anom.push(['danger','🌀','DISASTER · WORLDWIDE',worldRed.length+' red-level event'+(worldRed.length>1?'s':'')+' off-map',
-      escapeHtml(String(nr.properties.name||nr.properties.type||'').slice(0,26))+' · '+dist(nr),flyBtn(nr)]); }
+    const pr=nr.properties, raw=String(pr.sev||'').trim();
+    // "worldwide" already implies off-map, so line 2 carries the storm detail
+    // (GDACS severity text — e.g. cyclone wind speed) instead of a redundant count
+    const info=(raw&&!/^magnitude 0\b/i.test(raw))?raw:((pr.type||'disaster')+' · '+(pr.level||'')+' alert'+(pr.country?' · '+pr.country:''));
+    const more=worldRed.length>1?' · +'+(worldRed.length-1)+' more':'';
+    anom.push(['danger','🌀','DISASTER · WORLDWIDE',escapeHtml(info.slice(0,66)),
+      escapeHtml(String(pr.name||pr.type||'').slice(0,24))+' · '+dist(nr)+more,flyBtn(nr)]); }
   const nwsInSet=new Set(nwsInView(b));
   const worldNws=featsIn('src-nws').filter(f=>/Extreme/i.test(f.properties.severity)&&!nwsInSet.has(f));
   if(worldNws.length) anom.push(['danger','⚠','EXTREME WARNING · OFF-MAP',escapeHtml(String(worldNws[0].properties.event||'')),
