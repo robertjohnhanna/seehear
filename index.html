@@ -54,6 +54,9 @@
     --sa-t:env(safe-area-inset-top,0px); --sa-b:env(safe-area-inset-bottom,0px);
     --sa-l:env(safe-area-inset-left,0px); --sa-r:env(safe-area-inset-right,0px);
     --topbar-h:var(--sa-t);
+    /* symmetric top/bottom inset so the gaps match even with a home-indicator
+       safe area (which is only on the bottom) */
+    --inset:calc(max(var(--sa-t),var(--sa-b)) + 8px);
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
@@ -78,12 +81,10 @@
     border:1px solid var(--line);border-radius:12px;
     backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
     display:flex;flex-direction:column;overflow:hidden}
-  #layers{top:calc(var(--sa-t) + 8px);left:calc(8px + var(--sa-l));width:330px;
-    bottom:calc(8px + var(--sa-b))}
+  #layers{top:var(--inset);left:calc(8px + var(--sa-l));width:312px;bottom:var(--inset)}
   #layers-scroll{overflow-y:auto;padding:8px;-webkit-overflow-scrolling:touch;
     flex:1 1 auto;min-height:0}
-  #radio{top:calc(var(--sa-t) + 8px);right:calc(8px + var(--sa-r));width:296px;
-    bottom:calc(8px + var(--sa-b))}
+  #radio{top:var(--inset);right:calc(8px + var(--sa-r));width:312px;bottom:var(--inset)}
   #obj-head{flex:0 0 auto;display:flex;align-items:center;gap:8px;padding:11px 12px;
     border-bottom:1px solid var(--line);font-size:12px;letter-spacing:2px;color:var(--accent);
     font-weight:700}
@@ -208,10 +209,10 @@
   /* SITREP: a bottom bar spanning the gap between the two side panels,
      one third of the viewport tall; the map padding keeps content centred
      in the open area above it. */
-  #sitrep{bottom:calc(8px + var(--sa-b));top:auto;margin:0;
-    left:calc(348px + var(--sa-l));right:calc(314px + var(--sa-r));width:auto;
+  #sitrep{bottom:var(--inset);top:auto;margin:0;
+    left:calc(330px + var(--sa-l));right:calc(330px + var(--sa-r));width:auto;
     height:34vh;max-height:34vh}
-  #sitrep.expanded{top:calc(var(--sa-t) + 8px);height:auto;max-height:none}
+  #sitrep.expanded{top:var(--inset);height:auto;max-height:none}
   #sit-title.warn{color:var(--danger)!important}
   #sit-title.alert{color:var(--warn)!important}
   #sit-exp{color:var(--ink-dim);cursor:pointer;padding:2px 4px;flex:0 0 auto;font-size:11px}
@@ -312,8 +313,7 @@
     <div class="sec-h">Conflict &amp; cyber</div><div id="grp-conflict"></div>
     <div class="sec-h">Signals</div><div id="grp-signals"></div>
   </div>
-  <div id="panel-foot"><a href="#" id="foot-info">RIGHT-CLICK / LONG-PRESS MAP → DOSSIER</a>
-    <span style="opacity:.6"> · © OSM · CARTO</span></div>
+  <div id="panel-foot"><span style="opacity:.6">© OpenStreetMap · CARTO</span></div>
 </div>
 
 <!-- radio panel -->
@@ -329,6 +329,7 @@
   <!-- 1. Police / Fire — OpenMHz -->
   <div class="rpane active" id="pane-police">
     <div class="ctl">
+      <button class="btn sm" id="mhz-pause" title="play / pause auto-monitor" style="min-width:34px">▶</button>
       <select id="mhz-sys" style="flex:1;min-width:0"><option>loading systems…</option></select>
       <button class="btn sm" id="mhz-scan" title="cycle across systems">scan</button>
     </div>
@@ -1457,7 +1458,7 @@ function setMapPadding(){
   }
   const sh=$('#sitrep');
   const bottom=(sh&&sh.offsetParent!==null)?Math.round(sh.getBoundingClientRect().height)+22:24;
-  gl.setPadding({top:20,left:350,right:316,bottom});
+  gl.setPadding({top:20,left:330,right:330,bottom});
 }
 window.addEventListener('resize',()=>{ clearTimeout(window.__pad);
   window.__pad=setTimeout(setMapPadding,200); });
@@ -1678,8 +1679,6 @@ $('#sit-chev').addEventListener('click',()=>{ if(isMobile())return;
   const s=$('#sitrep'); s.classList.remove('expanded'); s.classList.toggle('collapsed'); setMapPadding(); });
 $('#sit-exp').addEventListener('click',()=>{ if(isMobile())return;
   const s=$('#sitrep'); s.classList.remove('collapsed'); s.classList.toggle('expanded'); setMapPadding(); });
-$('#foot-info')&&$('#foot-info').addEventListener('click',e=>{e.preventDefault();
-  toast('RIGHT-CLICK OR LONG-PRESS ANY MAP POINT FOR A LOCATION DOSSIER','');});
 
 /* =====================================================================
    7. RADIO DOMAIN 1 — OpenMHz police / fire (THE CORE FEATURE)
@@ -1689,7 +1688,13 @@ $('#foot-info')&&$('#foot-info').addEventListener('click',e=>{e.preventDefault()
 const audio=$('#audio');
 const OMHZ='https://api.openmhz.com';
 let mhzSystems=[], mhzCur=null, mhzSince=0, mhzQueue=[], mhzPlaying=false,
-    mhzPoll=null, mhzScan=false, mhzScanIdx=0, mhzSeen=new Set();
+    mhzPoll=null, mhzScan=false, mhzScanIdx=0, mhzSeen=new Set(), mhzPaused=true;
+function mhzSetPaused(p){
+  mhzPaused=p; $('#mhz-pause').textContent=p?'▶':'⏸'; $('#mhz-pause').classList.toggle('on',!p);
+  if(p){ try{audio.pause();}catch(e){} mhzPlaying=false; }
+  else { if(!mhzPlaying) playNext(); }        // resume auto-monitor
+}
+$('#mhz-pause')&&$('#mhz-pause').addEventListener('click',()=>{ if(mhzCur) mhzSetPaused(!mhzPaused); });
 
 async function loadSystems(tries){
   try{
@@ -1717,9 +1722,10 @@ function selectSystem(shortName){
   // then it idles until the next live call — never replays the archive.
   mhzCur=shortName; mhzSince=Date.now(); mhzSeen.clear(); mhzQueue=[];
   $('#mhz-list').innerHTML='';
+  mhzSetPaused(true); // paused on load — monitor fills the list; press ▶ to hear
   const s=mhzSystems.find(x=>x.shortName===shortName);
   $('#mhz-status').innerHTML='<span class="spin"></span> '+
-    escapeHtml(s?(s.name||shortName):shortName)+' — listening for calls…';
+    escapeHtml(s?(s.name||shortName):shortName)+' — monitoring (paused)';
   if(mhzPoll) clearInterval(mhzPoll);
   pollCalls();
   mhzPoll=setInterval(pollCalls,8000);
@@ -1742,13 +1748,11 @@ async function pollCalls(){
       mhzQueue.push(call); addCallRow(call);
     }
     sortCalls(); trimList();
-    if(!mhzPlaying) playNext();
+    if(!mhzPlaying && !mhzPaused) playNext();
     const s=mhzSystems.find(x=>x.shortName===mhzCur);
-    $('#mhz-status').innerHTML='▶ '+escapeHtml(s?(s.name||mhzCur):mhzCur)+
-      ' · '+mhzSeen.size+' calls seen'+(mhzScan?' · SCAN':'');
-  }catch(e){
-    $('#mhz-status').innerHTML='<span style="color:var(--danger)">poll failed: '+escapeHtml(e.message)+'</span>';
-  }
+    $('#mhz-status').textContent=(mhzPaused?'⏸ ':'▶ ')+(s?(s.name||mhzCur):mhzCur)+
+      ' · '+mhzSeen.size+' calls'+(mhzScan?' · SCAN':'');
+  }catch(e){ /* keep last status; silent retry on next poll */ }
 }
 
 function addCallRow(call){
@@ -1772,6 +1776,7 @@ function trimList(){
   while(list.children.length>60) list.removeChild(list.lastChild);
 }
 function playNext(){
+  if(mhzPaused){ mhzPlaying=false; return; }      // paused: don't auto-advance
   if(!mhzQueue.length){ mhzPlaying=false;
     if(mhzScan) advanceScan(); return; }
   const call=mhzQueue.shift();
@@ -1789,10 +1794,10 @@ function playCall(call,row){
 }
 audio.addEventListener('ended',()=>{
   document.querySelectorAll('.rrow.playing').forEach(r=>r.classList.remove('playing'));
-  if(mhzCur&&!atcPlaying&&!KW.live) playNext();
+  if(mhzCur&&!atcPlaying&&!KW.live&&!mhzPaused) playNext();
   else { mhzPlaying=false; if(!KW.live) $('#nowplaying').textContent='— idle —'; }
 });
-audio.addEventListener('error',()=>{ if(mhzCur&&!atcPlaying&&!KW.live){ mhzPlaying=false; playNext(); } });
+audio.addEventListener('error',()=>{ if(mhzCur&&!atcPlaying&&!KW.live&&!mhzPaused){ mhzPlaying=false; playNext(); } });
 
 $('#mhz-sys').addEventListener('change',e=>{
   if(e.target.value){ mhzScan=false; $('#mhz-scan').classList.remove('on'); selectSystem(e.target.value); }
@@ -1892,7 +1897,12 @@ function rebuildHFList(){
     const dist=USER.lat!=null?' · '+fmtMi(havKm(USER.lat,USER.lon,k[2][0],k[2][1])):'';
     row.innerHTML=`<div class="rmain"><b>${escapeHtml(k[0])}</b>
       <span>${escapeHtml(k[3]||'HF')} · 0–30 ${U('MHz')}${dist}</span></div><button class="btn sm">tune</button>`;
-    row.onclick=()=>{ gl.flyTo({center:[k[2][1],k[2][0]],zoom:6}); kwSelect(k[1],k[0]); kwConnect(); };
+    // tapping the row only SELECTS (flies + shows it); the TUNE button connects
+    // (in-page on local, or opens the node's live tuner on https) — no more a
+    // new tab on every stray click.
+    row.onclick=()=>{ gl.flyTo({center:[k[2][1],k[2][0]],zoom:6}); kwSelect(k[1],k[0]); };
+    row.querySelector('button').onclick=e=>{ e.stopPropagation();
+      gl.flyTo({center:[k[2][1],k[2][0]],zoom:6}); kwSelect(k[1],k[0]); kwConnect(); };
     list.appendChild(row);
   });
 }
@@ -1900,10 +1910,14 @@ function rebuildHFList(){
 // loadable by <script> tag without CORS). Falls back to the curated list.
 function loadKiwiDirectory(){
   const kiwiRow=e=>{
+    // only ONLINE, active, not-full receivers — so a tap reliably reaches a
+    // live node instead of a dead link.
+    if(e.offline==='yes'||e.status!=='active') return null;
+    const users=parseInt(e.users)||0, umax=parseInt(e.users_max)||0;
+    if(umax && users>=umax) return null;
     const g=/(-?\d+\.?\d*)[,\s]+(-?\d+\.?\d*)/.exec(e.gps||''); if(!g) return null;
     const lat=+g[1],lon=+g[2];
     if(!isFinite(lat)||!isFinite(lon)||(Math.abs(lat)<0.01&&Math.abs(lon)<0.01)) return null;
-    if(e.offline==='yes'||e.status==='inactive') return null;
     const host=String(e.url||'').replace(/^https?:\/\//,'').replace(/\/$/,''); if(!host) return null;
     const clean=s=>String(s||'').replace(/[^\x20-\x7E]/g,'').trim();
     const name=clean((e.name||host).split('|')[0]).slice(0,40)||host;
@@ -1914,7 +1928,8 @@ function loadKiwiDirectory(){
   s.onload=()=>{ try{
     const list=(window.kiwisdr_com||[]).map(kiwiRow).filter(Boolean);
     if(list.length<50) return;
-    KIWI_LIST=list;
+    // keep the curated known-good nodes in the pool, then the online directory
+    KIWI_LIST=[...KIWI,...list.filter(k=>!KIWI.some(c=>c[1]===k[1]))];
     const src=gl.getSource('src-kiwi');
     if(src) src.setData({type:'FeatureCollection',features:KIWI_LIST.map(k=>({type:'Feature',
       geometry:{type:'Point',coordinates:[k[2][1],k[2][0]]},
