@@ -88,9 +88,10 @@
     display:flex;flex-direction:column;overflow:hidden}
   #sitrep{top:0;right:0;left:auto;width:320px;bottom:0;
     padding-right:var(--sa-r);border:1px solid var(--line)}
-  /* live local time + timezone on the SITREP title line, right-justified */
-  #data-clock{margin-left:auto;color:var(--ink-dim);font-weight:400;letter-spacing:.5px;
+  /* data-refresh countdown on the SITREP title line, right-justified */
+  #refresh-badge{margin-left:auto;color:var(--ink-dim);font-weight:400;letter-spacing:.5px;
     font-size:13px;white-space:nowrap;font-variant-numeric:tabular-nums;flex:0 0 auto}
+  #refresh-badge b{color:var(--ink)}
   /* canifly preflight tool sits just above the radio; bounded height so the
      cards above keep room, its own UI is one-screen. */
   #fly-pane{flex:0 0 auto;height:clamp(300px,42vh,460px);
@@ -153,8 +154,6 @@
     border-bottom:1px solid var(--line);flex:0 0 auto;min-height:48px}
   #sit-head .title{color:var(--accent);font-size:13px;letter-spacing:2px;font-weight:700;
     flex:0 0 auto}
-  #sit-head .loc{color:var(--ink-dim);font-size:13px;white-space:nowrap;
-    overflow:hidden;text-overflow:ellipsis;text-align:right;flex:1 1 auto;min-width:0}
   /* center-on-me: floating control at the bottom-right corner of the map
      (the open area sits just left of the 320px right panel) */
   #loc-btn{position:absolute;z-index:16;right:calc(334px + var(--sa-r));bottom:16px;
@@ -256,8 +255,7 @@
   <div class="sheet-grip" data-close="sitrep"></div>
   <div id="sit-head">
     <span class="title" id="sit-title">◈ SITREP</span>
-    <span class="loc" id="sit-loc">LOCATING…</span>
-    <span id="data-clock" title="local time at your location"></span>
+    <span id="refresh-badge" title="time to next data refresh"><b id="refresh-count">30</b>s to update</span>
   </div>
   <div id="sit-body">
     <div class="sit-empty">ACQUIRING POSITION…</div>
@@ -432,22 +430,6 @@ function pointInFeature(f,lon,lat){
 }
 const escapeHtml =s => String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
-// One concise, consistent location label everywhere: "PLACE, XX" — XX is a short
-// region code (US state, else country). No "· GPS/IP" or coords suffix; that
-// varying tail is what made the label flicker between formats and overflow.
-function regionOf(a){
-  const cc=(a.country_code||'').toUpperCase();
-  const sub=(a['ISO3166-2-lvl4']||a['ISO3166-2-lvl6']||'').split('-')[1];
-  return (cc==='US'&&sub&&sub.length<=3)?sub:cc;
-}
-function placeOf(a,fallback){
-  return a.city||a.town||a.village||a.suburb||a.county||a.state||fallback||'';
-}
-function setSitLoc(place,region){
-  place=String(place||'').trim(); region=String(region||'').trim();
-  if(place.length>20) place=place.slice(0,19)+'…';
-  const el=$('#sit-loc'); if(el) el.textContent = place ? (region?place+', '+region:place) : (region||'—');
-}
 
 /* =====================================================================
    1. MAP — CARTO dark basemap (keyless raster tiles)
@@ -557,7 +539,7 @@ function registerIcons(){
 const LAYERS=[];
 const defLayer=c=>LAYERS.push(c);
 // user position state — filled by IP geolocation instantly, refined by GPS
-const USER={lat:null,lon:null,place:'',region:'',cc:'',src:null,tz:'',elevFt:null};
+const USER={lat:null,lon:null,src:null,tz:''};
 
 /* ---------------- Movement ---------------- */
 defLayer({
@@ -776,17 +758,12 @@ function refreshDueLayers(){
     if(pulseCount%everyN===0) runLayer(cfg);
   });
 }
-// live local-time clock (with timezone abbreviation) in the SITREP header —
-// USER.tz once the location resolves, browser zone until then
-function updateClock(){
-  const el=$('#data-clock'); if(!el) return;
-  el.textContent=new Date().toLocaleTimeString([],
-    Object.assign({hour:'numeric',minute:'2-digit',timeZoneName:'short'},tzOpt()));
-}
+// data-refresh countdown ("Xs to update") in the SITREP header
 function refreshTick(){
-  updateClock();
+  const el=$('#refresh-count');
   const elapsed=Math.floor((Date.now()-refreshBase)/1000);
-  if(elapsed>=REFRESH_S){ refreshBase=Date.now(); refreshDueLayers(); }
+  if(elapsed>=REFRESH_S){ refreshBase=Date.now(); refreshDueLayers(); if(el) el.textContent=REFRESH_S; }
+  else if(el) el.textContent=REFRESH_S-elapsed;
 }
 
 // No layer selector: every layer's map source + style is created here and stays
@@ -967,7 +944,6 @@ async function locate(){
         ()=>{},{enableHighAccuracy:true,timeout:10000,maximumAge:60000});
     }catch(e){}
   }
-  if(USER.lat==null) $('#sit-loc').textContent='no fix — tap ⌖ on the map';
 }
 // "center on me": pan to the fix and reset the view to north-up, flat (bearing
 // and pitch back to 0) — but keep the CURRENT zoom. If no fix yet, kick off IP +
@@ -1021,8 +997,7 @@ function setUserFix(lat,lon,src,meta){
   if(!first&&src==='ip'&&USER.src==='gps') return; // never downgrade gps -> ip
   const pLat=USER.lat,pLon=USER.lon;
   USER.lat=lat; USER.lon=lon; USER.src=src;
-  if(meta){USER.place=meta.place||'';USER.region=meta.region||'';
-    USER.rc=meta.rc||'';USER.cc=meta.cc||'';USER.tz=meta.tz||USER.tz;}
+  if(meta&&meta.tz) USER.tz=meta.tz;   // timezone drives the local-time formatting
   if(!userMarker){
     const d=el('div'); d.id='user-dot';
     userMarker=new maplibregl.Marker({element:d}).setLngLat([lon,lat]).addTo(gl);
@@ -1040,36 +1015,11 @@ function setUserFix(lat,lon,src,meta){
     // For small corrections we leave the camera and just move the marker.
     flyToRadiusMi(lat,lon,10);
   }
-  setSitLoc(USER.place, (USER.cc||'').toUpperCase()==='US' ? (USER.rc||USER.cc) : (USER.cc||USER.rc));
-  if(src==='gps'&&!meta) reverseFill();
   // (re)tune the nearest emergency broadcast every time the location changes
   emergencyTune(lat,lon);
-  fetchUserElev(lat,lon);
   sitrepTick();
 }
 
-// Ground elevation at the user's location (feet), for aircraft AGL alerts.
-// Keyless/CORS Open-Meteo; refetch only when moved > ~0.5 km.
-let __elevAt=null;
-async function fetchUserElev(lat,lon){
-  if(__elevAt&&havKm(__elevAt[0],__elevAt[1],lat,lon)<0.5&&USER.elevFt!=null) return;
-  __elevAt=[lat,lon];
-  try{
-    const g=await getJSON(`https://api.open-meteo.com/v1/elevation?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}`);
-    const m=g&&g.elevation&&g.elevation[0];
-    if(typeof m==='number') USER.elevFt=m*3.28084;
-  }catch(e){}
-}
-
-async function reverseFill(){
-  try{
-    const g=await getJSON(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${USER.lat}&lon=${USER.lon}&zoom=10`,
-      {headers:{'Accept-Language':'en'}});
-    const a=g.address||{};
-    USER.place=placeOf(a,g.name); USER.region=a.state||''; USER.cc=(a.country_code||'').toUpperCase();
-    setSitLoc(USER.place, regionOf(a));
-  }catch(e){}
-}
 
 // concise text, no "…" (CSS clips)
 const cut=(s,n)=>escapeHtml(String(s==null?'':s).trim().slice(0,n));
@@ -1376,8 +1326,8 @@ audio.addEventListener('error',()=>{
 // change — on every map move AND on every container resize. A resize (window,
 // panel, orientation, sheet) enlarges the view without a pan, so without this
 // the newly-revealed area kept its stale aircraft until the next 60s refresh.
-let moveDebounce=null, lastGeoC=null, lastViewKey=null;
-function refreshViewport(withLabel){
+let moveDebounce=null, lastViewKey=null;
+function refreshViewport(){
   clearTimeout(moveDebounce);
   moveDebounce=setTimeout(()=>{
     // Only refetch the viewport feeds when the visible area actually changed.
@@ -1401,25 +1351,11 @@ function refreshViewport(withLabel){
       refreshBase=Date.now();
     }
     sitrepTick();
-    if(withLabel) updateAreaLabel();
   },450);
 }
-gl.on('moveend',()=>refreshViewport(true));
+gl.on('moveend',refreshViewport);
 // container resize doesn't reliably fire moveend, so refetch here too
-gl.on('resize',()=>refreshViewport(false));
-// the location chip follows the MAP CENTRE (reverse-geocoded), so panning
-// updates both the label and the SITREP for wherever you're looking
-async function updateAreaLabel(){
-  const c=gl.getCenter();
-  if(lastGeoC && havKm(lastGeoC.lat,lastGeoC.lng,c.lat,c.lng)<8) return; // moved <8 km
-  lastGeoC={lat:c.lat,lng:c.lng};
-  try{
-    const g=await getJSON(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${c.lat.toFixed(3)}&lon=${c.lng.toFixed(3)}&zoom=8`,
-      {headers:{'Accept-Language':'en'}});
-    const a=g.address||{};
-    setSitLoc(placeOf(a,g.name), regionOf(a)||(c.lat.toFixed(1)+', '+c.lng.toFixed(1)));
-  }catch(e){ setSitLoc('', c.lat.toFixed(1)+', '+c.lng.toFixed(1)); }
-}
+gl.on('resize',refreshViewport);
 
 // mobile: MAP / SITREP bottom nav toggles the SITREP sheet
 const mnavBtns=document.querySelectorAll('#mnav button');
