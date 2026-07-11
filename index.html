@@ -93,11 +93,15 @@
      scales itself to whatever box it gets — desktop dock, iPad, iPhone sheet. */
   #fly-pane{flex:0 0 50%;min-height:0;border-top:1px solid var(--line);background:#000;
     container-type:size;--fti:min(2.4cqh,3.3cqw);
-    display:flex;align-items:center;justify-content:center;
-    padding:min(2cqh,12px) min(3cqw,14px)}
+    /* a bottom-anchored column: the chart (flip box) then the settings box, both
+       hugging the foot of the panel; any slack falls as blank space ABOVE the
+       chart, between it and the SITREP cards */
+    display:flex;flex-direction:column;align-items:center;justify-content:flex-end;
+    gap:min(1.6cqh,10px);padding:min(2cqh,12px) min(3cqw,14px)}
   /* the board is the flip box: the grid fixes its height; the info card overlays
-     it (inset:0), so flipping never changes the box size */
-  #fly-pane .board{position:relative;width:100%;max-width:560px;max-height:100%}
+     it (inset:0), so flipping never changes the box size. Cells scale with cqh so
+     the grid self-fits whatever height is left after the settings box. */
+  #fly-pane .board{position:relative;width:100%;max-width:560px;flex:0 1 auto;min-height:0}
   #fly-pane .grid{width:100%;border:1px solid var(--line);border-radius:12px;cursor:pointer;
     padding:min(1.4cqh,8px) min(2cqw,10px);display:grid;
     grid-template-columns:minmax(0,1.15fr) repeat(4,minmax(0,1fr));   /* labels + NOW..+3h */
@@ -129,7 +133,8 @@
   #fly-pane .sk{display:block;border-radius:4px;background:var(--ink-dim);opacity:.22;
     width:58%;height:min(3.5cqh,4.6cqw);margin:0 auto;animation:flypulse 1.6s ease-in-out infinite}
   @media (prefers-reduced-motion:reduce){#fly-pane .sk{animation:none}}
-  /* the flip info card: gates/caps, data sources, and the two settings */
+  /* the flip info card: the gate/cap codes and the data sources (the settings
+     now live in their own box below the chart, not on this flip face) */
   #fly-pane .infobox{position:absolute;inset:0;z-index:1;overflow:auto;cursor:default;
     border:1px solid var(--line);border-radius:12px;background:#000;line-height:1.2;
     padding:min(2.4cqh,3.6cqw) min(2.6cqh,4cqw);text-align:left;display:flex;flex-direction:column}
@@ -144,9 +149,13 @@
   #fly-pane .irow .id.warn{color:var(--warn)}   /* that feed's last pull degraded */
   #fly-pane .irow .isrc{font-weight:800;color:var(--ok);letter-spacing:.05em;
     white-space:nowrap;text-decoration:none}
-  /* settings block: max wind + range, ± steppers. label left / value centre / buttons right */
-  #fly-pane .isettings{margin-top:min(2cqh,3cqw);padding-top:min(1cqh,1.6cqw);
-    border-top:1px solid rgba(116,133,150,.35)}
+  /* the settings box — max wind + range, ± steppers — its OWN box just below the
+     chart, both anchored to the foot of the panel. label left / value centre /
+     buttons right. Sized like the info card so the two faces of the flip and this
+     box read as one system. */
+  #fly-settings{width:100%;max-width:560px;flex:0 0 auto;
+    border:1px solid var(--line);border-radius:12px;background:#000;
+    padding:min(1.6cqh,10px) min(2.6cqh,4cqw)}
   #fly-pane .irow.iset{align-items:center;gap:0}
   #fly-pane .iset+.iset{margin-top:min(.9cqh,1.4cqw)}
   #fly-pane .iset .isl{flex:1 1 0;text-align:left;font-weight:800;color:var(--ink);
@@ -311,7 +320,10 @@
        canifly repo, which stays standalone): just the flyability grid and its
        flip info card, driven by the map-centre crosshair and the same unified
        data-refresh pulse as everything else. -->
-  <div id="fly-pane"><div id="fly-board" class="board" role="group" aria-label="Can I Fly? drone preflight"></div></div>
+  <div id="fly-pane">
+    <div id="fly-board" class="board" role="group" aria-label="Can I Fly? drone preflight"></div>
+    <div id="fly-settings" class="fset" aria-label="Preflight settings"></div>
+  </div>
 </div>
 
 <!-- center-on-me: floating control, bottom-right of the map -->
@@ -1699,8 +1711,13 @@ function flyInfoHtml(){
     +`<div class="irow"><a class="isrc" href="${KP_URL}" target="_blank" rel="noopener">noaa swpc</a><span class="id${w('kp')}">kp</span></div>`
     +`<div class="irow"><a class="isrc" href="https://mesonet.agron.iastate.edu/GIS/" target="_blank" rel="noopener">nexrad</a><span class="id${w('radar')}">pcpn radar</span></div>`
     +`<div class="irow"><a class="isrc" href="https://airplanes.live/" target="_blank" rel="noopener">ads-b</a><span class="id${wac}">trfc aircraft</span></div>`
-    +`<div class="isettings">`
-    +`<div class="irow iset"><span class="isl">max wind</span>`
+    +`</div></div>`;
+}
+// The settings box — max wind + range — rendered into its own #fly-settings box
+// below the chart (no longer a face of the flip). Independent of feed data, so it
+// renders once at boot and re-renders only when a value changes.
+function flySettingsHtml(){
+  return `<div class="irow iset"><span class="isl">max wind</span>`
     +`<span class="id sval" id="mw-val" role="button" tabindex="0" title="Tap to reset to ${MW_DEFAULT} mph">${LIM.wind} mph</span>`
     +`<span class="sgrp">`
     +`<button type="button" class="sbtn" id="mw-minus" aria-label="Decrease max wind 1 mph"></button>`
@@ -1709,9 +1726,9 @@ function flyInfoHtml(){
     +`<span class="id sval" id="rng-val" role="button" tabindex="0" title="Tap to reset to ${RNG_DEFAULT.toFixed(1)} mi">${RNG.mi.toFixed(1)} mi</span>`
     +`<span class="sgrp">`
     +`<button type="button" class="sbtn" id="rng-minus" aria-label="Decrease range half a mile"></button>`
-    +`<button type="button" class="sbtn splus" id="rng-plus" aria-label="Increase range half a mile"></button></span></div>`
-    +`</div></div></div>`;
+    +`<button type="button" class="sbtn splus" id="rng-plus" aria-label="Increase range half a mile"></button></span></div>`;
 }
+function flyRenderSettings(){ const s=$('#fly-settings'); if(s) s.innerHTML=flySettingsHtml(); }
 function flyRender(){
   const board=$('#fly-board'); if(!board) return;
   board.innerHTML=FLY.detail?flyBoardHtml(FLY.detail.board):flySkeletonHtml();
@@ -1728,7 +1745,8 @@ function setMaxWind(w){
   if(!Number.isFinite(w)||w===LIM.wind) return;
   LIM.wind=w;
   try{ localStorage.setItem(MW_KEY,String(w)); }catch(e){}
-  flyPaint();
+  flyRenderSettings();   // update the displayed value in the settings box
+  flyPaint();            // recompute the grid (wind gate) + repaint
 }
 // Range: ±0.5 mi, clamped 0.5–15, persisted. Changes the FAA query, the radar
 // sample AND the SITREP low-aircraft radius — repaint + SITREP recompute now,
@@ -1739,6 +1757,7 @@ function setRange(mi){
   if(!Number.isFinite(mi)||mi===RNG.mi) return;
   RNG.mi=mi;
   try{ localStorage.setItem(RNG_KEY,String(RNG.mi)); }catch(e){}
+  flyRenderSettings();   // update the displayed value in the settings box
   flyPaint(); scheduleSitrep();
   clearTimeout(rngFetchTimer);
   rngFetchTimer=setTimeout(flyRefresh,700);
@@ -1757,7 +1776,7 @@ document.addEventListener('click',e=>{
   const val=e.target.closest('#mw-val,#rng-val');
   if(val){ if(val.id==='mw-val') setMaxWind(MW_DEFAULT); else setRange(RNG_DEFAULT); return; }
   if(FLY.info){
-    if(e.target.closest('.isettings')||e.target.closest('#fly-pane a')) return;
+    if(e.target.closest('#fly-settings')||e.target.closest('#fly-pane a')) return;
     flyShowChart();
   }else if(e.target.closest('#fly-pane .grid')) flyShowInfo();
 });
@@ -1845,7 +1864,7 @@ gl.on('load',()=>{
   loadKp();   setInterval(loadKp,180000);   // space weather: planetary Kp (SITREP card)
   loadXray(); setInterval(loadXray,180000); // space weather: GOES X-ray flare (SITREP card)
   setMapPadding();
-  flyRender(); flyRefresh();   // canifly chart: skeleton now, first data pull immediately
+  flyRenderSettings(); flyRender(); flyRefresh();   // settings box + skeleton now, first data pull immediately
   locate();
   sitrepTick(); // SITREP works off the map area, even before a location fix
   if(!sitrepTimer) sitrepTimer=setInterval(sitrepTick,90000);
