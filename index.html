@@ -212,7 +212,8 @@
     left:calc(348px + var(--sa-l));right:calc(314px + var(--sa-r));width:auto;
     height:34vh;max-height:34vh}
   #sitrep.expanded{top:calc(var(--sa-t) + 8px);height:auto;max-height:none}
-  #sit-title.anom{color:var(--danger)!important}
+  #sit-title.warn{color:var(--danger)!important}
+  #sit-title.alert{color:var(--warn)!important}
   #sit-exp{color:var(--ink-dim);cursor:pointer;padding:2px 4px;flex:0 0 auto;font-size:11px}
   #sit-exp:hover,#sit-chev:hover{color:var(--accent)}
   #sitrep.expanded #sit-exp{color:var(--accent)}
@@ -590,8 +591,11 @@ function panelIconHTML(cfg){
   if(ic.startsWith('ac-')) return `<img class="pic" src="${shapeURL(cfg.color,PLANE)}">`;
   if(ic==='ship')      return `<img class="pic" src="${shapeURL(cfg.color,SHIP)}">`;
   if(ic==='veh-train') return `<img class="pic" src="${shapeURL(cfg.color,TRAIN)}">`;
+  if(ic==='ico-cam'&&CAM_URL) return `<img class="pic" src="${CAM_URL}">`;
+  if(ic==='ico-sat'&&SAT_URL) return `<img class="pic" src="${SAT_URL}">`;
   const em={'ico-fire':'🔥','ico-disaster':'⚠️','ico-iss':'🛰️','ico-volcano':'🌋',
-    'ico-launch':'🚀','ico-antenna':'📡','ico-cam':'📷','ico-news':'📰'}[ic];
+    'ico-launch':'🚀','ico-antenna':'📡','ico-news':'📰','ico-conflict':'💥',
+    'ico-malware':'🦠','ico-outage':'📴'}[ic];
   if(em) return `<span class="pic emj">${em}</span>`;
   return `<span class="sw" style="color:${cfg.color};background:${cfg.color}"></span>`;
 }
@@ -604,16 +608,49 @@ const SHIP=[[0,-15],[5.5,-5],[5.5,11],[3,15],[-3,15],[-5.5,11],[-5.5,-5]];
 const TRAIN=[[0,-14],[5,-9],[6,-8],[6,12],[4,15],[-4,15],[-6,12],[-6,-8],[-5,-9]];
 function addImg(name,data){ if(!gl.hasImage(name)) gl.addImage(name,data,{pixelRatio:2}); }
 const YEL='#ffce4d';
+// crisp vector glyphs (clearer than tiny emoji) — return {data,url}
+function makeGlyph(draw){
+  const s=44,c=document.createElement('canvas');c.width=c.height=s;
+  const x=c.getContext('2d');draw(x,s);
+  return {data:x.getImageData(0,0,s,s),url:c.toDataURL()};
+}
+function camIcon(){ return makeGlyph((x,s)=>{ const u=s/32; x.translate(s/2,s/2);
+  x.strokeStyle='rgba(3,8,14,.85)';x.lineWidth=u*1.2;
+  x.fillStyle='#38d0ff';
+  // body
+  x.beginPath();x.roundRect(-13*u,-7*u,26*u,16*u,3*u);x.fill();x.stroke();
+  // viewfinder bump
+  x.beginPath();x.roundRect(-4*u,-11*u,8*u,4*u,1.5*u);x.fill();x.stroke();
+  // lens
+  x.fillStyle='#0b1420';x.beginPath();x.arc(0,1*u,5.5*u,0,7);x.fill();x.stroke();
+  x.fillStyle='#9fe8ff';x.beginPath();x.arc(0,1*u,2.4*u,0,7);x.fill();
+}); }
+function satIcon(){ return makeGlyph((x,s)=>{ const u=s/32; x.translate(s/2,s/2);
+  x.strokeStyle='rgba(3,8,14,.85)';x.lineWidth=u*1.1;
+  // solar panels
+  x.fillStyle='#8fb6ff';
+  x.beginPath();x.rect(-13*u,-4*u,7*u,8*u);x.fill();x.stroke();
+  x.beginPath();x.rect(6*u,-4*u,7*u,8*u);x.fill();x.stroke();
+  // body
+  x.fillStyle='#e6eefc';x.beginPath();x.roundRect(-5*u,-5*u,10*u,10*u,2*u);x.fill();x.stroke();
+  // dish
+  x.fillStyle='#38d0ff';x.beginPath();x.arc(0,0,2.6*u,0,7);x.fill();
+}); }
+let CAM_URL='',SAT_URL='';
 function registerIcons(){
-  addImg('ac-mil',   shapeIcon('#ff4455',PLANE));   // military = red
-  addImg('ac-near',  shapeIcon(YEL,PLANE));         // civil aircraft = yellow
-  addImg('ac-sos',   shapeIcon('#ff2d55',PLANE,44));// emergency = red
+  addImg('ac-near',  shapeIcon('#2fe07a',PLANE));   // aircraft = green
+  addImg('ac-mil',   shapeIcon(YEL,PLANE));         // military = yellow
+  addImg('ac-sos',   shapeIcon('#ff4455',PLANE,44));// emergency = red
   addImg('ship',     shapeIcon(YEL,SHIP));          // ships = yellow
   addImg('veh-train',shapeIcon(YEL,TRAIN));         // trains = yellow
+  const cam=camIcon(), sat=satIcon();
+  addImg('ico-cam',cam.data); CAM_URL=cam.url;      // clearer camera glyph
+  addImg('ico-sat',sat.data); SAT_URL=sat.url;      // satellite glyph
   const E={'ico-fire':'🔥','ico-volcano':'🌋','ico-cyclone':'🌀','ico-flood':'🌊',
     'ico-quake':'🟠','ico-drought':'🏜️','ico-ice':'🧊','ico-storm':'⛈️','ico-dust':'🌫️',
     'ico-launch':'🚀','ico-antenna':'📡','ico-radio':'📻','ico-atc':'🛬','ico-iss':'🛰️',
-    'ico-train':'🚆','ico-cam':'📷','ico-disaster':'⚠️','ico-news':'📰'};
+    'ico-train':'🚆','ico-disaster':'⚠️','ico-news':'📰',
+    'ico-conflict':'💥','ico-malware':'🦠','ico-outage':'📴'};
   for(const k in E) addImg(k,emojiIcon(E[k]));
 }
 // EONET category -> icon; GDACS type -> icon
@@ -653,7 +690,7 @@ defLayer({
 });
 
 defLayer({
-  id:'nearair', label:'Aircraft', color:'#ffce4d', group:'air', refresh:30,
+  id:'nearair', label:'Aircraft', color:'#2fe07a', group:'air', refresh:30,
   icon:'ac-near', rotate:true, iconSize:0.6,
   // all civil (non-military) aircraft in the current map view (refetched on pan)
   loader: async ()=>{
@@ -665,14 +702,14 @@ defLayer({
 });
 
 defLayer({
-  id:'mil', label:'Military aircraft', color:'#ff4455', group:'air', refresh:60,
+  id:'mil', label:'Military aircraft', color:'#ffce4d', group:'air', refresh:60,
   icon:'ac-mil', rotate:true, iconSize:0.5,
   loader: async ()=> ({type:'FeatureCollection',features:acFeatures(await adsb('/mil'),'mil')}),
   popup:acPopup
 });
 
 defLayer({
-  id:'sos', label:'Emergency squawks', color:'#ff2d55', group:'air', refresh:60, defaultOff:true, bg:true,
+  id:'sos', label:'Emergency squawks', color:'#ff4455', group:'air', refresh:60, defaultOff:true, bg:true,
   icon:'ac-sos', rotate:true, iconSize:0.6,
   loader: async ()=>{
     // 7700 = general emergency, 7600 = radio failure, 7500 = unlawful interference
@@ -742,7 +779,7 @@ defLayer({
 });
 
 defLayer({
-  id:'sats', label:'Bright satellites', color:'#7ee0ff', group:'space', refresh:60, defaultOff:true,
+  id:'sats', label:'Bright satellites', color:'#7ee0ff', group:'space', refresh:60, defaultOff:true, icon:'ico-sat', iconSize:0.42,
   loader: async ()=>{
     // CelesTrak TLEs -> SGP4 propagated to "now", entirely in-browser
     const txt=await getText('https://celestrak.org/NORAD/elements/gp.php?GROUP=visual&FORMAT=tle');
@@ -754,7 +791,7 @@ defLayer({
 });
 
 defLayer({
-  id:'gps', label:'GPS constellation', color:'#8f9dff', group:'space', refresh:120, defaultOff:true,
+  id:'gps', label:'GPS constellation', color:'#8f9dff', group:'space', refresh:120, defaultOff:true, icon:'ico-sat', iconSize:0.42,
   loader: async ()=>{
     const txt=await getText('https://celestrak.org/NORAD/elements/gp.php?GROUP=gps-ops&FORMAT=tle');
     return tleToFC(txt);
@@ -765,7 +802,7 @@ defLayer({
 });
 
 defLayer({
-  id:'starlink', label:'Starlink (SpaceX)', color:'#dff0ff', group:'space', refresh:120, defaultOff:true,
+  id:'starlink', label:'Starlink (SpaceX)', color:'#dff0ff', group:'space', refresh:120, defaultOff:true, icon:'ico-sat', iconSize:0.36,
   loader: async ()=>{
     const txt=await getText('https://celestrak.org/NORAD/elements/gp.php?GROUP=starlink&FORMAT=tle');
     const fc=tleToFC(txt);
@@ -963,7 +1000,7 @@ defLayer({
 });
 
 defLayer({
-  id:'gdelt', label:'Conflict events (GDELT)', color:'#c77dff', group:'conflict', refresh:21600, defaultOff:true, sized:true,
+  id:'gdelt', label:'Conflict events (GDELT)', color:'#c77dff', group:'conflict', refresh:21600, defaultOff:true, icon:'ico-conflict', iconSize:0.46,
   note:'GDELT geo API often lacks CORS headers — kept with graceful failure so the block is visible, not silent.',
   loader: async ()=>{
     const j=await getJSON('https://api.gdeltproject.org/api/v2/geo/geo?query='+
@@ -1009,7 +1046,7 @@ defLayer({
 });
 
 defLayer({
-  id:'outages', label:'Internet outages', color:'#ff4d6d', group:'conflict', refresh:1800, defaultOff:true, sized:true, colored:true, bg:true,
+  id:'outages', label:'Internet outages', color:'#ff4d6d', group:'conflict', refresh:1800, defaultOff:true, colored:true, bg:true, icon:'ico-outage', iconSize:0.46,
   note:'IODA (Georgia Tech) internet-outage signals. Its CORS only allows the null origin, so this loads from a local file but may be blocked on an https host — fails gracefully.',
   loader: async ()=>{
     const now=Math.floor(Date.now()/1000), from=now-86400;
@@ -1032,7 +1069,7 @@ defLayer({
 });
 
 defLayer({
-  id:'cams', label:'Live cameras', color:'#7ee0ff', group:'signals', refresh:0, defaultOff:true, icon:'ico-cam', iconSize:0.44,
+  id:'cams', label:'Live cameras', color:'#38d0ff', group:'signals', refresh:0, defaultOff:true, bg:true, icon:'ico-cam', iconSize:0.5,
   // curated public 24/7 webcams; click opens the live stream in a new tab
   loader: async ()=> ({type:'FeatureCollection',features:CAMS.map(c=>({
     type:'Feature',geometry:{type:'Point',coordinates:[c[2],c[1]]},
@@ -1064,7 +1101,7 @@ defLayer({
 });
 
 defLayer({
-  id:'malware', label:'Malware C2 count', color:'#9b5cff', group:'conflict', refresh:300, defaultOff:true,
+  id:'malware', label:'Malware C2 count', color:'#9b5cff', group:'conflict', refresh:300, defaultOff:true, icon:'ico-malware', iconSize:0.46,
   note:'abuse.ch sends no CORS header — browser fetch is usually blocked; kept so the block is visible, not silent. No coordinates in the feed, so a count only.',
   loader: async ()=>{
     const j=await getJSON('https://feodotracker.abuse.ch/downloads/ipblocklist.json');
@@ -1436,8 +1473,10 @@ function autoTune(){
   }
 }
 
+let sitrepGen=0;
 async function sitrepTick(){
   // SITREP reflects the CURRENT MAP AREA (viewport bounds), not just the user.
+  const myGen=++sitrepGen;
   const c=gl.getCenter(), b=gl.getBounds();
   const lat=c.lat, lon=c.lng;
   const rows=[];
@@ -1460,9 +1499,10 @@ async function sitrepTick(){
   const oNear=nearView('src-outages',b,lat,lon);
   if(oNear) anom.push(['alert','📡','INTERNET OUTAGE',escapeHtml(oNear.f.properties.name)+' · '+fmtMi(oNear.km),flyBtn(oNear.f)]);
   if(KP!=null&&KP>=5) anom.push(['alert','🧲','GEOMAGNETIC STORM','Kp '+KP+' — HF / GPS / grid impact possible','']);
-  if(XRAY&&/^[MX]/.test(XRAY)) anom.push(['alert','☀','SOLAR FLARE '+XRAY,'HF radio blackout risk','']);
-  $('#sit-title').classList.toggle('anom',anom.length>0);
-  anom.forEach(a=>row(a[0],a[1],a[2],a[3],a[4]));
+  if(XRAY&&/^[MX]/.test(XRAY)) anom.push([/^X/.test(XRAY)?'danger':'alert','☀','SOLAR FLARE '+XRAY,'HF radio blackout risk','']);
+  // title severity: 0 none · 1 alert (amber) · 2 warning (red)
+  let titleSev=0;
+  anom.forEach(a=>{ titleSev=Math.max(titleSev,a[0]==='danger'?2:1); row(a[0],a[1],a[2],a[3],a[4]); });
 
   // -- weather alerts for the map centre (NWS, US) --
   const ck=lat.toFixed(2)+','+lon.toFixed(2);
@@ -1473,9 +1513,16 @@ async function sitrepTick(){
   const al=alertCache.d&&alertCache.d.features;
   if(al&&al.length){
     const a=al[0].properties;
-    row('danger','⚠',escapeHtml(a.event),
-      al.length>1?('+ '+(al.length-1)+' more alerts in this area'):escapeHtml(String(a.headline||'').slice(0,60)));
+    // Warning / Extreme / Severe -> red; Watch / Advisory / lesser -> amber
+    const warnLvl=/warning/i.test(a.event||'')||/extreme|severe/i.test(a.severity||'');
+    titleSev=Math.max(titleSev,warnLvl?2:1);
+    row(warnLvl?'danger':'alert','⚠',escapeHtml(a.event),
+      al.length>1?('+ '+(al.length-1)+' more in this area'):escapeHtml(String(a.headline||'').slice(0,60)));
   }
+  if(myGen!==sitrepGen) return; // a newer tick superseded this one — don't clobber
+  const t=$('#sit-title');
+  t.classList.remove('warn','alert');
+  if(titleSev>=2) t.classList.add('warn'); else if(titleSev>=1) t.classList.add('alert');
 
   // -- conditions at the map centre (Open-Meteo, worldwide) --
   if(wxCache.k!==ck||Date.now()-wxCache.t>600000){
@@ -1534,6 +1581,10 @@ async function sitrepTick(){
   const bcN=countView('src-broadcast',b);
   if(bcN) row('','📡',bcN+' BROADCAST STATIONS IN VIEW','internet radio — click to play',
     `<button class="act" data-act="cast">OPEN</button>`);
+  const ncam=nearView('src-cams',b,lat,lon), camN=countView('src-cams',b);
+  if(ncam) row('','📷',(camN>1?camN+' LIVE CAMERAS · ':'LIVE CAMERA · ')+escapeHtml(ncam.f.properties.name),
+    'nearest '+fmtMi(ncam.km),
+    `<button class="act" data-act="link" data-url="${escapeHtml(ncam.f.properties.url||'')}">OPEN</button>`);
 
   $('#sit-body').innerHTML=rows.length?rows.join(''):
     '<div class="sit-empty">NO SIGNALS IN THIS AREA — PAN OR ZOOM THE MAP</div>';
@@ -1616,9 +1667,9 @@ async function loadSystems(){
 }
 
 function selectSystem(shortName){
-  // start from the last ~20 min so we get RECENT calls, not the oldest in the
-  // archive (time=0 returns calls newer-than-epoch = the very first ones).
-  mhzCur=shortName; mhzSince=Date.now()-20*60*1000; mhzSeen.clear(); mhzQueue=[];
+  // start from NOW: only calls received after you select auto-play, in order,
+  // then it idles until the next live call — never replays the archive.
+  mhzCur=shortName; mhzSince=Date.now(); mhzSeen.clear(); mhzQueue=[];
   $('#mhz-list').innerHTML='';
   const s=mhzSystems.find(x=>x.shortName===shortName);
   $('#mhz-status').innerHTML='<span class="spin"></span> '+
@@ -1795,7 +1846,7 @@ function rebuildHFList(){
     const dist=USER.lat!=null?' · '+fmtMi(havKm(USER.lat,USER.lon,k[2][0],k[2][1])):'';
     row.innerHTML=`<div class="rmain"><b>${escapeHtml(k[0])}</b>
       <span>${escapeHtml(k[3]||'HF')} · 0–30 ${U('MHz')}${dist}</span></div><button class="btn sm">tune</button>`;
-    row.onclick=()=>{ gl.flyTo({center:[k[2][1],k[2][0]],zoom:6}); kwSelect(k[1],k[0]); };
+    row.onclick=()=>{ gl.flyTo({center:[k[2][1],k[2][0]],zoom:6}); kwSelect(k[1],k[0]); kwConnect(); };
     list.appendChild(row);
   });
 }
@@ -1813,7 +1864,7 @@ function loadKiwiDirectory(){
     return [name,host,[lat,lon],clean((e.name||'').split('|').slice(-1)[0]).slice(0,28)];
   };
   const s=document.createElement('script');
-  s.src='http://rx.linkfanel.net/kiwisdr_com.js';
+  s.src=(location.protocol==='https:'?'https':'http')+'://rx.linkfanel.net/kiwisdr_com.js';
   s.onload=()=>{ try{
     const list=(window.kiwisdr_com||[]).map(kiwiRow).filter(Boolean);
     if(list.length<50) return;
@@ -1859,29 +1910,41 @@ function kwSend(s){ try{ KW.ws&&KW.ws.readyState===1&&KW.ws.send(s); }catch(e){}
 
 function kwConnect(){
   if(KW.live||!KW.host) return;
-  if(location.protocol==='https:'){
-    $('#tuner-status').innerHTML='<span style="color:var(--warn)">this page is on https — '+
-      'browsers block the KiwiSDR ws:// stream. Use “native ↗”, or run seehear from a local file.</span>';
-    return;
-  }
-  stopSharedAudio(); // hand audio focus to the tuner
   let host=KW.host; if(!/:/.test(host)) host+=':8073';
-  const t=Math.floor(Math.random()*1e6);
+  const native='http://'+host;
+  // ws:// can't be opened from an https page (mixed content) — open the node's
+  // native web tuner in a new tab instead, which works from any deployment.
+  if(location.protocol==='https:'){
+    $('#tuner-status').innerHTML='HTTPS PAGE — OPENING NATIVE TUNER ↗';
+    window.open(native,'_blank','noopener'); return;
+  }
+  stopSharedAudio();
+  const t=Math.trunc(Date.now()/1000);
   $('#tuner-status').innerHTML='<span class="spin"></span> connecting to '+escapeHtml(host)+'…';
   let ws;
   try{ ws=new WebSocket('ws://'+host+'/'+t+'/SND'); }
-  catch(e){ $('#tuner-status').textContent='connection failed: '+e.message; return; }
-  ws.binaryType='arraybuffer'; KW.ws=ws;
-  KW.adpcm=makeAdpcm();
+  catch(e){ $('#tuner-status').textContent='cannot connect — opening native tuner ↗';
+    window.open(native,'_blank','noopener'); return; }
+  ws.binaryType='arraybuffer'; KW.ws=ws; KW.adpcm=makeAdpcm(); KW.gotAudio=false;
   if(!KW.ctx){ KW.ctx=new (window.AudioContext||window.webkitAudioContext)();
     KW.gain=KW.ctx.createGain(); KW.gain.gain.value=1.0; KW.gain.connect(KW.ctx.destination); }
   if(KW.ctx.state==='suspended') KW.ctx.resume();
   KW.playAt=0;
+  // fall back to the native tuner (once) so the user always gets sound
+  let opened=false;
+  const goNative=msg=>{ $('#tuner-status').innerHTML=msg;
+    if(!opened){ opened=true; window.open(native,'_blank','noopener'); } };
+  KW.goNative=goNative;
+  // if no audio arrives within 8s (node full / unsupported / firewalled)
+  KW.watchdog=setTimeout(()=>{ if(KW.ws===ws && !KW.gotAudio){
+    try{ws.close();}catch(e){} goNative('NO AUDIO FROM NODE — OPENING NATIVE TUNER ↗'); } },8000);
 
   ws.onopen=()=>{
     kwSend('SET auth t=kiwi p=');
+    kwSend('SET ident_user=seehear');
     kwSend('SET AR OK in='+KW.rate+' out=44100');
     kwSend('SET squelch=0 max=0');
+    kwSend('SET lms_autonotch=0');
     kwSend('SET agc=1 hang=0 thresh=-100 slope=6 decay=1000 manGain=50');
     kwSend(kwTuneCmd());
     kwSend('SET compression=1');
@@ -1889,7 +1952,7 @@ function kwConnect(){
     KW.live=true;
     $('#t-connect').disabled=true; $('#t-connect').classList.add('live');
     $('#t-stop').disabled=false;
-    $('#tuner-status').innerHTML='▶ streaming '+escapeHtml(KW.name)+' · '+KW.freq+' kHz '+KW.mode.toUpperCase();
+    $('#tuner-status').innerHTML='<span class="spin"></span> negotiating audio…';
     $('#nowplaying').textContent='📻 '+KW.name+' · '+KW.freq+' kHz';
   };
   ws.onmessage=ev=>{
@@ -1899,18 +1962,17 @@ function kwConnect(){
     const tag=String.fromCharCode(dv.getUint8(0),dv.getUint8(1),dv.getUint8(2));
     if(tag==='SND'){
       if(buf.byteLength<=10) return;
+      if(!KW.gotAudio){ KW.gotAudio=true; clearTimeout(KW.watchdog);
+        $('#tuner-status').innerHTML='▶ '+escapeHtml(KW.name)+' · '+KW.freq+' kHz '+KW.mode.toUpperCase(); }
       const smeter=dv.getUint16(8,false)&0x0fff;
-      const rssi=smeter*0.1-127;
-      kwMeter(rssi);
-      const data=new Uint8Array(buf,10);
-      kwPlay(KW.adpcm.decode(data));
+      kwMeter(smeter*0.1-127);
+      kwPlay(KW.adpcm.decode(new Uint8Array(buf,10)));
     } else if(tag==='MSG'){
       kwMsg(new TextDecoder().decode(new Uint8Array(buf,3)));
     }
   };
-  ws.onclose=()=>{ if(KW.live){ $('#tuner-status').textContent='connection closed'; } kwCleanup(); };
-  ws.onerror=()=>{ $('#tuner-status').innerHTML='<span style="color:var(--danger)">'+
-    'stream error — node offline/full, or ws blocked. Try “native ↗”.</span>'; };
+  ws.onclose=()=>{ if(KW.live&&!KW.gotAudio) goNative('NODE UNREACHABLE — OPENING NATIVE TUNER ↗'); kwCleanup(); };
+  ws.onerror=()=>{ if(!KW.gotAudio){ try{ws.close();}catch(e){} goNative('STREAM ERROR — OPENING NATIVE TUNER ↗'); } };
 }
 function kwMsg(s){
   const m=/sample_rate=([\d.]+)/.exec(s)||/audio_rate=([\d.]+)/.exec(s);
@@ -1967,6 +2029,7 @@ function kwScan(){
 }
 function kwCleanup(){
   KW.live=false; if(KW.keep){clearInterval(KW.keep);KW.keep=null;}
+  if(KW.watchdog){clearTimeout(KW.watchdog);KW.watchdog=null;}
   $('#t-connect').disabled=false; $('#t-connect').classList.remove('live');
   $('#t-stop').disabled=true;
   $('#smeter').style.setProperty('--s','0%'); $('#smeter-val').textContent='S–';
@@ -2182,7 +2245,7 @@ $('#cast-go').addEventListener('click',()=>loadCast($('#cast-q').value.trim()));
 $('#cast-q').addEventListener('keydown',e=>{ if(e.key==='Enter'){e.preventDefault();loadCast($('#cast-q').value.trim());} });
 
 // viewport-dependent layers (all aircraft, broadcast stations) refetch on pan/zoom
-let moveDebounce=null;
+let moveDebounce=null, lastGeoC=null;
 gl.on('moveend',()=>{
   clearTimeout(moveDebounce);
   moveDebounce=setTimeout(()=>{
@@ -2192,8 +2255,24 @@ gl.on('moveend',()=>{
       if(st&&st.on&&st.started) runLayer(LAYERS.find(l=>l.id===id));
     });
     sitrepTick();
-  },600);
+    updateAreaLabel();
+  },500);
 });
+// the location chip follows the MAP CENTRE (reverse-geocoded), so panning
+// updates both the label and the SITREP for wherever you're looking
+async function updateAreaLabel(){
+  const c=gl.getCenter();
+  if(lastGeoC && havKm(lastGeoC.lat,lastGeoC.lng,c.lat,c.lng)<8) return; // moved <8 km
+  lastGeoC={lat:c.lat,lng:c.lng};
+  try{
+    const g=await getJSON(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${c.lat.toFixed(3)}&lon=${c.lng.toFixed(3)}&zoom=8`,
+      {headers:{'Accept-Language':'en'}});
+    const a=g.address||{};
+    const place=a.city||a.town||a.village||a.county||a.state||g.name||'';
+    const cc=(a.country_code||'').toUpperCase();
+    $('#sit-loc').textContent=(place?place+', ':'')+(a.country?(cc||a.country):(c.lat.toFixed(1)+', '+c.lng.toFixed(1)));
+  }catch(e){ $('#sit-loc').textContent=c.lat.toFixed(2)+', '+c.lng.toFixed(2); }
+}
 
 // mobile: MAP / LAYERS / RADIO bottom nav toggles the panels as sheets
 const mnavBtns=document.querySelectorAll('#mnav button');

@@ -122,8 +122,11 @@ profile (RestCountries) + head of state (Wikidata SPARQL) + Wikipedia summary.
    back to a curated list. Frequency entry, AM/LSB/USB/CW/FM, 13 band presets,
    live S-meter. **◎ NEAREST** tunes the closest receiver to your location;
    **SCAN** band-scans the HF spectrum. Nodes are http/ws, so run seehear from
-   a local file (an https host blocks the mixed-content ws); a native-tuner
-   link is offered as fallback.
+   a local file. On an **https** deployment the browser blocks the
+   mixed-content `ws://`, so tapping a receiver opens its native web tuner in
+   a new tab instead; the in-page tuner also auto-falls-back to the native
+   tuner if a node sends no audio within 8 s — so a receiver tap always
+   produces sound somewhere.
 3. **Aviation ATC — LiveATC + METARs.** 20 major world airports with live
    METAR weather (aviationweather.gov) inline in each row. ▶ tries the direct
    mp3 stream (`<audio>` playback isn't CORS-gated); ↗ opens LiveATC's
