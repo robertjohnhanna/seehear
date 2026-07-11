@@ -273,12 +273,12 @@
   </div>
   <div id="emg">
     <div id="emg-top">
-      <button id="emg-toggle" title="play / pause" aria-label="play"><svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.52.85l10.5-6.5a1 1 0 0 0 0-1.7L9.52 4.65A1 1 0 0 0 8 5.5z" fill="currentColor"/></svg></button>
       <div id="emg-meta">
         <div id="emg-label">NOAA weather radio</div>
         <div id="emg-name">— locating nearest station —</div>
         <div id="emg-sub"></div>
       </div>
+      <button id="emg-toggle" title="play / pause" aria-label="play"><svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.52.85l10.5-6.5a1 1 0 0 0 0-1.7L9.52 4.65A1 1 0 0 0 8 5.5z" fill="currentColor"/></svg></button>
     </div>
     <audio id="audio" preload="none"></audio>
   </div>
@@ -889,7 +889,7 @@ defLayer({
   // or statements) — the US half of the worldwide warnings picture (GDACS below
   // is the global multi-hazard half). Keyless, CORS *. Polygons where present
   // (tornado / severe-thunderstorm / flash-flood / red-flag warnings carry them).
-  id:'nws', label:'NWS warnings (US)', color:'#ff4455', group:'hazard', refresh:120,
+  id:'nws', label:'NWS warnings (US)', color:'#ff4455', group:'hazard', refresh:120, ord:1,
   bg:true, geom:'fill', colored:true,
   loader: async ()=>{
     const j=await getJSON('https://api.weather.gov/alerts/active',{timeout:20000});
@@ -936,7 +936,7 @@ defLayer({
   // hail, damaging wind — is EXPECTED today. Categorical risk + tornado-prob
   // polygons. Keyless, CORS *. bg-loaded so the SITREP can flag "you're in an
   // Enhanced Risk / tornado-outlook area today" even with the layer hidden.
-  id:'spc', label:'Severe wx outlook (US)', color:'#ffb454', group:'hazard', refresh:1800,
+  id:'spc', label:'Severe wx outlook (US)', color:'#ffb454', group:'hazard', refresh:1800, ord:2,
   defaultOff:true, bg:true, geom:'fill', colored:true,
   loader: async ()=>{
     const base='https://www.spc.noaa.gov/products/outlook/';
@@ -1062,7 +1062,9 @@ function scheduleLayer(cfg){
 function buildLayerPanel(){
   const groups={air:'#grp-air',surface:'#grp-surface',space:'#grp-space',
     hazard:'#grp-hazard'};
-  LAYERS.forEach(cfg=>{
+  // panel order within a group: lower `ord` first (NWS, then outlook), the rest
+  // keep their definition order (stable sort)
+  LAYERS.slice().sort((a,b)=>(a.ord||99)-(b.ord||99)).forEach(cfg=>{
     LAYER_STATE[cfg.id]={cnt:0,timer:null,on:!cfg.defaultOff,started:!cfg.defaultOff,
       gen:0,quickTimer:null,fails:0};
     ensureMapLayer(cfg);
@@ -1441,7 +1443,8 @@ async function sitrepTick(){
   if(spcF.length){
     const tornHit=spcF.filter(f=>f.properties.kind==='torn'&&pointInFeature(f,lon,lat))
       .sort((a,b)=>(parseFloat(b.properties.code)||0)-(parseFloat(a.properties.code)||0))[0];
-    const catHit=spcF.filter(f=>f.properties.kind==='cat'&&f.properties.rank>=2&&pointInFeature(f,lon,lat))
+    // Marginal (rank 1) and up — show it; Moderate/High (>=4) go red, the rest amber
+    const catHit=spcF.filter(f=>f.properties.kind==='cat'&&f.properties.rank>=1&&pointInFeature(f,lon,lat))
       .sort((a,b)=>b.properties.rank-a.properties.rank)[0];
     if(tornHit){ const tp=parseFloat(tornHit.properties.code)||0; const red=tornHit.properties.sig||tp>=0.10;
       anom.push([red?'danger':'alert','🌪️','TORNADO OUTLOOK',escapeHtml(tornHit.properties.label)+' in this area today'+(tornHit.properties.sig?' · significant (EF2+)':''),'']); }
