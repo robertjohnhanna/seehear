@@ -99,10 +99,22 @@
     flex:1 1 auto;min-height:0}
   #sitrep{top:0;right:0;left:auto;width:320px;bottom:0;
     padding-right:var(--sa-r);border-left:1px solid var(--line)}
-  #obj-head{flex:0 0 auto;display:flex;align-items:center;gap:8px;padding:9px 12px;min-height:48px;
+  #obj-head{flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:9px 12px;min-height:48px;
     border-bottom:1px solid var(--line);font-size:13px;letter-spacing:2px;color:var(--accent);
     font-weight:700}
   #obj-head .brand{color:var(--ink-dim);letter-spacing:.5px;font-weight:400;margin-left:auto;font-size:13px}
+  /* two tabs in the MAP DATA panel header: layers ↔ Can I Fly */
+  .objtab{cursor:pointer;color:var(--ink-dim);letter-spacing:1.5px;padding:2px 0;
+    border-bottom:2px solid transparent;white-space:nowrap}
+  .objtab.active{color:var(--accent);border-bottom-color:var(--accent)}
+  #obj-head #utc-badge{margin-left:auto}
+  /* Can I Fly pane fills the panel body below the header; hidden until its tab
+     is active (a body class on #layers flips which view shows). */
+  #fly-pane{display:none;flex:1 1 auto;min-height:0}
+  #fly-frame{width:100%;height:100%;border:0;display:block;background:#000}
+  #layers.show-fly #layers-scroll,#layers.show-fly #panel-foot,
+  #layers.show-fly #utc-badge{display:none}
+  #layers.show-fly #fly-pane{display:block}
 
   .sheet-grip{display:none}
   .sec-h{font-size:13px;letter-spacing:1.2px;color:var(--ink-dim);
@@ -301,7 +313,11 @@
 <!-- objects panel -->
 <div id="layers" class="panel">
   <div class="sheet-grip" data-close="layers"></div>
-  <div id="obj-head">◧ MAP DATA <span class="badge" id="utc-badge" title="time to next data refresh" style="margin-left:auto"><b id="refresh-count">30</b>s to update</span></div>
+  <div id="obj-head">
+    <span class="objtab active" data-tab="data">◧ MAP DATA</span>
+    <span class="objtab" data-tab="fly">▲ CAN I FLY</span>
+    <span class="badge" id="utc-badge" title="time to next data refresh"><b id="refresh-count">30</b>s</span>
+  </div>
   <div id="layers-scroll">
     <div class="sec-h">Aircraft</div><div id="grp-air"></div>
     <div class="sec-h">Maritime &amp; rail</div><div id="grp-surface"></div>
@@ -309,6 +325,10 @@
     <div class="sec-h">Earth &amp; hazard</div><div id="grp-hazard"></div>
   </div>
   <div id="panel-foot"><span style="opacity:.6">© OpenStreetMap · CARTO</span></div>
+  <!-- CAN I FLY: canifly drone-preflight tool, embedded live from its own repo
+       (github.io/canifly). Lazy-loaded on first open; driven by the map centre
+       via postMessage so it tracks the crosshair like the SITREP does. -->
+  <div id="fly-pane"><iframe id="fly-frame" title="Can I Fly? — drone preflight" allow="geolocation"></iframe></div>
 </div>
 
 <!-- SITREP briefing panel (right side) + auto-tuned emergency broadcast -->
@@ -2049,6 +2069,40 @@ document.querySelectorAll('.sheet-grip').forEach(gr=>
   gr.addEventListener('click',()=>openSheet('')));
 // tapping the map closes any open sheet (mobile only; harmless on desktop)
 gl.on('dragstart',()=>{ if(MQ_MOBILE.matches) openSheet(''); });
+
+/* ---- CAN I FLY tab: embed canifly (own repo) and drive it from the crosshair.
+   The iframe loads lazily on first open; sitrep posts the map CENTRE to it so
+   the flyability read tracks wherever you're looking, exactly like the SITREP.
+   Contract: sitrep → canifly {type:'sitrep:loc',lat,lon}; canifly → sitrep
+   {type:'canifly:ready'} once it can accept a location. canifly stays fully
+   standalone (it only enters embed mode when it detects it's in an iframe). ---- */
+const CANIFLY_URL='https://robertjohnhanna.github.io/canifly/';
+const CANIFLY_ORIGIN=new URL(CANIFLY_URL).origin;
+let flyReady=false;
+function pushFlyLoc(){
+  const fr=$('#fly-frame');
+  if(!flyReady||!fr||!fr.contentWindow) return;
+  const c=gl.getCenter();
+  fr.contentWindow.postMessage({type:'sitrep:loc',lat:c.lat,lon:c.lng},CANIFLY_ORIGIN);
+}
+function showObjTab(which){
+  const fly=which==='fly';
+  $('#layers').classList.toggle('show-fly',fly);
+  document.querySelectorAll('.objtab').forEach(t=>t.classList.toggle('active',t.dataset.tab===which));
+  if(fly){
+    const fr=$('#fly-frame');
+    if(!fr.getAttribute('src')) fr.src=CANIFLY_URL;   // lazy: canifly loads only when first opened
+    pushFlyLoc();                                     // resend the crosshair on every (re)open
+  }
+}
+document.querySelectorAll('.objtab').forEach(t=>t.addEventListener('click',()=>showObjTab(t.dataset.tab)));
+// once canifly signals it can take a location (or the frame simply finishes
+// loading), send the current crosshair; keep it in sync while the tab is open
+$('#fly-frame').addEventListener('load',()=>{ flyReady=true; pushFlyLoc(); });
+window.addEventListener('message',e=>{
+  if(e.origin===CANIFLY_ORIGIN && e.data && e.data.type==='canifly:ready'){ flyReady=true; pushFlyLoc(); }
+});
+gl.on('moveend',()=>{ if($('#layers').classList.contains('show-fly')) pushFlyLoc(); });
 
 /* =====================================================================
    12. STATIC DATA — curated, keyless (no fetch)
