@@ -179,13 +179,20 @@
   #loc-btn:active{background:var(--accent);color:#00140a}
   #sit-body{display:flex;flex-direction:column;align-content:start;
     overflow-y:auto;padding:4px 0;-webkit-overflow-scrolling:touch;flex:1 1 auto;min-height:0}
-  .sit-row{display:flex;align-items:center;gap:9px;padding:7px 12px;font-size:13px;min-height:34px;
+  /* every SITREP row is a uniform 3-line block: icon · three ellipsised text
+     lines (or a 3-line-clamped news blurb) · an action button. */
+  .sit-row{display:flex;align-items:center;gap:9px;padding:8px 12px;font-size:13px;min-height:62px;
     border-bottom:1px solid #10171f}
-  .sit-row .ic{flex:0 0 18px;text-align:center}
-  .sit-row .tx{flex:1;min-width:0;line-height:1.4}
-  .sit-row .tx s1{display:block;color:var(--ink)}
-  .sit-row .tx s2{display:block;color:var(--ink-dim);font-size:13px}
-  .sit-row .act{flex:0 0 auto;background:var(--panel2);border:1px solid var(--accent);
+  .sit-row .ic{flex:0 0 18px;text-align:center;align-self:flex-start;padding-top:1px}
+  .sit-row .tx{flex:1;min-width:0;line-height:1.34;display:flex;flex-direction:column;justify-content:center}
+  .sit-row .tx s1,.sit-row .tx s2,.sit-row .tx s3{display:block;white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis}
+  .sit-row .tx s1{color:var(--ink)}
+  .sit-row .tx s2,.sit-row .tx s3{color:var(--ink-dim);font-size:12px}
+  /* news items are one blurb clamped to exactly three lines */
+  .sit-row .tx.news{display:-webkit-box;-webkit-line-clamp:3;line-clamp:3;
+    -webkit-box-orient:vertical;white-space:normal;overflow:hidden;color:var(--ink)}
+  .sit-row .act{flex:0 0 auto;align-self:center;background:var(--panel2);border:1px solid var(--accent);
     color:var(--accent);border-radius:14px;padding:4px 11px;font-size:13px;cursor:pointer;
     letter-spacing:.5px;min-height:28px}
   .sit-row .act:active{background:var(--accent);color:#06231e}
@@ -456,6 +463,23 @@ function nwsInView(b){
   });
 }
 const escapeHtml = s => String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+// One concise, consistent location label everywhere: "PLACE, XX" — XX is a short
+// region code (US state, else country). No "· GPS/IP" or coords suffix; that
+// varying tail is what made the label flicker between formats and overflow.
+function regionOf(a){
+  const cc=(a.country_code||'').toUpperCase();
+  const sub=(a['ISO3166-2-lvl4']||a['ISO3166-2-lvl6']||'').split('-')[1];
+  return (cc==='US'&&sub&&sub.length<=3)?sub:cc;
+}
+function placeOf(a,fallback){
+  return a.city||a.town||a.village||a.suburb||a.county||a.state||fallback||'';
+}
+function setSitLoc(place,region){
+  place=String(place||'').trim(); region=String(region||'').trim();
+  if(place.length>20) place=place.slice(0,19)+'…';
+  const el=$('#sit-loc'); if(el) el.textContent = place ? (region?place+', '+region:place) : (region||'—');
+}
 
 /* =====================================================================
    1. MAP — CARTO dark basemap (keyless raster tiles)
@@ -1365,9 +1389,7 @@ function setUserFix(lat,lon,src,meta){
     // no second zoom animation, so the load never "chops"
     gl.easeTo({center:[lon,lat],duration:700});
   }
-  $('#sit-loc').textContent=(USER.place?USER.place+', ':'')+
-    (USER.rc||USER.region||USER.cc||lat.toFixed(2)+', '+lon.toFixed(2))+
-    ' · '+src.toUpperCase();
+  setSitLoc(USER.place, (USER.cc||'').toUpperCase()==='US' ? (USER.rc||USER.cc) : (USER.cc||USER.rc));
   if(src==='gps'&&!meta) reverseFill();
   // (re)tune the nearest emergency broadcast every time the location changes
   emergencyTune(lat,lon);
@@ -1379,10 +1401,8 @@ async function reverseFill(){
     const g=await getJSON(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${USER.lat}&lon=${USER.lon}&zoom=10`,
       {headers:{'Accept-Language':'en'}});
     const a=g.address||{};
-    USER.place=a.city||a.town||a.village||a.county||g.name||'';
-    USER.region=a.state||''; USER.cc=(a.country_code||'').toUpperCase();
-    $('#sit-loc').textContent=(USER.place?USER.place+', ':'')+
-      (USER.region||USER.cc)+' · GPS';
+    USER.place=placeOf(a,g.name); USER.region=a.state||''; USER.cc=(a.country_code||'').toUpperCase();
+    setSitLoc(USER.place, regionOf(a));
   }catch(e){}
 }
 
@@ -1393,46 +1413,63 @@ async function sitrepTick(){
   const c=gl.getCenter(), b=viewBounds();   // only the area visible between the panels
   const lat=c.lat, lon=c.lng;
   const rows=[];
-  const row=(cls,ic,l1,l2,act)=>rows.push(
+  // Every row is 3 lines (l1/l2/l3) + an action button. Helpers below always
+  // yield a button so no row is action-less.
+  const row=(cls,ic,l1,l2,l3,act)=>rows.push(
     `<div class="sit-row${cls?' '+cls:''}"><span class="ic">${ic}</span>`+
-    `<span class="tx"><s1>${l1}</s1>${l2?`<s2>${l2}</s2>`:''}</span>${act||''}</div>`);
-  const flyBtn=f=>`<button class="act" data-act="fly" data-ll="${f.geometry.coordinates.slice(0,2).join(',')}">VIEW</button>`;
-  const polyFlyBtn=f=>{const p=polyPt(f);return p?`<button class="act" data-act="fly" data-ll="${p[0]+','+p[1]}">VIEW</button>`:'';};
+    `<span class="tx"><s1>${l1||''}</s1><s2>${l2||''}</s2><s3>${l3||''}</s3></span>`+
+    `${act||''}</div>`);
+  const llBtn=(lo,la,lbl)=>isFinite(lo)&&isFinite(la)?`<button class="act" data-act="fly" data-ll="${lo+','+la}">${lbl||'VIEW'}</button>`:'';
+  const flyBtn=f=>llBtn(f.geometry.coordinates[0],f.geometry.coordinates[1]);
+  const polyFlyBtn=f=>{const p=polyPt(f);return p?llBtn(p[0],p[1]):'';};
+  const openBtn=(url,lbl)=>`<button class="act" data-act="open" data-url="${escapeHtml(url)}">${lbl||'OPEN'}</button>`;
+  const dist=f=>fmtMi(havKm(lat,lon,f.geometry.coordinates[1],f.geometry.coordinates[0]));
+  const SWPC='https://www.swpc.noaa.gov/', SPCU='https://www.spc.noaa.gov/products/outlook/day1otlk.html';
 
   // -- ANOMALIES in view (+ global space weather). No header line: the
-  //    "SITREP" title in the bar turns red when anything is flagged. --
+  //    "SITREP" title in the bar turns red when anything is flagged.
+  //    Each entry: [cls, icon, line1, line2, line3, action] --
   const anom=[];
   // aircraft emergencies are always surfaced WORLDWIDE (they're rare + critical),
   // not just when one is in the map area
   const sosAll=featsIn('src-sos');
   if(sosAll.length){ const n=nearestIn('src-sos',lat,lon);
-    anom.push(['danger','🚨','AIRCRAFT EMERGENCY',sosAll.length+' squawking 7500/7600/7700'+(n?' · '+fmtMi(n.km):''),n?flyBtn(n.f):'']); }
+    anom.push(['danger','🚨','AIRCRAFT EMERGENCY',sosAll.length+' squawking 7500 / 7600 / 7700',
+      n?('nearest '+escapeHtml(n.f.properties.flight||'?')+' · '+fmtMi(n.km)):'monitoring all emergency codes',
+      n?flyBtn(n.f):openBtn('https://globe.adsbexchange.com/','MAP')]); }
   const gRed=featsIn('src-gdacs').filter(f=>inBounds(b,f.geometry.coordinates[0],f.geometry.coordinates[1])&&(f.properties.level==='Red'||f.properties.level==='Orange'));
   if(gRed.length){ const nr=nearView('src-gdacs',b,lat,lon);
-    anom.push([gRed.some(f=>f.properties.level==='Red')?'danger':'alert','🌀','DISASTER ALERT',gRed.length+' red/orange in view'+(nr?' · '+fmtMi(nr.km):''),nr?flyBtn(nr.f):'']); }
+    anom.push([gRed.some(f=>f.properties.level==='Red')?'danger':'alert','🌀','DISASTER ALERT',
+      gRed.length+' red / orange event'+(gRed.length>1?'s':'')+' in view',
+      nr?(escapeHtml(String(nr.f.properties.name||nr.f.properties.type||'').slice(0,32))+' · '+fmtMi(nr.km)):'GDACS multi-hazard',
+      nr?flyBtn(nr.f):'']); }
   const nws=nwsInView(b);
   if(nws.length){
     // A live NWS *warning* is imminent-threat by definition. Extreme/Severe
     // (tornado, severe-tstorm, flash-flood) → RED; lesser-tagged → amber.
     const red=nws.some(f=>/Extreme|Severe/i.test(f.properties.severity));
     const top=nws.slice().sort((x,y)=>({Extreme:3,Severe:2}[y.properties.severity]||1)-({Extreme:3,Severe:2}[x.properties.severity]||1))[0];
-    anom.push([red?'danger':'alert','⚠','WEATHER WARNING',nws.length+' NWS warning'+(nws.length>1?'s':'')+' in view · '+escapeHtml(String(top.properties.event)),polyFlyBtn(top)]); }
+    anom.push([red?'danger':'alert','⚠','WEATHER WARNING',escapeHtml(String(top.properties.event)),
+      nws.length+' warning'+(nws.length>1?'s':'')+' in view · '+escapeHtml(String(top.properties.severity||'active')),polyFlyBtn(top)]); }
   const bigQ=featsIn('src-emsc').filter(f=>inBounds(b,f.geometry.coordinates[0],f.geometry.coordinates[1])&&(+f.properties.mag)>=5).sort((x,y)=>y.properties.mag-x.properties.mag)[0];
-  if(bigQ) anom.push(['danger','🌍','MAJOR EARTHQUAKE','M'+bigQ.properties.mag+' · '+escapeHtml(String(bigQ.properties.place||'').slice(0,42)),flyBtn(bigQ)]);
+  if(bigQ) anom.push(['danger','🌍','MAJOR EARTHQUAKE','M'+bigQ.properties.mag+' · '+escapeHtml(String(bigQ.properties.place||'').slice(0,30)),
+    'depth '+Math.round(bigQ.properties.depth||0)+U(' km')+' · '+fmtTime(bigQ.properties.time),flyBtn(bigQ)]);
 
   // -- WORLDWIDE anomalies: red-level events ANYWHERE, so a global catastrophe
-  //    still turns the SITREP red even when the map is looking elsewhere. Only
-  //    surfaced when NOT already covered by an in-view row above. --
+  //    still turns the SITREP red even when the map is looking elsewhere. --
   const isIn=f=>inBounds(b,f.geometry.coordinates[0],f.geometry.coordinates[1]);
   const worldQ=featsIn('src-emsc').filter(f=>(+f.properties.mag)>=6.5&&!isIn(f))
     .sort((x,y)=>y.properties.mag-x.properties.mag)[0];
-  if(worldQ) anom.push(['danger','🌍','MAJOR QUAKE · WORLDWIDE','M'+worldQ.properties.mag+' · '+escapeHtml(String(worldQ.properties.place||'').slice(0,38)),flyBtn(worldQ)]);
+  if(worldQ) anom.push(['danger','🌍','MAJOR QUAKE · WORLDWIDE','M'+worldQ.properties.mag+' · '+escapeHtml(String(worldQ.properties.place||'').slice(0,30)),
+    dist(worldQ)+' away · '+fmtTime(worldQ.properties.time),flyBtn(worldQ)]);
   const worldRed=featsIn('src-gdacs').filter(f=>f.properties.level==='Red'&&!isIn(f));
   if(worldRed.length){ const nr=worldRed.slice().sort((x,y)=>havKm(lat,lon,x.geometry.coordinates[1],x.geometry.coordinates[0])-havKm(lat,lon,y.geometry.coordinates[1],y.geometry.coordinates[0]))[0];
-    anom.push(['danger','🌀','DISASTER · WORLDWIDE',worldRed.length+' red-level off-map · '+escapeHtml(String(nr.properties.name||nr.properties.type||'').slice(0,30)),flyBtn(nr)]); }
+    anom.push(['danger','🌀','DISASTER · WORLDWIDE',worldRed.length+' red-level event'+(worldRed.length>1?'s':'')+' off-map',
+      escapeHtml(String(nr.properties.name||nr.properties.type||'').slice(0,26))+' · '+dist(nr),flyBtn(nr)]); }
   const nwsInSet=new Set(nwsInView(b));
   const worldNws=featsIn('src-nws').filter(f=>/Extreme/i.test(f.properties.severity)&&!nwsInSet.has(f));
-  if(worldNws.length) anom.push(['danger','⚠','EXTREME WARNING · OFF-MAP',worldNws.length+' extreme NWS warning'+(worldNws.length>1?'s':'')+' · '+escapeHtml(String(worldNws[0].properties.event||'')),polyFlyBtn(worldNws[0])]);
+  if(worldNws.length) anom.push(['danger','⚠','EXTREME WARNING · OFF-MAP',escapeHtml(String(worldNws[0].properties.event||'')),
+    worldNws.length+' extreme warning'+(worldNws.length>1?'s':'')+' · '+escapeHtml(String(worldNws[0].properties.area||'').slice(0,24)),polyFlyBtn(worldNws[0])]);
 
   // TSUNAMI — always surfaced worldwide (rare + catastrophic): NWS Tsunami
   // Warning polygons and GDACS tsunami events, wherever they are
@@ -1440,7 +1477,8 @@ async function sitrepTick(){
     .concat(featsIn('src-gdacs').filter(f=>/tsunami/i.test(String(f.properties.type||f.properties.name||''))));
   if(tsu.length){ const p0=polyPt(tsu[0]);
     anom.push(['danger','🌊','TSUNAMI ALERT',tsu.length+' active tsunami warning'+(tsu.length>1?'s':''),
-      p0?`<button class="act" data-act="fly" data-ll="${p0[0]+','+p0[1]}">VIEW</button>`:'']); }
+      escapeHtml(String(tsu[0].properties.event||tsu[0].properties.name||tsu[0].properties.area||'coastal areas at risk').slice(0,32)),
+      p0?llBtn(p0[0],p0[1]):openBtn('https://www.tsunami.gov/','NWS')]); }
 
   // SEVERE WEATHER OUTLOOK (SPC Day 1) — is the map-centre area under a severe /
   // tornado risk TODAY? "Expected", not yet a warning. US only.
@@ -1452,50 +1490,56 @@ async function sitrepTick(){
     const catHit=spcF.filter(f=>f.properties.kind==='cat'&&f.properties.rank>=1&&pointInFeature(f,lon,lat))
       .sort((a,b)=>b.properties.rank-a.properties.rank)[0];
     if(tornHit){ const tp=parseFloat(tornHit.properties.code)||0; const red=tornHit.properties.sig||tp>=0.10;
-      anom.push([red?'danger':'alert','🌪️','TORNADO OUTLOOK',escapeHtml(tornHit.properties.label)+' in this area today'+(tornHit.properties.sig?' · significant (EF2+)':''),'']); }
-    if(catHit) anom.push([catHit.properties.rank>=4?'danger':'alert','⛈','SEVERE WEATHER OUTLOOK',escapeHtml(catHit.properties.label)+' in this area today','']);
+      anom.push([red?'danger':'alert','🌪️','TORNADO OUTLOOK',escapeHtml(tornHit.properties.label)+' in this area today',
+        tornHit.properties.sig?'significant (EF2+) tornadoes possible':'SPC Day 1 convective outlook',openBtn(SPCU,'SPC')]); }
+    if(catHit) anom.push([catHit.properties.rank>=4?'danger':'alert','⛈','SEVERE WEATHER OUTLOOK',escapeHtml(catHit.properties.label)+' in this area today',
+      'tornado / hail / damaging wind risk',openBtn(SPCU,'SPC')]);
   }
 
   // space weather (global, not view-scoped): geomagnetic storm + solar flare
-  if(KP!=null&&KP>=5) anom.push(['alert','🧲','GEOMAGNETIC STORM','Kp '+KP+' — HF / GPS / grid impact possible','']);
-  if(XRAY&&/^[MX]/.test(XRAY)) anom.push([/^X/.test(XRAY)?'danger':'alert','☀','SOLAR FLARE '+XRAY,'HF radio blackout risk','']);
+  if(KP!=null&&KP>=5) anom.push(['alert','🧲','GEOMAGNETIC STORM','Kp '+KP+' — planetary K-index',
+    'HF / GPS / power-grid impact possible',openBtn(SWPC,'SWPC')]);
+  if(XRAY&&/^[MX]/.test(XRAY)) anom.push([/^X/.test(XRAY)?'danger':'alert','☀','SOLAR FLARE '+XRAY,'GOES X-ray flux · '+(/^X/.test(XRAY)?'major':'moderate'),
+    'HF radio blackout risk, sunlit side',openBtn(SWPC,'SWPC')]);
   // title severity: 0 none · 1 alert (amber) · 2 warning (red)
   let titleSev=0;
-  anom.forEach(a=>{ titleSev=Math.max(titleSev,a[0]==='danger'?2:1); row(a[0],a[1],a[2],a[3],a[4]); });
+  anom.forEach(a=>{ titleSev=Math.max(titleSev,a[0]==='danger'?2:1); row(a[0],a[1],a[2],a[3],a[4],a[5]); });
 
   if(myGen!==sitrepGen) return; // a newer tick superseded this one — don't clobber
   const t=$('#sit-title');
   t.classList.remove('warn','alert');
   if(titleSev>=2) t.classList.add('warn'); else if(titleSev>=1) t.classList.add('alert');
 
-  // (space weather is surfaced only when it's amber/red — via the geomagnetic
-  //  storm / solar flare anomaly rows above; no always-on conditions line.)
-
   // -- everything else scoped to the map area (nearest-in-view) --
   const acN=countView('src-nearair',b);
   if(acN){ const nn=nearView('src-nearair',b,lat,lon);
     row('','✈',acN+' AIRCRAFT IN VIEW',
-      nn?('closest '+escapeHtml(nn.f.properties.flight)+' · '+fmtMi(nn.km)+' · '+nn.f.properties.alt+U(' ft')):'',
+      nn?('nearest '+escapeHtml(nn.f.properties.flight||'?')):'live ADS-B traffic',
+      nn?(fmtMi(nn.km)+' · '+nn.f.properties.alt+U(' ft')+' · '+nn.f.properties.spd+U(' kt')):'',
       nn?flyBtn(nn.f):''); }
   const milN=countView('src-mil',b);
   if(milN){ const nm=nearView('src-mil',b,lat,lon);
     row('alert','🎖',milN+' MILITARY AIRCRAFT IN VIEW',
-      nm?('closest '+escapeHtml(nm.f.properties.flight)+' · '+fmtMi(nm.km)):'', nm?flyBtn(nm.f):''); }
+      nm?('nearest '+escapeHtml(nm.f.properties.flight||'?')+(nm.f.properties.type&&nm.f.properties.type!=='?'?' · '+escapeHtml(nm.f.properties.type):'')):'military ADS-B contacts',
+      nm?(fmtMi(nm.km)+' · '+nm.f.properties.alt+U(' ft')):'',nm?flyBtn(nm.f):''); }
   const nq=nearView('src-emsc',b,lat,lon);
-  if(nq) row('','🌍','M'+nq.f.properties.mag+' EARTHQUAKE · '+fmtMi(nq.km),
-    escapeHtml(String(nq.f.properties.place||''))+' · '+fmtTime(nq.f.properties.time),flyBtn(nq.f));
+  if(nq) row('','🌍','M'+nq.f.properties.mag+' EARTHQUAKE',escapeHtml(String(nq.f.properties.place||'').slice(0,34)),
+    fmtMi(nq.km)+' · '+fmtTime(nq.f.properties.time),flyBtn(nq.f));
   const ne=nearView('src-eonet',b,lat,lon);
-  if(ne) row('','🔥',(ne.f.properties.cat||'EVENT').toUpperCase()+' · '+fmtMi(ne.km),
-    escapeHtml(String(ne.f.properties.title||'').slice(0,56)),flyBtn(ne.f));
+  if(ne) row('','🔥',(ne.f.properties.cat||'EVENT').toUpperCase(),escapeHtml(String(ne.f.properties.title||'').slice(0,34)),
+    fmtMi(ne.km)+' away · NASA EONET',flyBtn(ne.f));
   const nd=nearView('src-gdacs',b,lat,lon);
-  if(nd&&!gRed.includes(nd.f)) row('','🌀',(nd.f.properties.type||'DISASTER').toUpperCase()+' · '+fmtMi(nd.km),
-    escapeHtml(String(nd.f.properties.name||'').slice(0,56)),flyBtn(nd.f));
+  if(nd&&!gRed.includes(nd.f)) row('','🌀',(nd.f.properties.type||'DISASTER').toUpperCase(),escapeHtml(String(nd.f.properties.name||'').slice(0,34)),
+    fmtMi(nd.km)+' · '+(nd.f.properties.level||'')+(nd.f.properties.country?' · '+escapeHtml(nd.f.properties.country):''),flyBtn(nd.f));
 
-  // -- WORLD NEWS: conflict + disaster events (not map-scoped) — Wikipedia --
+  // -- WORLD NEWS: conflict/disaster/politics/etc. (not map-scoped) — Wikipedia.
+  //    One blurb clamped to 3 lines; every item opens its source. --
   if(WORLD_NEWS.length){
     rows.push('<div class="sit-div"></div>');
-    WORLD_NEWS.forEach(n=>row('',n.icon||'📰',escapeHtml(n.text.slice(0,150)),'',
-      n.url?`<button class="act" data-act="open" data-url="${escapeHtml(n.url)}">OPEN</button>`:''));
+    WORLD_NEWS.forEach(n=>rows.push(
+      `<div class="sit-row"><span class="ic">${n.icon||'📰'}</span>`+
+      `<span class="tx news">${escapeHtml(n.text.slice(0,240))}</span>`+
+      `${openBtn(n.url||'https://en.wikipedia.org/wiki/Portal:Current_events',n.url?'OPEN':'MORE')}</div>`));
   }
 
   $('#sit-body').innerHTML=rows.length?rows.join(''):
@@ -1695,10 +1739,8 @@ async function updateAreaLabel(){
     const g=await getJSON(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${c.lat.toFixed(3)}&lon=${c.lng.toFixed(3)}&zoom=8`,
       {headers:{'Accept-Language':'en'}});
     const a=g.address||{};
-    const place=a.city||a.town||a.village||a.county||a.state||g.name||'';
-    const cc=(a.country_code||'').toUpperCase();
-    $('#sit-loc').textContent=(place?place+', ':'')+(a.country?(cc||a.country):(c.lat.toFixed(1)+', '+c.lng.toFixed(1)));
-  }catch(e){ $('#sit-loc').textContent=c.lat.toFixed(2)+', '+c.lng.toFixed(2); }
+    setSitLoc(placeOf(a,g.name), regionOf(a)||(c.lat.toFixed(1)+', '+c.lng.toFixed(1)));
+  }catch(e){ setSitLoc('', c.lat.toFixed(1)+', '+c.lng.toFixed(1)); }
 }
 
 // mobile: MAP / LAYERS / RADIO bottom nav toggles the panels as sheets
