@@ -423,7 +423,7 @@ const gl = new maplibregl.Map({
       {id:'radar',type:'raster',source:'radar',
         paint:{'raster-opacity':0.5,'raster-resampling':'linear'}}]
   },
-  center:[-96,39], zoom:1.4, minZoom:1.1, maxZoom:16,   // start zoomed well out (near-global context) until a location fix lands
+  center:[-96,39], zoom:3.4, minZoom:1.1, maxZoom:16,   // start over the USA until a location fix lands
   renderWorldCopies:true, attributionControl:false
 });
 // No on-map controls — they were hidden behind the right panel. Zoom is
@@ -914,6 +914,8 @@ let userMarker=null, sitrepTimer=null;
 // the panel padding, so the point lands centred in the visible area between the
 // panels. Used identically on load and on the ⌖ ME button so both give the same
 // ~10-mile view.
+// the view radius applied once a location fix lands: ~100 nautical miles
+const FIX_VIEW_MI=115;   // 100 nm ≈ 115 statute miles
 function flyToRadiusMi(lat,lon,miles,opts){
   cancelCenterZoom();
   const km=miles*1.60934;
@@ -1002,14 +1004,15 @@ function setUserFix(lat,lon,src,meta){
   // GPS refinement of the IP guess only gently recenters, and only if it moved
   // us far — so the load isn't a stutter of two back-to-back zoom animations.
   if(first){
-    // first fix: one clean animation to the 10-mile view (same as the ME button)
-    flyToRadiusMi(lat,lon,10);
+    // first fix: one clean animation to a ~100 nm view (broad regional context,
+    // not zoomed tight to the street)
+    flyToRadiusMi(lat,lon,FIX_VIEW_MI);
   } else if(src==='gps'&&pLat!=null&&havKm(pLat,pLon,lat,lon)>8){
-    // GPS refined the IP guess by a lot (>8 km): re-frame to the 10-mile view at
+    // GPS refined the IP guess by a lot (>8 km): re-frame to the ~100 nm view at
     // the precise spot. Re-framing (not easeTo) so the final ZOOM is always the
     // right one — easeTo mid-fitBounds was leaving the zoom half-finished ("hung").
     // For small corrections we leave the camera and just move the marker.
-    flyToRadiusMi(lat,lon,10);
+    flyToRadiusMi(lat,lon,FIX_VIEW_MI);
   }
   sitrepTick();
 }
