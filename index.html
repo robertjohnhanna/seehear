@@ -1017,7 +1017,7 @@ defLayer({
 });
 
 defLayer({
-  id:'water', label:'River / flood gauges (nearby)', color:'#38d0ff', group:'hazard', refresh:120, defaultOff:true, icon:'ico-gauge', iconSize:0.5,
+  id:'water', label:'River / flood gauges', color:'#38d0ff', group:'hazard', refresh:120, defaultOff:true, icon:'ico-gauge', iconSize:0.5,
   viewport:true,   // data is scoped to the map area → refetch on every view change
   // USGS live stream gauges (gauge height, ft). USGS caps a bBox query at 25
   // square degrees, so we request a FIXED ~150-mile box (4.9°, = 24 sq°) centred
@@ -1621,7 +1621,8 @@ const CATS=[
   {src:'src-sos', hazard:true, scope:'global', icon:'🚨',
    one:'AIRCRAFT EMERGENCY', many:'AIRCRAFT EMERGENCIES', cls:()=>'danger',
    head:f=>cut(f.properties.flight||f.properties.hex||'?',12),
-   sub:f=>'', detail:f=>'squawk '+(f.properties.sq||'7700/7600/7500')},
+   // sos features carry `code` (the squawk they matched) — `sq` was never set
+   sub:f=>'', detail:f=>'sq '+(f.properties.code||'7700')},
   {src:'src-nws', hazard:true, scope:'view', icon:'⚠',
    one:'WEATHER WARNING', many:'WEATHER WARNINGS',
    cls:a=>a.some(f=>/Extreme|Severe/i.test(f.properties.severity))?'danger':'alert',
@@ -1629,7 +1630,8 @@ const CATS=[
    rank:f=>({extreme:4,severe:3,moderate:2,minor:1}[String(f.properties.severity||'').toLowerCase()]||0),
    head:f=>cut((f.properties.event||'warning').replace(/\s*warning$/i,'').toUpperCase(),22),
    sub:f=>cut(f.properties.area,26), detail:f=>cut(f.properties.severity||'active',12)},
-  {src:'src-emsc', hazard:true, scope:'view', icon:'🌍',
+  // quake icon matches the map's orange marker — the globe now means GLOBAL scope
+  {src:'src-emsc', hazard:true, scope:'view', icon:'🟠',
    one:'EARTHQUAKE', many:'EARTHQUAKES',
    // alarm on FRESH strong quakes only (<24 h) — the feed holds days of history,
    // so an old M5 in view must not leave the title permanently red
@@ -1641,7 +1643,7 @@ const CATS=[
   {src:'src-eonet', hazard:true, scope:'view', icon:'🔥',
    one:'NATURAL EVENT', many:'NATURAL EVENTS', cls:()=>'',
    head:f=>cut(f.properties.title,20), sub:f=>'',
-   detail:f=>cut((f.properties.cat||'natural event'),16)},
+   detail:f=>cut((f.properties.cat||'natural event'),12)},
   {src:'src-gdacs', hazard:true, scope:'global', icon:'🌀',
    one:'DISASTER', many:'DISASTERS',
    // Red ANYWHERE = red (rare, catastrophic). Orange only alarms when IN VIEW —
@@ -1725,16 +1727,18 @@ async function sitrepTick(){
   //    colour the SITREP title; traffic (aircraft/military) don't. --
   const listBtn=(src,title)=>`<button class="act" data-act="list" data-src="${src}" data-title="${escapeHtml(title)}">LIST</button>`;
   const cards=[];
-  // standard count / nearest / direction+distance+datum card for a category
+  // standard count / nearest / direction+distance+datum card for a category.
+  // Lines are kept SHORT (no overflow): scope is an icon (🌐 global / 🔭 in
+  // view) and line 2 is the nearest item bare — "nearest" is assumed.
   function catCard(cfg){
     const scoped=catItems(cfg,b); if(!scoped.length) return;
     let near=null,nd=Infinity;
     scoped.forEach(f=>{const pt=polyPt(f); if(!pt) return;
       const d=havKm(refLat,refLon,pt[1],pt[0]); if(d<nd){nd=d;near={f,pt};}});
     const n=scoped.length, det=near?cfg.detail(near.f):'';
-    const l1=n+' '+(n===1?cfg.one:cfg.many)+(cfg.scope==='global'?' GLOBAL':' IN VIEW');
+    const l1=n+' '+(n===1?cfg.one:cfg.many)+' '+(cfg.scope==='global'?'🌐':'🔭');
     cards.push([cfg.cls?cfg.cls(scoped,b):'',cfg.icon,l1,
-      near?'nearest '+cfg.head(near.f):'—',
+      near?cfg.head(near.f):'—',
       near?dirMi(near.pt[1],near.pt[0])+(det?' · '+det:''):'',
       n>1?listBtn(cfg.src,l1):(near?llBtn(near.pt[0],near.pt[1]):''),
       cfg.hazard]);
@@ -1783,6 +1787,12 @@ async function sitrepTick(){
 
   // traffic categories (aircraft, military) — listed last; don't alarm the title
   CATS.filter(c=>!c.hazard).forEach(catCard);
+
+  // MOST SEVERE FIRST: red cards, then amber, then plain — a red global
+  // disaster must outrank an uncoloured wildfire. Stable sort keeps the
+  // category order (safety → hazards → outlook → traffic) within each band.
+  const sevOf=c=>c==='danger'?0:c==='alert'?1:2;
+  cards.sort((a,z)=>sevOf(a[0])-sevOf(z[0]));
 
   // title severity from HAZARD cards only: 0 none · 1 alert (amber) · 2 warn (red)
   let titleSev=0;
