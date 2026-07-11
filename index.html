@@ -944,12 +944,13 @@ async function locate(){
   }
 }
 // "center on me": pan to the fix and reset the view to north-up, flat (bearing
-// and pitch back to 0) — but keep the CURRENT zoom. If no fix yet, kick off IP +
-// GPS location and prompt for precise GPS.
+// and pitch back to 0) AND re-frame to the same post-fix view radius (FIX_VIEW_MI)
+// — so the button restores the location zoom, not just recenters. If no fix yet,
+// kick off IP + GPS location and prompt for precise GPS.
 function centerOnMe(){
   if(USER.lat!=null){
     cancelCenterZoom();
-    gl.easeTo({center:[USER.lon,USER.lat],bearing:0,pitch:0,duration:800});
+    flyToRadiusMi(USER.lat,USER.lon,FIX_VIEW_MI,{bearing:0,pitch:0,duration:800});
     // refine the fix in the background (locate() already does this on first fix,
     // so only the has-fix branch asks — never two concurrent GPS requests)
     if(navigator.geolocation) try{ navigator.geolocation.getCurrentPosition(
