@@ -153,19 +153,22 @@
     padding:calc(var(--sa-t) + 14px) 14px calc(var(--sa-b) + 14px)}
   #modal[hidden]{display:none}
   .modal-card{background:var(--panel);border:1px solid var(--line);border-radius:12px;
-    width:min(460px,94vw);max-height:100%;display:flex;flex-direction:column;overflow:hidden;
-    box-shadow:0 20px 60px #000c}
-  .modal-head{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--line);
+    width:min(340px,92vw);max-height:min(76vh,100%);display:flex;flex-direction:column;overflow:hidden;
+    box-shadow:0 18px 50px #000c}
+  .modal-head{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--line);
     color:var(--accent);font-weight:700;letter-spacing:1.5px;font-size:13px;flex:0 0 auto}
   .modal-head button{margin-left:auto;background:none;border:none;color:var(--ink-dim);
-    font-size:17px;cursor:pointer;line-height:1;padding:2px 4px}
-  #modal-list{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:2px 0;flex:1 1 auto;min-height:0}
-  .mrow{display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid #10171f;font-size:13px}
-  .mrow .ic{flex:0 0 18px;text-align:center}
-  .mrow .mf{flex:1;min-width:0}
-  .mrow .mf b{color:var(--ink);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .mrow .mf span{color:var(--ink-dim);font-size:12px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .mrow.mil .mf b{color:var(--warn)}
+    font-size:16px;cursor:pointer;line-height:1;padding:2px 4px}
+  #modal-list{overflow-y:auto;-webkit-overflow-scrolling:touch;flex:1 1 auto;min-height:0}
+  /* minimal stacked entry: callsign / model / distance·alt — no icon, no button.
+     Direct-child selectors only, so nested .u unit spans stay inline (else the
+     'mi'/'ft' tokens each became their own line and the rows ballooned). */
+  .mrow{padding:7px 14px;border-bottom:1px solid #10171f;line-height:1.3}
+  .mrow>b{color:var(--ink);display:block;font-weight:700;font-size:13px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mrow>span{color:var(--ink-dim);font-size:12px;display:block;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mrow.mil>b{color:var(--warn)}
 
   /* ---------- toasts ---------- */
   #toast{position:absolute;top:calc(var(--topbar-h) + 10px);left:50%;transform:translateX(-50%);
@@ -356,6 +359,19 @@ async function getText(url,opts={}){
   const c=new AbortController(); const to=setTimeout(()=>c.abort(),opts.timeout||20000);
   try{ const r=await fetch(url,{signal:c.signal}); if(!r.ok)throw new Error('HTTP '+r.status); return await r.text(); }
   finally{ clearTimeout(to); }
+}
+// CelesTrak rate-limits bursts (3-4 rapid requests → HTTP 403), so the space
+// layers (sats/gps/starlink) share a serialized queue that spaces requests ≥2s
+// apart. Without this, loading them together on boot 403'd Starlink → "-".
+let _ctChain=Promise.resolve(), _ctLast=0;
+function celestrakGet(url,opts={}){
+  const p=_ctChain.then(async()=>{
+    const wait=2000-(Date.now()-_ctLast); if(wait>0) await new Promise(r=>setTimeout(r,wait));
+    _ctLast=Date.now();
+    return getText(url,Object.assign({timeout:25000},opts));
+  });
+  _ctChain=p.catch(()=>{});   // keep the queue moving even if one request fails
+  return p;
 }
 const fmtTime = ts => new Date(ts).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
 // great-circle distance, km
@@ -675,7 +691,7 @@ const USER={lat:null,lon:null,place:'',region:'',cc:'',src:null};
 
 /* ---------------- Movement ---------------- */
 defLayer({
-  id:'nearair', label:'Aircraft (250 nm)', color:'#2fe07a', group:'air', refresh:60,
+  id:'nearair', label:'Aircraft (250 nm)', color:'#2fe07a', group:'air', refresh:90,
   icon:'ac-near', rotate:true, iconSize:0.6,
   // every civil (non-military) aircraft in the current map area; refetched on
   // pan/zoom (see moveend) and once a minute
@@ -686,14 +702,14 @@ defLayer({
 });
 
 defLayer({
-  id:'mil', label:'Military aircraft', color:'#ffce4d', group:'air', refresh:60,
+  id:'mil', label:'Military aircraft', color:'#ffce4d', group:'air', refresh:90,
   icon:'ac-mil', rotate:true, iconSize:0.5,
   loader: async ()=> ({type:'FeatureCollection',features:acFeatures(await adsb('/mil'),'mil')}),
   popup:acPopup
 });
 
 defLayer({
-  id:'sos', label:'Emergency squawks', color:'#ff4455', group:'air', refresh:60, bg:true,
+  id:'sos', label:'Emergency squawks', color:'#ff4455', group:'air', refresh:90, bg:true,
   icon:'ac-sos', rotate:true, iconSize:0.6,
   loader: async ()=>{
     // 7700 = general emergency, 7600 = radio failure, 7500 = unlawful interference
@@ -721,7 +737,7 @@ defLayer({
 
 
 defLayer({
-  id:'iss', label:'ISS (live)', color:'#ffffff', group:'space', refresh:15, defaultOff:true, icon:'ico-iss', iconSize:0.62,
+  id:'iss', label:'ISS (live)', color:'#ffffff', group:'space', refresh:22, defaultOff:true, icon:'ico-iss', iconSize:0.62,
   loader: async ()=>{
     const s=await getJSON('https://api.wheretheiss.at/v1/satellites/25544');
     return {type:'FeatureCollection',features:[{type:'Feature',
@@ -737,10 +753,10 @@ defLayer({
 });
 
 defLayer({
-  id:'sats', label:'Bright satellites', color:'#7ee0ff', group:'space', refresh:60, defaultOff:true, icon:'ico-sat', iconSize:0.42,
+  id:'sats', label:'Bright satellites', color:'#7ee0ff', group:'space', refresh:90, defaultOff:true, icon:'ico-sat', iconSize:0.42,
   loader: async ()=>{
     // CelesTrak TLEs -> SGP4 propagated to "now", entirely in-browser
-    const txt=await getText('https://celestrak.org/NORAD/elements/gp.php?GROUP=visual&FORMAT=tle');
+    const txt=await celestrakGet('https://celestrak.org/NORAD/elements/gp.php?GROUP=visual&FORMAT=tle');
     return tleToFC(txt);
   },
   popup:p=>`<h4>🛰 ${escapeHtml(p.name)}</h4>
@@ -749,9 +765,9 @@ defLayer({
 });
 
 defLayer({
-  id:'gps', label:'GPS constellation', color:'#8f9dff', group:'space', refresh:120, defaultOff:true, icon:'ico-sat', iconSize:0.42,
+  id:'gps', label:'GPS constellation', color:'#8f9dff', group:'space', refresh:180, defaultOff:true, icon:'ico-sat', iconSize:0.42,
   loader: async ()=>{
-    const txt=await getText('https://celestrak.org/NORAD/elements/gp.php?GROUP=gps-ops&FORMAT=tle');
+    const txt=await celestrakGet('https://celestrak.org/NORAD/elements/gp.php?GROUP=gps-ops&FORMAT=tle');
     return tleToFC(txt);
   },
   popup:p=>`<h4>🛰 ${escapeHtml(p.name)}</h4>
@@ -760,10 +776,10 @@ defLayer({
 });
 
 defLayer({
-  id:'starlink', label:'Starlink (SpaceX)', color:'#dff0ff', group:'space', refresh:120, defaultOff:true, icon:'ico-sat', iconSize:0.36,
+  id:'starlink', label:'Starlink (SpaceX)', color:'#dff0ff', group:'space', refresh:180, defaultOff:true, icon:'ico-sat', iconSize:0.36,
   loader: async ()=>{
     // full constellation — every Starlink sat, SGP4-propagated in-browser
-    const txt=await getText('https://celestrak.org/NORAD/elements/gp.php?GROUP=starlink&FORMAT=tle');
+    const txt=await celestrakGet('https://celestrak.org/NORAD/elements/gp.php?GROUP=starlink&FORMAT=tle');
     return tleToFC(txt);
   },
   popup:p=>`<h4>🛰 ${escapeHtml(p.name)}</h4>
@@ -772,7 +788,7 @@ defLayer({
 });
 
 defLayer({
-  id:'amtrak', label:'Amtrak trains', color:'#ffce4d', group:'surface', refresh:60, defaultOff:true, icon:'veh-train', iconSize:0.6,
+  id:'amtrak', label:'Amtrak trains', color:'#ffce4d', group:'surface', refresh:90, defaultOff:true, icon:'veh-train', iconSize:0.6,
   loader: async ()=>{
     const j=await getJSON('https://api-v3.amtraker.com/v3/trains');
     const feats=[];
@@ -813,7 +829,7 @@ function tleToFC(txt){
 
 /* ---------------- Hazard / Environment ---------------- */
 defLayer({
-  id:'eonet', label:'Natural events (NASA)', color:'#ff8a3d', group:'hazard', refresh:600, colored:true, defaultOff:true, bg:true,
+  id:'eonet', label:'Natural events (NASA)', color:'#ff8a3d', group:'hazard', refresh:900, colored:true, defaultOff:true, bg:true,
   icon:'ico-fire', iconProp:true, iconSize:0.5,
   loader: async ()=>{
     // NASA EONET v3 — live wildfires, severe storms, volcanoes, ice…  ACAO:*
@@ -862,7 +878,7 @@ defLayer({
 });
 
 defLayer({
-  id:'gdacs', label:'Global disasters', color:'#ff6a3d', group:'hazard', refresh:1800, colored:true, defaultOff:true, bg:true,
+  id:'gdacs', label:'Global disasters', color:'#ff6a3d', group:'hazard', refresh:2700, colored:true, defaultOff:true, bg:true,
   // GDACS — UN/EC global disaster alerts: quakes, cyclones, floods, volcanoes,
   // droughts, wildfires; colour = alert level (green/orange/red). Keyless, CORS *.
   loader: async ()=>{
@@ -889,7 +905,7 @@ defLayer({
 });
 
 defLayer({
-  id:'launch', label:'Rocket launches', color:'#c77dff', group:'space', refresh:3600, defaultOff:true, icon:'ico-launch', iconSize:0.5,
+  id:'launch', label:'Rocket launches', color:'#c77dff', group:'space', refresh:5400, defaultOff:true, icon:'ico-launch', iconSize:0.5,
   // upcoming orbital launches worldwide, plotted at the pad. Launch Library 2
   // (thespacedevs) — keyless, CORS *, anonymous rate-limited so we poll hourly.
   loader: async ()=>{
@@ -911,7 +927,7 @@ defLayer({
   // THE earthquake layer (USGS 24h duplicate removed). Real-time global
   // seismicity from EMSC — dots SIZED by magnitude and COLOURED by recency,
   // so a big fresh quake reads instantly. bg-loaded for SITREP anomalies.
-  id:'emsc', label:'Earthquakes (live)', color:'#ff8a5c', group:'hazard', refresh:120,
+  id:'emsc', label:'Earthquakes (live)', color:'#ff8a5c', group:'hazard', refresh:180,
   defaultOff:true, bg:true, sized:true, colored:true,
   loader: async ()=>{
     const j=await getJSON('https://www.seismicportal.eu/fdsnws/event/1/query?limit=1000&format=json&minmag=2',{timeout:15000});
@@ -933,7 +949,7 @@ defLayer({
 });
 
 defLayer({
-  id:'water', label:'River / flood gauges', color:'#38d0ff', group:'hazard', refresh:600, defaultOff:true, icon:'ico-gauge', iconSize:0.5,
+  id:'water', label:'River / flood gauges', color:'#38d0ff', group:'hazard', refresh:900, defaultOff:true, icon:'ico-gauge', iconSize:0.5,
   // USGS live stream gauges in the current view (gauge height, ft)
   loader: async ()=>{
     const b=gl.getBounds();
@@ -961,7 +977,7 @@ defLayer({
   // or statements) — the US half of the worldwide warnings picture (GDACS below
   // is the global multi-hazard half). Keyless, CORS *. Polygons where present
   // (tornado / severe-thunderstorm / flash-flood / red-flag warnings carry them).
-  id:'nws', label:'NWS warnings (US)', color:'#ff4455', group:'hazard', refresh:120, ord:1,
+  id:'nws', label:'NWS warnings (US)', color:'#ff4455', group:'hazard', refresh:180, ord:1,
   bg:true, geom:'fill', colored:true,
   loader: async ()=>{
     const j=await getJSON('https://api.weather.gov/alerts/active',{timeout:20000});
@@ -985,7 +1001,7 @@ defLayer({
 defLayer({
   // SPACE WEATHER (map layer): live auroral oval — NOAA SWPC OVATION model,
   // 1° grid, cells kept where visible-aurora probability ≥ 40%. Keyless, CORS *.
-  id:'aurora', label:'Aurora forecast', color:'#4be08a', group:'hazard', refresh:300, colored:true, defaultOff:true,
+  id:'aurora', label:'Aurora forecast', color:'#4be08a', group:'hazard', refresh:450, colored:true, defaultOff:true,
   loader: async ()=>{
     const j=await getJSON('https://services.swpc.noaa.gov/json/ovation_aurora_latest.json',{timeout:25000});
     const feats=[];
@@ -1008,7 +1024,7 @@ defLayer({
   // hail, damaging wind — is EXPECTED today. Categorical risk + tornado-prob
   // polygons. Keyless, CORS *. bg-loaded so the SITREP can flag "you're in an
   // Enhanced Risk / tornado-outlook area today" even with the layer hidden.
-  id:'spc', label:'Severe wx outlook (US)', color:'#ffb454', group:'hazard', refresh:1800, ord:2,
+  id:'spc', label:'Severe wx outlook (US)', color:'#ffb454', group:'hazard', refresh:2700, ord:2,
   defaultOff:true, bg:true, geom:'fill', colored:true,
   loader: async ()=>{
     const base='https://www.spc.noaa.gov/products/outlook/';
@@ -1431,10 +1447,12 @@ function setUserFix(lat,lon,src,meta){
   if(first){
     // first fix: one clean animation to the 10-mile view (same as the ME button)
     flyToRadiusMi(lat,lon,10);
-  } else if(src==='gps'&&pLat!=null&&havKm(pLat,pLon,lat,lon)>1){
-    // GPS refined the IP guess: gently recentre on the precise spot, keep zoom —
-    // no second zoom animation, so the load never "chops"
-    gl.easeTo({center:[lon,lat],duration:700});
+  } else if(src==='gps'&&pLat!=null&&havKm(pLat,pLon,lat,lon)>8){
+    // GPS refined the IP guess by a lot (>8 km): re-frame to the 10-mile view at
+    // the precise spot. Re-framing (not easeTo) so the final ZOOM is always the
+    // right one — easeTo mid-fitBounds was leaving the zoom half-finished ("hung").
+    // For small corrections we leave the camera and just move the marker.
+    flyToRadiusMi(lat,lon,10);
   }
   setSitLoc(USER.place, (USER.cc||'').toUpperCase()==='US' ? (USER.rc||USER.cc) : (USER.cc||USER.rc));
   if(src==='gps'&&!meta) reverseFill();
@@ -1616,12 +1634,11 @@ function aircraftListHTML(srcId){
     .map(f=>({f,km:havKm(c.lat,c.lng,f.geometry.coordinates[1],f.geometry.coordinates[0])}))
     .sort((x,y)=>x.km-y.km);
   if(!feats.length) return '<div class="sit-empty">NO AIRCRAFT IN THIS AREA</div>';
-  // minimal 3-line entry: callsign · model · distance + altitude (no buttons)
+  // minimal 3-line entry: callsign · model · distance + altitude (no icon, no buttons)
   return feats.map(({f,km})=>{ const p=f.properties;
     const model=escapeHtml(p.desc||p.type||'aircraft');
     const da=fmtMi(km)+' · '+(p.alt!=null&&p.alt!=='?'?p.alt+U(' ft'):'—');
-    return `<div class="mrow${p.mil?' mil':''}"><span class="ic">${p.mil?'🎖':'✈'}</span>`+
-      `<div class="mf"><b>${escapeHtml(p.flight||p.hex||'?')}</b><span>${model}</span><span>${da}</span></div></div>`;
+    return `<div class="mrow${p.mil?' mil':''}"><b>${escapeHtml(p.flight||p.hex||'?')}</b><span>${model}</span><span>${da}</span></div>`;
   }).join('');
 }
 // shared action handler for SITREP rows AND modal rows
@@ -1797,9 +1814,12 @@ function refreshViewport(withLabel){
     const key=[b.getWest(),b.getSouth(),b.getEast(),b.getNorth()].map(n=>n.toFixed(2)).join(',')+'@'+z.toFixed(1);
     if(key!==lastViewKey){
       lastViewKey=key;
+      // Refetch the viewport-scoped feeds for the new area regardless of on/off,
+      // so their counts track the view (flood gauges load only when zoomed in,
+      // so at the wide boot view they read 0 until this runs for the real area).
       ['nearair','water'].forEach(id=>{
         const st=LAYER_STATE[id];
-        if(st&&st.on&&st.started) runLayer(LAYERS.find(l=>l.id===id));
+        if(st&&st.started) runLayer(LAYERS.find(l=>l.id===id));
       });
     }
     sitrepTick();
@@ -1870,13 +1890,13 @@ gl.on('load',()=>{
   // loaded number until toggled on (see scheduleLayer).
   LAYERS.forEach(cfg=>{ LAYER_STATE[cfg.id].started=true; scheduleLayer(cfg); });
   loadEmgPool(); // warm the emergency-broadcast pool so the first fix tunes fast
-  loadKp();   setInterval(loadKp,120000);   // space weather: planetary Kp
-  loadXray(); setInterval(loadXray,120000); // space weather: GOES X-ray flare
-  loadWorldNews().then(sitrepTick); setInterval(()=>loadWorldNews().then(sitrepTick),1800000); // world news (ITN), 30 min
+  loadKp();   setInterval(loadKp,180000);   // space weather: planetary Kp
+  loadXray(); setInterval(loadXray,180000); // space weather: GOES X-ray flare
+  loadWorldNews().then(sitrepTick); setInterval(()=>loadWorldNews().then(sitrepTick),2700000); // world news, 45 min
   setMapPadding();
   locate();
   sitrepTick(); // SITREP works off the map area, even before a location fix
-  if(!sitrepTimer) sitrepTimer=setInterval(sitrepTick,60000);
+  if(!sitrepTimer) sitrepTimer=setInterval(sitrepTick,90000);
   [700,3000,7000].forEach(t=>setTimeout(()=>{ setMapPadding(); sitrepTick(); },t));
   toast('SITREP ONLINE · '+LAYERS.length+' LIVE FEEDS','');
 });
