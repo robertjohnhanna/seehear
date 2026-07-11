@@ -434,6 +434,11 @@ const escapeHtml =s => String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','
 /* =====================================================================
    1. MAP — CARTO dark basemap (keyless raster tiles)
    ===================================================================== */
+// NEXRAD base-reflectivity mosaic tiles (Iowa State Mesonet, keyless). The ?ts
+// cache-bust makes each 30s refresh pull the latest mosaic.
+const RADAR_URL='https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png';
+const RADAR_TILE=RADAR_URL+'?'+Date.now();
+function refreshRadar(){ const s=gl.getSource('radar'); if(s&&s.setTiles) s.setTiles([RADAR_URL+'?'+Date.now()]); }
 const gl = new maplibregl.Map({
   container:'map',
   style:{
@@ -444,9 +449,15 @@ const gl = new maplibregl.Map({
         tiles:['https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
                'https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
                'https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png'],
-        attribution:'© OpenStreetMap · © CARTO' }
+        attribution:'© OpenStreetMap · © CARTO' },
+      // NEXRAD base-reflectivity mosaic (~1 km, latest) — Iowa State Mesonet,
+      // keyless. Refreshed on the 30s pulse via refreshRadar(). Sits above the
+      // basemap, below the aircraft/warning layers (added later).
+      radar:{ type:'raster', tileSize:256,
+        tiles:[RADAR_TILE], attribution:'NEXRAD · Iowa State Mesonet' }
     },
-    layers:[{id:'carto',type:'raster',source:'carto'}]
+    layers:[{id:'carto',type:'raster',source:'carto'},
+      {id:'radar',type:'raster',source:'radar',paint:{'raster-opacity':0.5}}]
   },
   center:[-96,39], zoom:3.4, minZoom:1.1, maxZoom:16,   // start over the USA until a location fix lands
   renderWorldCopies:true, attributionControl:false
@@ -596,7 +607,9 @@ defLayer({
   // is the global multi-hazard half). Keyless, CORS *. Polygons where present
   // (tornado / severe-thunderstorm / flash-flood / red-flag warnings carry them).
   id:'nws', label:'NWS warnings (US)', color:'#ff4455', group:'hazard', refresh:30, ord:1,
-  bg:true, geom:'fill', colored:true,
+  // outline only — no fill (fillOpacity:0). The coloured polygon border still
+  // shows each warning; the invisible fill keeps the whole area click-to-popup.
+  bg:true, geom:'fill', colored:true, fillOpacity:0,
   loader: async ()=>{
     const j=await getJSON('https://api.weather.gov/alerts/active',{timeout:20000});
     const feats=[];
@@ -654,6 +667,25 @@ const iconSize=base=>['interpolate',['linear'],['zoom'],2,base*1.4,6,base*2.2,11
 let sitrepRefreshT=null;
 function scheduleSitrep(){ clearTimeout(sitrepRefreshT); sitrepRefreshT=setTimeout(()=>{ try{sitrepTick();}catch(e){} },300); }
 
+// Ground elevation (ft AMSL) at a point, for AGL = baro-alt − ground. Keyless
+// Open-Meteo lookup, cached by ~0.01° cell (≈1 km, so every plane inside the
+// 1-mile warning radius shares the crosshair's cell). Returns the cached value
+// synchronously (null until known) and kicks off a fetch on a miss, re-running
+// the SITREP when it lands so the AGL card fills in on the next tick.
+const _elevCache={}; let _elevBusy=false;
+function groundElevFt(la,lo){
+  const key=la.toFixed(2)+','+lo.toFixed(2);
+  if(key in _elevCache) return _elevCache[key];
+  if(!_elevBusy){
+    _elevBusy=true;
+    getJSON(`https://api.open-meteo.com/v1/elevation?latitude=${la.toFixed(4)}&longitude=${lo.toFixed(4)}`,{timeout:8000})
+      .then(d=>{ const m=d&&d.elevation&&d.elevation[0]; _elevCache[key]=isFinite(m)?m*3.28084:0; })
+      .catch(()=>{ _elevCache[key]=0; })
+      .finally(()=>{ _elevBusy=false; scheduleSitrep(); });
+  }
+  return null;
+}
+
 function ensureMapLayer(cfg){
   const sid='src-'+cfg.id;
   if(gl.getSource(sid)) return;
@@ -661,7 +693,7 @@ function ensureMapLayer(cfg){
   if(cfg.geom==='fill'){
     const fillCol=cfg.colored?['coalesce',['get','_col'],cfg.color]:cfg.color;
     gl.addLayer({id:'ly-'+cfg.id,type:'fill',source:sid,
-      paint:{'fill-color':fillCol,'fill-opacity':cfg.fillOpacity||0.26,
+      paint:{'fill-color':fillCol,'fill-opacity':cfg.fillOpacity!=null?cfg.fillOpacity:0.26,
         'fill-outline-color':cfg.outline===false?'rgba(0,0,0,0)':fillCol}});
     if(cfg.outline!==false)   // outline:false = seamless filled cells (aurora grid)
       gl.addLayer({id:'lyl-'+cfg.id,type:'line',source:sid,
@@ -762,7 +794,7 @@ function refreshDueLayers(){
 function refreshTick(){
   const el=$('#refresh-count');
   const elapsed=Math.floor((Date.now()-refreshBase)/1000);
-  if(elapsed>=REFRESH_S){ refreshBase=Date.now(); refreshDueLayers(); if(el) el.textContent=REFRESH_S; }
+  if(elapsed>=REFRESH_S){ refreshBase=Date.now(); refreshDueLayers(); refreshRadar(); if(el) el.textContent=REFRESH_S; }
   else if(el) el.textContent=REFRESH_S-elapsed;
 }
 
@@ -1091,22 +1123,31 @@ async function sitrepTick(){
   const cards=[];   // [cls, icon, l1, l2, l3, action, hazard]
 
   // -- LOW AIRCRAFT PROXIMITY (top, red-title): any plane (civil / military /
-  //    emergency) within 1 mile of the crosshair AND under 1000' → danger card.
-  //    Uses reported barometric altitude; near ground level that reads as low
-  //    above ground. Ground aircraft report alt='ground'/'?' → skipped. --
-  const lowAc=[];
+  //    emergency) within 1 mile of the crosshair AND under 1000' ABOVE GROUND
+  //    LEVEL → danger card. Reported altitude is barometric (MSL), so we look
+  //    up the ground elevation at the crosshair (cached, keyless Open-Meteo)
+  //    and subtract it: AGL = alt − ground. Recomputed every SITREP tick for
+  //    the planes currently in the radius. Ground aircraft report
+  //    alt='ground'/'?' → skipped. --
+  const inRing=[];
   ['src-nearair','src-mil','src-sos'].forEach(s=>featsIn(s).forEach(f=>{
-    const alt=+f.properties.alt; if(!isFinite(alt)||alt>=1000) return;
+    const alt=+f.properties.alt; if(!isFinite(alt)) return;
     const g=f.geometry&&f.geometry.coordinates; if(!g) return;
     const km=havKm(lat,lon,g[1],g[0]); if(km>1.609) return;   // within one mile
-    lowAc.push({f,km,alt,pt:g});
+    inRing.push({f,km,alt,pt:g});
   }));
-  if(lowAc.length){
-    lowAc.sort((a,z)=>a.km-z.km); const lo=lowAc[0], p=lo.f.properties;
-    cards.push(['danger','🛩️','LOW AIRCRAFT',
-      cut(p.flight||p.hex||'aircraft',12)+(lowAc.length>1?' +'+(lowAc.length-1):''),
-      dirMi(lo.pt[1],lo.pt[0])+' · '+lo.alt+U(' ft'),
-      llBtn(lo.pt[0],lo.pt[1]), true]);
+  if(inRing.length){
+    const ground=groundElevFt(lat,lon);          // ft AMSL, null until fetched
+    const lowAc=inRing.map(a=>({...a,agl:ground==null?a.alt:a.alt-ground}))
+                      .filter(a=>a.agl<1000);
+    if(lowAc.length){
+      lowAc.sort((a,z)=>a.km-z.km); const lo=lowAc[0], p=lo.f.properties;
+      const aglTxt=Math.max(0,Math.round(lo.agl))+U(' ft')+(ground==null?'':' AGL');
+      cards.push(['danger','🛩️','LOW AIRCRAFT',
+        cut(p.flight||p.hex||'aircraft',12)+(lowAc.length>1?' +'+(lowAc.length-1):''),
+        dirMi(lo.pt[1],lo.pt[0])+' · '+aglTxt,
+        llBtn(lo.pt[0],lo.pt[1]), true]);
+    }
   }
 
   // -- GENERAL context cards (area-wide, not a single map point) go FIRST --
