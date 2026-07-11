@@ -68,6 +68,12 @@
     font-family:var(--mono);font-size:13px;overflow:hidden;
     overscroll-behavior:none;touch-action:manipulation}
   #map{position:absolute;inset:0}
+  /* centre reticle: white, subtle, never blocks the map (pointer-events:none).
+     Position is set in JS to the map's projected centre so it stays exact under
+     panel padding and on mobile. */
+  #crosshair{position:absolute;z-index:5;left:50%;top:50%;
+    transform:translate(-50%,-50%);pointer-events:none;opacity:.8;
+    filter:drop-shadow(0 0 1px #000) drop-shadow(0 0 2px #0008)}
   button{font-family:var(--mono);cursor:pointer}
   a{color:var(--accent)}
   ::-webkit-scrollbar{width:8px;height:8px}
@@ -284,6 +290,14 @@
 </head>
 <body>
 <div id="map"></div>
+<!-- fixed reticle marking the exact map centre (what SITREP / the ME button use) -->
+<svg id="crosshair" width="30" height="30" viewBox="0 0 30 30" aria-hidden="true">
+  <g fill="none" stroke="#fff" stroke-width="1.4" stroke-linecap="round">
+    <line x1="15" y1="2"  x2="15" y2="10"/><line x1="15" y1="20" x2="15" y2="28"/>
+    <line x1="2"  y1="15" x2="10" y2="15"/><line x1="20" y1="15" x2="28" y2="15"/>
+  </g>
+  <circle cx="15" cy="15" r="1.3" fill="#fff"/>
+</svg>
 
 <!-- objects panel -->
 <div id="layers" class="panel">
@@ -600,20 +614,32 @@ gl.doubleClickZoom.disable();
 (function centerZoom(){
   const cvs=gl.getCanvasContainer();
   const clamp=z=>Math.max(gl.getMinZoom(),Math.min(gl.getMaxZoom(),z));
-  let target=gl.getZoom(), last=-1e9;
+  // A single requestAnimationFrame loop eases the LIVE zoom toward a target that
+  // wheel/double-click nudge. One continuous animation (not a new easeTo per
+  // event) is what makes it smooth — stacked easeTos restart every frame and
+  // stutter. setZoom keeps the map CENTRE fixed, so zoom never pans the view.
+  let target=gl.getZoom(), running=false, last=-1e9;
+  function frame(){
+    const cur=gl.getZoom(), diff=target-cur;
+    if(Math.abs(diff)<0.003){ if(cur!==target) gl.setZoom(target); running=false; return; }
+    gl.setZoom(cur+diff*0.2);            // exponential ease-out toward target
+    requestAnimationFrame(frame);
+  }
+  function kick(){ if(!running){ running=true; requestAnimationFrame(frame); } }
   cvs.addEventListener('wheel',e=>{
     e.preventDefault();
     const now=e.timeStamp;
-    if(now-last>250) target=gl.getZoom();   // idle gap: resync to the live zoom
+    if(now-last>200) target=gl.getZoom();   // idle gap: resync to the live zoom
     last=now;
     let d=e.deltaY;
     if(e.deltaMode===1) d*=16; else if(e.deltaMode===2) d*=400;   // line / page → px
-    target=clamp(target - d*0.004);
-    gl.easeTo({zoom:target,around:gl.getCenter(),duration:130,easing:t=>t});
+    target=clamp(target - d*0.0022);
+    kick();
   },{passive:false});
   cvs.addEventListener('dblclick',e=>{
     e.preventDefault();
-    gl.easeTo({zoom:clamp(gl.getZoom()+(e.shiftKey?-1:1)),around:gl.getCenter(),duration:250});
+    target=clamp((running?target:gl.getZoom())+(e.shiftKey?-1:1));
+    kick();
   });
 })();
 
@@ -1524,6 +1550,19 @@ function setMapPadding(){
 }
 window.addEventListener('resize',()=>{ clearTimeout(window.__pad);
   window.__pad=setTimeout(setMapPadding,200); });
+// Pin the centre reticle to the map's projected centre (accounts for panel
+// padding on desktop and the raised map bottom on mobile). Cheap: only writes
+// when the pixel actually moves.
+let _chx=-1,_chy=-1;
+function placeCrosshair(){
+  const ch=$('#crosshair'); if(!ch) return;
+  const c=gl.project(gl.getCenter());
+  const x=Math.round(c.x), y=Math.round(c.y);
+  if(x===_chx&&y===_chy) return;
+  _chx=x; _chy=y; ch.style.left=x+'px'; ch.style.top=y+'px';
+}
+gl.on('render',placeCrosshair);
+window.addEventListener('resize',placeCrosshair);
 
 function setUserFix(lat,lon,src,meta){
   const first=USER.lat==null;
@@ -1645,12 +1684,24 @@ async function sitrepTick(){
       nr?flyBtn(nr.f):'']); }
   const nws=nwsInView(b);
   if(nws.length){
-    // A live NWS *warning* is imminent-threat by definition. Extreme/Severe
-    // (tornado, severe-tstorm, flash-flood) → RED; lesser-tagged → amber.
-    const red=nws.some(f=>/Extreme|Severe/i.test(f.properties.severity));
-    const top=nws.slice().sort((x,y)=>({Extreme:3,Severe:2}[y.properties.severity]||1)-({Extreme:3,Severe:2}[x.properties.severity]||1))[0];
-    anom.push([red?'danger':'alert','⚠','WEATHER WARNING',cut(top.properties.event,24),
-      nws.length+' in view · '+cut(top.properties.severity||'active',10),polyFlyBtn(top)]); }
+    // A live NWS *warning* is imminent-threat by definition. When several are in
+    // view, list them SORTED BY SEVERITY (Extreme→Severe→Moderate→Minor), most
+    // dangerous first, each its own row. Extreme/Severe → RED; lesser → amber.
+    // Capped so a swarm of advisories can't flood the SITREP (rest → "+N more").
+    const sevRank=s=>({extreme:4,severe:3,moderate:2,minor:1}[String(s||'').toLowerCase()]||0);
+    const sorted=nws.slice().sort((x,y)=>sevRank(y.properties.severity)-sevRank(x.properties.severity)
+      || String(x.properties.event||'').localeCompare(String(y.properties.event||'')));
+    const SHOW=4;
+    sorted.slice(0,SHOW).forEach((f,i)=>{ const p=f.properties;
+      const hi=/Extreme|Severe/i.test(p.severity);
+      const pt=polyPt(f), d=pt?dirMi(pt[1],pt[0]):'';
+      const more=(i===SHOW-1&&sorted.length>SHOW)?' · +'+(sorted.length-SHOW)+' more':'';
+      // drop the redundant " Warning" suffix (icon + red already say "warning"),
+      // so long events read cleanly instead of truncating to "…WARN"
+      const ev=(p.event||'WEATHER WARNING').replace(/\s*warning$/i,'')||'WEATHER WARNING';
+      anom.push([hi?'danger':'alert','⚠',cut(ev.toUpperCase(),24),
+        cut(p.severity||'active',12)+more,
+        (d?d+' · ':'')+cut(p.area,22),polyFlyBtn(f)]); }); }
   const bigQ=featsIn('src-emsc').filter(f=>inBounds(b,f.geometry.coordinates[0],f.geometry.coordinates[1])&&(+f.properties.mag)>=5).sort((x,y)=>y.properties.mag-x.properties.mag)[0];
   if(bigQ) anom.push(['danger','🌍','MAJOR EARTHQUAKE','M'+bigQ.properties.mag+' · '+cut(bigQ.properties.place,16),
     'depth '+Math.round(bigQ.properties.depth||0)+U(' km')+' · '+fmtTime(bigQ.properties.time),flyBtn(bigQ)]);
@@ -2028,10 +2079,14 @@ gl.on('load',()=>{
   registerIcons();
   buildLayerPanel();
   bindLayerPopups();
-  // Pull EVERY layer once on load so its count is available immediately, even
-  // while hidden. Visible + bg layers keep refreshing; hidden ones hold their
-  // loaded number until toggled on (see scheduleLayer).
-  LAYERS.forEach(cfg=>{ LAYER_STATE[cfg.id].started=true; scheduleLayer(cfg); });
+  // Pull every layer once on load so its count is available immediately, even
+  // while hidden — EXCEPT the CelesTrak (space) layers. Fetching all three big
+  // TLE sets on every load (~5 MB) burned CelesTrak's rate budget → 403s that
+  // left Starlink stuck spinning, and queued Starlink 4s+ behind visual/gps.
+  // They now load lazily on toggle, so a shown space layer is the only request
+  // in the queue and lands fast. (started=true keeps the toggle/refresh wiring;
+  // the checkbox handler calls runLayer when the layer is switched on.)
+  LAYERS.forEach(cfg=>{ LAYER_STATE[cfg.id].started=true; if(cfg.group!=='space') scheduleLayer(cfg); });
   refreshBase=Date.now(); setInterval(refreshTick,1000); refreshTick(); // 30s refresh + countdown
   loadEmgPool(); // warm the emergency-broadcast pool so the first fix tunes fast
   loadKp();   setInterval(loadKp,180000);   // space weather: planetary Kp
