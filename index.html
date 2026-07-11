@@ -1140,19 +1140,25 @@ async function sitrepTick(){
   if(XRAY&&/^[MX]/.test(XRAY)) general.push([/^X/.test(XRAY)?'danger':'alert','☀','SOLAR FLARE '+XRAY,'GOES X-ray · '+(/^X/.test(XRAY)?'major':'moderate'),
     'HF radio blackout risk',openBtn(SWPC,'SWPC'),true]);
 
-  // -- INDIVIDUAL item cards: one per in-view feature (planes, quakes, fires,
-  //    warnings, disasters, emergencies), all interleaved and sorted by distance
-  //    to the crosshair, nearest first. Capped so a busy area can't flood it. --
+  // -- INDIVIDUAL item cards: one per in-view feature (planes, warnings,
+  //    emergencies), all interleaved. HAZARDS OUTRANK ROUTINE TRAFFIC: a
+  //    thunderstorm warning or emergency squawk sorts above any plane no matter
+  //    how close the plane is (a plane only beats it via the pinned LOW
+  //    AIRCRAFT card, i.e. at warning distance/altitude). Tiers: red hazards,
+  //    amber hazards, everything else — distance sorts WITHIN each tier.
+  //    Capped so a busy area can't flood it. --
   const items=[];
   CATS.forEach(cfg=>catItems(cfg,b).forEach(f=>{
     const pt=polyPt(f); if(!pt) return;
-    items.push({cfg,f,pt,km:havKm(lat,lon,pt[1],pt[0])});
+    const cls=cfg.cls?cfg.cls(f):'';
+    const tier=cfg.hazard?(cls==='danger'?0:1):2;
+    items.push({cfg,f,pt,cls,tier,km:havKm(lat,lon,pt[1],pt[0])});
   }));
-  items.sort((a,z)=>a.km-z.km);
+  items.sort((a,z)=>a.tier-z.tier||a.km-z.km);
   const ITEM_CAP=14;
-  items.slice(0,ITEM_CAP).forEach(({cfg,f,pt})=>{
+  items.slice(0,ITEM_CAP).forEach(({cfg,f,pt,cls})=>{
     const det=cfg.detail?cfg.detail(f):'';
-    cards.push([cfg.cls?cfg.cls(f):'', cfg.icon,
+    cards.push([cls, cfg.icon,
       cfg.head(f), (cfg.sub?cfg.sub(f):'')||'—',
       dirMi(pt[1],pt[0])+(det?' · '+det:''),
       llBtn(pt[0],pt[1]), cfg.hazard]);
