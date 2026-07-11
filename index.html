@@ -6,37 +6,37 @@
 <meta name="theme-color" content="#0a0e14">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="description" content="seehear — keyless multi-domain OSINT dashboard: one map, every liftable public signal, three clickable audio domains.">
+<meta name="description" content="seehear — keyless multi-domain OSINT dashboard: one map, every liftable public signal, auto-tuned emergency broadcast.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%93%A1%3C/text%3E%3C/svg%3E">
-<title>seehear — keyless OSINT + 3-domain radio</title>
+<title>seehear — keyless OSINT + emergency broadcast</title>
 
 <!-- ============================================================
-     seehear — single self-contained OSINT + radio dashboard
+     seehear — self-contained OSINT map + auto emergency broadcast
      ------------------------------------------------------------
      Constraints (non-negotiable): one HTML file, no backend, no
      build step, no API keys, no npm. Opens directly in a browser.
      Vanilla JS + MapLibre GL (CDN) + satellite.js (CDN, SGP4).
+
+     Layout: two docked, full-height, equal-width side panels —
+     OBJECTS (map layers) on the left, SITREP on the right. The
+     SITREP panel also auto-tunes the nearest EMERGENCY BROADCAST
+     to the detected location and replays it whenever that location
+     changes (no controls: radio-browser emergency/public-safety/
+     weather/news pool, ranked by weighted great-circle distance).
 
      CORS notes (verified in browser context, not just curl):
        ACAO:* confirmed — fetch works cross-origin:
          USGS, CelesTrak, Amtrak(amtraker), NASA EONET,
          wheretheiss.at, DeepStateMap, Wikipedia, RestCountries,
          Wikidata, Nominatim, adsb.lol, radio-browser
-       Behind Cloudflare JS-challenge (fine from residential
-         browser IPs, may 403 from datacenter/VPN IPs):
-         OpenMHz JSON API. The .m4a audio itself is unrestricted.
-       No ACAO header seen -> may be browser-blocked; kept with
-         graceful failure + visible marker, never silently dropped:
-         aviationweather.gov METAR, GDELT geo, abuse.ch, CISA KEV.
        DROPPED — require a key, violating the keyless rule:
          OpenAQ v3 (401), NASA FIRMS (MAP_KEY), APRS.fi,
          OpenSky, aisstream, Shodan, GFW, Sentinel Hub.
-       DROPPED — no keyless browser path:
-         APRS-IS (raw TCP), Meshtastic MQTT (broker creds+protobuf).
 
      Audio fact used throughout: <audio> media loading is NOT
-     gated by CORS — only fetch()/XHR is. OpenMHz .m4a and LiveATC
-     mp3 streams play cross-origin without ACAO headers.
+     gated by CORS — only fetch()/XHR is. Emergency-broadcast
+     streams play cross-origin without ACAO headers; browsers only
+     defer autoplay until the first user gesture on the page.
      ============================================================ -->
 
 <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
@@ -75,15 +75,18 @@
   .badge b{color:var(--ink)}
   .dot{width:7px;height:7px;border-radius:50%;background:var(--ink-dim)}
 
-  /* ---------- panels (desktop: side panels / mobile: bottom sheets) ---------- */
+  /* ---------- panels (desktop: docked full-height side panels / mobile: bottom sheets) ---------- */
+  /* Both panels are unfloated: flush to the screen edges, full viewport height,
+     identical width. OBJECTS docks left, SITREP docks right. */
   .panel{position:absolute;z-index:15;background:var(--panel);
-    border:1px solid var(--line);border-radius:12px;
     backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
     display:flex;flex-direction:column;overflow:hidden}
-  #layers{top:var(--inset);left:calc(8px + var(--sa-l));width:312px;bottom:var(--inset)}
+  #layers{top:0;left:0;width:320px;bottom:0;
+    padding-left:var(--sa-l);border-right:1px solid var(--line)}
   #layers-scroll{overflow-y:auto;padding:8px;-webkit-overflow-scrolling:touch;
     flex:1 1 auto;min-height:0}
-  #radio{top:var(--inset);right:calc(8px + var(--sa-r));width:312px;bottom:var(--inset)}
+  #sitrep{top:0;right:0;left:auto;width:320px;bottom:0;
+    padding-right:var(--sa-r);border-left:1px solid var(--line)}
   #obj-head{flex:0 0 auto;display:flex;align-items:center;gap:8px;padding:11px 12px;
     border-bottom:1px solid var(--line);font-size:12px;letter-spacing:2px;color:var(--accent);
     font-weight:700}
@@ -107,43 +110,18 @@
   #panel-foot{padding:9px 12px;border-top:1px solid var(--line);font-size:10px;
     color:var(--ink-dim);line-height:1.5}
 
-  /* ---------- radio scanner ---------- */
-  #radio-tabs{display:flex;border-bottom:1px solid var(--line);flex:0 0 auto}
-  #radio-tabs button{flex:1;background:none;border:none;color:var(--ink-dim);
-    padding:12px 4px;font-size:11px;letter-spacing:.4px;border-bottom:2px solid transparent;
-    min-height:44px}
-  #radio-tabs button.active{color:var(--accent);border-bottom-color:var(--accent)}
-  .rpane{display:none;flex-direction:column;overflow:hidden;flex:1;min-height:0}
-  .rpane.active{display:flex}
-  .rpane-head{padding:9px 12px;border-bottom:1px solid var(--line);font-size:11px;
-    color:var(--ink-dim);flex:0 0 auto}
-  .rpane-body{overflow-y:auto;flex:1;min-height:0;-webkit-overflow-scrolling:touch}
-  select,.btn{background:var(--panel2);border:1px solid var(--line);color:var(--ink);
-    border-radius:8px;padding:8px 10px;font-family:var(--mono);font-size:12px;
-    -webkit-appearance:none;min-height:36px}
-  .btn:hover{border-color:var(--accent)}
-  .btn.sm{padding:5px 10px;font-size:11px;min-height:32px}
-  .btn.on{border-color:var(--accent);color:var(--accent)}
-  .rrow{display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid #16202c;
-    cursor:pointer;min-height:48px}
-  .rrow:hover{background:var(--panel2)}
-  .rrow .rmain{flex:1;min-width:0}
-  .rrow .rmain b{display:block;font-size:12px;color:var(--ink);white-space:nowrap;
-    overflow:hidden;text-overflow:ellipsis;font-weight:600}
-  .rrow .rmain span{font-size:10px;color:var(--ink-dim);white-space:nowrap;
-    overflow:hidden;text-overflow:ellipsis;display:block}
-  .rrow .wx{font-size:9px;color:var(--accent2);display:block;white-space:nowrap;
-    overflow:hidden;text-overflow:ellipsis}
-  .rrow.playing{background:#12251f}
-  .rrow.playing .rmain b{color:var(--accent)}
-  #player{padding:10px 12px calc(10px + var(--sa-b)/2);border-top:1px solid var(--line);
+  /* ---------- emergency broadcast footer (auto-tuned, no controls) ---------- */
+  #emg{padding:9px 12px calc(9px + var(--sa-b)/2);border-top:1px solid var(--line);
     background:var(--panel2);flex:0 0 auto}
-  #player audio{width:100%;height:36px}
-  #nowplaying{font-size:11px;color:var(--accent);margin-bottom:6px;min-height:14px;
-    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .ctl{display:flex;gap:6px;align-items:center;padding:9px 12px;flex:0 0 auto}
-  .note{font-size:10px;color:var(--ink-dim);padding:9px 12px;line-height:1.55;
-    background:#0c141d;flex:0 0 auto}
+  #emg-label{font-size:9px;letter-spacing:1.4px;color:var(--live);text-transform:uppercase;
+    display:flex;align-items:center;gap:6px;margin-bottom:5px;font-weight:700}
+  #emg-label .lz{width:7px;height:7px;border-radius:50%;background:var(--live);
+    box-shadow:0 0 0 0 rgba(255,68,85,.6);animation:pulse 2.2s infinite}
+  #emg-name{font-size:11px;color:var(--accent);white-space:nowrap;overflow:hidden;
+    text-overflow:ellipsis;min-height:14px;margin-bottom:6px}
+  #emg-sub{font-size:9px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;
+    text-overflow:ellipsis}
+  #audio{display:none}
 
   /* ---------- popups ---------- */
   .maplibregl-popup-content{background:var(--panel);color:var(--ink);
@@ -171,40 +149,24 @@
   .spin{display:inline-block;width:9px;height:9px;border:2px solid #2a3a4d;
     border-top-color:var(--accent);border-radius:50%;animation:sp .7s linear infinite}
   @keyframes sp{to{transform:rotate(360deg)}}
-  /* ---------- SITREP briefing card ---------- */
-  /* SITREP: a bottom bar spanning the gap between the two side panels,
-     one third of the viewport tall; the map padding keeps content centred
-     in the open area above it. */
-  #sitrep{bottom:var(--inset);top:auto;margin:0;
-    left:calc(330px + var(--sa-l));right:calc(330px + var(--sa-r));width:auto;
-    height:34vh;max-height:34vh}
-  #sitrep.expanded{top:var(--inset);height:auto;max-height:none}
+  /* ---------- SITREP briefing panel (right side, matches OBJECTS) ---------- */
   #sit-title.warn{color:var(--danger)!important}
   #sit-title.alert{color:var(--warn)!important}
-  #sit-exp{color:var(--ink-dim);cursor:pointer;padding:2px 4px;flex:0 0 auto;font-size:11px}
-  #sit-exp:hover,#sit-chev:hover{color:var(--accent)}
-  #sitrep.expanded #sit-exp{color:var(--accent)}
-  #sit-body{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));
-    gap:0 12px;align-content:start;padding:6px 4px}
-  #sit-head{display:flex;align-items:center;gap:10px;padding:9px 12px;
-    border-bottom:1px solid var(--line);flex:0 0 auto;min-height:42px}
-  #sit-head .title{color:var(--accent);font-size:12px;letter-spacing:1.4px;font-weight:700;
-    cursor:pointer;flex:0 0 auto}
-  #sit-badges{display:flex;gap:7px;align-items:center;overflow-x:auto;scrollbar-width:none}
-  #sit-badges::-webkit-scrollbar{display:none}
-  #sit-head .loc{margin-left:auto;color:var(--ink);font-size:11px;white-space:nowrap;
-    overflow:hidden;text-overflow:ellipsis;max-width:40%;text-align:right;flex:0 1 auto}
-  #sit-head .chev{color:var(--ink-dim);transition:transform .2s;cursor:pointer;
-    padding:2px 4px;flex:0 0 auto}
-  #loc-btn{flex:0 0 auto;width:30px;height:30px;padding:0;font-size:16px;line-height:1;
+  #sit-head{display:flex;align-items:center;gap:8px;padding:11px 12px;
+    border-bottom:1px solid var(--line);flex:0 0 auto;min-height:44px}
+  #sit-head .title{color:var(--accent);font-size:12px;letter-spacing:2px;font-weight:700;
+    flex:0 0 auto}
+  #utc-badge{flex:0 0 auto}
+  #sit-head .loc{margin-left:auto;color:var(--ink);font-size:10px;white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis;max-width:44%;text-align:right;flex:0 1 auto}
+  #loc-btn{flex:0 0 auto;width:28px;height:28px;padding:0;font-size:15px;line-height:1;
     background:var(--panel2);border:1px solid var(--accent);color:var(--accent);border-radius:7px;
     display:flex;align-items:center;justify-content:center}
   #loc-btn:active{background:var(--accent);color:#00140a}
-  #sitrep.collapsed .chev{transform:rotate(180deg)}
-  #sitrep.collapsed #sit-body{display:none}
-  #sitrep.collapsed{height:auto;max-height:none}
-  #sit-body{overflow-y:auto;padding:4px 0;-webkit-overflow-scrolling:touch}
-  .sit-row{display:flex;align-items:center;gap:9px;padding:6px 12px;font-size:11px;min-height:32px}
+  #sit-body{display:flex;flex-direction:column;align-content:start;
+    overflow-y:auto;padding:4px 0;-webkit-overflow-scrolling:touch;flex:1 1 auto;min-height:0}
+  .sit-row{display:flex;align-items:center;gap:9px;padding:7px 12px;font-size:11px;min-height:34px;
+    border-bottom:1px solid #10171f}
   .sit-row .ic{flex:0 0 18px;text-align:center}
   .sit-row .tx{flex:1;min-width:0;line-height:1.4}
   .sit-row .tx s1{display:block;color:var(--ink)}
@@ -221,10 +183,8 @@
   .sit-anom:first-child{border-top:none}
   .sit-div{grid-column:1/-1;height:1px;background:var(--line);margin:5px 12px}
   /* ---- minimalist ALL-CAPS chrome. Units opt out via .u ---- */
-  #obj-head,.sec-h,.layer label,#radio-tabs button,.rrow .rmain b,.rrow .rmain span,
-  #sit-head .title,.rpane-head,.btn,.pop h4,.pop .kv span,.badge,#mnav button,
-  .sit-row .tx s1,.sit-row .tx s2,#cast-head,#atc-head,#mhz-status,
-  .sit-row .act,#panel-foot{text-transform:uppercase}
+  #obj-head,.sec-h,.layer label,#sit-head .title,.pop h4,.pop .kv span,.badge,#mnav button,
+  .sit-row .tx s1,.sit-row .tx s2,.sit-row .act,#panel-foot,#emg-label{text-transform:uppercase}
   .u{text-transform:none!important;letter-spacing:0;font-style:normal}
   .sit-row .tx s1{letter-spacing:.3px}
 
@@ -254,9 +214,6 @@
     .sheet-grip{display:block;flex:0 0 auto;padding:8px 0 2px;cursor:grab}
     .sheet-grip::before{content:"";display:block;width:38px;height:4px;border-radius:2px;
       background:#2a3a4d;margin:0 auto}
-    #sitrep{width:auto!important;margin-left:0!important;left:0!important;right:0!important;
-      bottom:calc(54px + var(--sa-b))!important;height:auto!important;max-height:64vh!important}
-    #sit-body{grid-template-columns:1fr}
     .maplibregl-ctrl-bottom-right{bottom:calc(58px + var(--sa-b))}
   }
   @media (max-width:520px){
@@ -277,56 +234,11 @@
     <div class="sec-h">Space</div><div id="grp-space"></div>
     <div class="sec-h">Earth &amp; hazard</div><div id="grp-hazard"></div>
     <div class="sec-h">Conflict &amp; cyber</div><div id="grp-conflict"></div>
-    <div class="sec-h">Signals</div><div id="grp-signals"></div>
   </div>
   <div id="panel-foot"><span style="opacity:.6">© OpenStreetMap · CARTO</span></div>
 </div>
 
-<!-- radio panel -->
-<div id="radio" class="panel">
-  <div class="sheet-grip" data-close="radio"></div>
-  <div id="radio-tabs">
-    <button data-t="police" class="active">POLICE</button>
-    <button data-t="atc">ATC</button>
-    <button data-t="cast">BROADCAST</button>
-  </div>
-
-  <!-- 1. Police / Fire — OpenMHz -->
-  <div class="rpane active" id="pane-police">
-    <div class="ctl">
-      <button class="btn sm" id="mhz-pause" title="play / pause auto-monitor" style="min-width:34px">▶</button>
-      <select id="mhz-sys" style="flex:1;min-width:0"><option>loading systems…</option></select>
-      <button class="btn sm" id="mhz-scan" title="cycle across systems">scan</button>
-    </div>
-    <div class="rpane-head" id="mhz-status">PICK A SYSTEM → LIVE CALLS AUTO-PLAY</div>
-    <div class="rpane-body" id="mhz-list"></div>
-  </div>
-
-  <!-- Aviation ATC — LiveATC -->
-  <div class="rpane" id="pane-atc">
-    <div class="rpane-head" id="atc-head">LIVEATC TOWERS · LIVE METAR — ▶ INLINE, ↗ LIVEATC</div>
-    <div class="rpane-body" id="atc-list"></div>
-  </div>
-
-  <!-- 4. Broadcast — radio-browser.info (40k+ stations) -->
-  <div class="rpane" id="pane-cast">
-    <div class="ctl">
-      <input id="cast-q" placeholder="search stations / genre…" autocomplete="off"
-        style="flex:1;min-width:0;background:var(--panel2);border:1px solid var(--line);
-        color:var(--ink);padding:8px 10px;border-radius:8px;font-family:var(--mono);font-size:12px">
-      <button class="btn sm" id="cast-go">find</button>
-    </div>
-    <div class="rpane-head" id="cast-head">TOP STATIONS NEAR YOU — TAP TO PLAY</div>
-    <div class="rpane-body" id="cast-list"></div>
-  </div>
-
-  <div id="player">
-    <div id="nowplaying">— idle —</div>
-    <audio id="audio" controls preload="none"></audio>
-  </div>
-</div>
-
-<!-- SITREP briefing card -->
+<!-- SITREP briefing panel (right side) + auto-tuned emergency broadcast -->
 <div id="sitrep" class="panel">
   <div class="sheet-grip" data-close="sitrep"></div>
   <div id="sit-head">
@@ -334,11 +246,15 @@
     <span class="badge" id="utc-badge" title="UTC"><b id="utc">--:--</b></span>
     <span class="loc" id="sit-loc">LOCATING…</span>
     <button id="loc-btn" title="center map on my location">⌖</button>
-    <span id="sit-exp" title="expand to fill">▲</span>
-    <span class="chev" id="sit-chev" title="minimize">▾</span>
   </div>
   <div id="sit-body">
     <div class="sit-empty">ACQUIRING POSITION…</div>
+  </div>
+  <div id="emg">
+    <div id="emg-label"><span class="lz"></span>Emergency broadcast · auto-tuned</div>
+    <div id="emg-name">— locating nearest signal —</div>
+    <div id="emg-sub"></div>
+    <audio id="audio" preload="none"></audio>
   </div>
 </div>
 
@@ -347,7 +263,6 @@
   <button data-p="" class="active"><span class="ic">🗺</span>MAP</button>
   <button data-p="sitrep"><span class="ic">◈</span>SITREP</button>
   <button data-p="layers"><span class="ic">◧</span>OBJECTS</button>
-  <button data-p="radio"><span class="ic">📡</span>RADIO</button>
 </div>
 
 <div id="toast"></div>
@@ -909,34 +824,6 @@ defLayer({
 });
 
 
-defLayer({
-  id:'broadcast', label:'Broadcast stations', color:'#ff7ac2', group:'signals', refresh:0, defaultOff:true, icon:'ico-antenna', iconSize:0.42,
-  // radio-browser.info — 40k+ geolocated internet-radio stations worldwide.
-  // Loads the ~600 nearest the viewport centre; click a pin to play in-page.
-  loader: async ()=>{
-    const c=gl.getCenter();
-    const j=await getJSON('https://de1.api.radio-browser.info/json/stations/search?'+
-      'has_geo_info=true&hidebroken=true&limit=600&order=clickcount&reverse=true',{timeout:20000});
-    const feats=(j||[]).filter(s=>s.geo_lat&&s.geo_long&&(s.url_resolved||s.url)).map(s=>({
-      type:'Feature',geometry:{type:'Point',coordinates:[+s.geo_long,+s.geo_lat]},
-      properties:{_kind:'broadcast',name:s.name,url:s.url_resolved||s.url,
-        cc:s.countrycode||'',tags:(s.tags||'').split(',').slice(0,3).join(', '),
-        codec:s.codec||'',bitrate:s.bitrate||0}}));
-    // sort nearest-first to the viewport centre, keep the closest ~400
-    feats.sort((a,b)=>havKm(c.lat,c.lng,a.geometry.coordinates[1],a.geometry.coordinates[0])
-      -havKm(c.lat,c.lng,b.geometry.coordinates[1],b.geometry.coordinates[0]));
-    return {type:'FeatureCollection',features:feats.slice(0,400)};
-  },
-  popup:p=>`<h4>📻 ${escapeHtml(p.name)}</h4>
-    <div class="kv"><span>country</span>${escapeHtml(p.cc)}</div>
-    ${p.tags?`<div class="kv"><span>genre</span>${escapeHtml(p.tags)}</div>`:''}
-    <div class="kv"><span>quality</span>${escapeHtml(p.codec)} ${p.bitrate?p.bitrate+'k':''}</div>
-    <div class="lnk"><a href="#" onclick="playBroadcast(${JSON.stringify(p.url).replace(/"/g,'&quot;')},${JSON.stringify(p.name).replace(/"/g,'&quot;')});return false;">▶ play in-page</a></div>`
-});
-
-
-
-
 
 
 /* =====================================================================
@@ -1019,7 +906,7 @@ function scheduleLayer(cfg){
 
 function buildLayerPanel(){
   const groups={air:'#grp-air',surface:'#grp-surface',space:'#grp-space',
-    hazard:'#grp-hazard',conflict:'#grp-conflict',signals:'#grp-signals'};
+    hazard:'#grp-hazard',conflict:'#grp-conflict'};
   LAYERS.forEach(cfg=>{
     LAYER_STATE[cfg.id]={cnt:0,timer:null,on:!cfg.defaultOff,started:!cfg.defaultOff};
     ensureMapLayer(cfg);
@@ -1197,9 +1084,8 @@ function setMapPadding(){
   if(window.matchMedia('(max-width:900px)').matches){
     gl.setPadding({top:0,right:0,bottom:0,left:0}); return;
   }
-  const sh=$('#sitrep');
-  const bottom=(sh&&sh.offsetParent!==null)?Math.round(sh.getBoundingClientRect().height)+22:24;
-  gl.setPadding({top:20,left:330,right:330,bottom});
+  // both docked side panels are 320px wide — keep map content centred between them
+  gl.setPadding({top:20,left:336,right:336,bottom:24});
 }
 window.addEventListener('resize',()=>{ clearTimeout(window.__pad);
   window.__pad=setTimeout(setMapPadding,200); });
@@ -1219,7 +1105,8 @@ function setUserFix(lat,lon,src,meta){
     (USER.rc||USER.region||USER.cc||lat.toFixed(2)+', '+lon.toFixed(2))+
     ' · '+src.toUpperCase();
   if(src==='gps'&&!meta) reverseFill();
-  if(first) afterFirstFix();
+  // (re)tune the nearest emergency broadcast every time the location changes
+  emergencyTune(lat,lon);
   sitrepTick();
 }
 
@@ -1232,36 +1119,7 @@ async function reverseFill(){
     USER.region=a.state||''; USER.cc=(a.country_code||'').toUpperCase();
     $('#sit-loc').textContent=(USER.place?USER.place+', ':'')+
       (USER.region||USER.cc)+' · GPS';
-    autoTune();
   }catch(e){}
-}
-
-function afterFirstFix(){
-  // aircraft layer is already view-based & on; just try to tune local audio
-  autoTune();
-}
-
-// Auto-tune OpenMHz to the closest-matching system for the user's area.
-// The systems feed has no coordinates, so match name/state/city text
-// against the geolocated city + region. Only fires if nothing is tuned.
-let autoTuned=false;
-function autoTune(){
-  if(autoTuned||mhzCur||!mhzSystems.length||USER.lat==null) return;
-  const want=[USER.place,USER.region,USER.rc].filter(Boolean).map(s=>s.toLowerCase());
-  if(!want.length) return;
-  let best=null,bs=0;
-  mhzSystems.forEach(s=>{
-    const hay=((s.name||'')+' '+(s.state||'')+' '+(s.city||'')+' '+(s.county||'')).toLowerCase();
-    let score=0;
-    want.forEach((w,i)=>{ if(w&&hay.includes(w)) score+=(i===0?3:i===1?2:2); });
-    if(score>bs){bs=score;best=s;}
-  });
-  if(best&&bs>=2){
-    autoTuned=true;
-    $('#mhz-sys').value=best.shortName;
-    selectSystem(best.shortName);
-    toast('📟 auto-tuned: '+(best.name||best.shortName),'');
-  }
 }
 
 let sitrepGen=0;
@@ -1316,20 +1174,6 @@ async function sitrepTick(){
   if(nd&&!gRed.includes(nd.f)) row('','🌀',(nd.f.properties.type||'DISASTER').toUpperCase()+' · '+fmtMi(nd.km),
     escapeHtml(String(nd.f.properties.name||'').slice(0,56)),flyBtn(nd.f));
 
-  // -- audio available in the map area --
-  if(mhzCur){
-    const s=mhzSystems.find(x=>x.shortName===mhzCur);
-    row('','📟','MONITORING '+escapeHtml(s?(s.name||mhzCur):mhzCur),
-      autoTuned?'auto-tuned to your area':'police / fire trunked audio');
-  }
-  const na=nearView('src-atc',b,lat,lon);
-  if(na) row('','🛬','ATC '+escapeHtml(na.f.properties.name),
-    escapeHtml(na.f.properties.icao)+' tower · '+fmtMi(na.km),
-    `<button class="act" data-act="atc" data-icao="${escapeHtml(na.f.properties.icao)}">LISTEN</button>`);
-  const bcN=countView('src-broadcast',b);
-  if(bcN) row('','📡',bcN+' BROADCAST STATIONS IN VIEW','internet radio — click to play',
-    `<button class="act" data-act="cast">OPEN</button>`);
-
   $('#sit-body').innerHTML=rows.length?rows.join(''):
     '<div class="sit-empty">NO SIGNALS IN THIS AREA — PAN OR ZOOM THE MAP</div>';
 }
@@ -1343,328 +1187,124 @@ $('#sit-body').addEventListener('click',e=>{
     if(isFinite(lon)&&isFinite(lat)) gl.flyTo({center:[lon,lat],zoom:9});
     if(window.matchMedia('(max-width:900px)').matches) openSheet('');
   }
-  if(act==='atc'){
-    const a=LIVEATC.find(x=>x.icao===b.dataset.icao);
-    const r=document.querySelector(`#atc-list .rrow[data-icao="${b.dataset.icao}"]`);
-    if(a&&r){ switchRadioTab('atc'); playATC(a,r); }
-  }
-  if(act==='cast'){
-    switchRadioTab('cast'); if(!castLoaded){castLoaded=true;loadCast('');}
-    if(window.matchMedia('(max-width:900px)').matches) openSheet('radio');
-  }
-  if(act==='police'){
-    switchRadioTab('police');
-    if(window.matchMedia('(max-width:900px)').matches) openSheet('radio');
-  }
 });
-function switchRadioTab(t){
-  const btn=document.querySelector(`#radio-tabs button[data-t="${t}"]`);
-  if(btn) btn.click();
-}
-// SITREP has three heights: collapsed (header only), normal, and expanded
-// (fills its whole bay, covering the map vertically). ▾ minimises, ▲ fills.
-const isMobile=()=>window.matchMedia('(max-width:900px)').matches;
-$('#sit-chev').addEventListener('click',()=>{ if(isMobile())return;
-  const s=$('#sitrep'); s.classList.remove('expanded'); s.classList.toggle('collapsed'); setMapPadding(); });
-$('#sit-exp').addEventListener('click',()=>{ if(isMobile())return;
-  const s=$('#sitrep'); s.classList.remove('collapsed'); s.classList.toggle('expanded'); setMapPadding(); });
-
 /* =====================================================================
-   7. RADIO DOMAIN 1 — OpenMHz police / fire (THE CORE FEATURE)
-   pick a system -> poll /calls/newer -> queue new .m4a -> auto-play
-   newest-last through ONE <audio>. "scan" cycles across systems.
+   7. EMERGENCY BROADCAST — auto-tuned, no controls (THE CORE FEATURE)
+   The nearest geolocated emergency broadcast to the DETECTED location is
+   played automatically and re-tuned every time that location changes.
+   radio-browser.info is the only keyless, CORS-* geolocated radio index;
+   we pull a global pool of emergency / public-safety / weather / news
+   stations that carry coordinates, rank by great-circle distance (weighted
+   toward the more emergency-specific tags) and play the winner through one
+   hidden <audio>. <audio> media loading is not CORS-gated, so the stream
+   plays cross-origin even without ACAO headers.
    ===================================================================== */
 const audio=$('#audio');
-const OMHZ='https://api.openmhz.com';
-let mhzSystems=[], mhzCur=null, mhzSince=0, mhzQueue=[], mhzPlaying=false,
-    mhzPoll=null, mhzScan=false, mhzScanIdx=0, mhzSeen=new Set(), mhzPaused=true;
-function mhzSetPaused(p){
-  mhzPaused=p; $('#mhz-pause').textContent=p?'▶':'⏸'; $('#mhz-pause').classList.toggle('on',!p);
-  if(p){ try{audio.pause();}catch(e){} mhzPlaying=false; }
-  else { if(!mhzPlaying) playNext(); }        // resume auto-monitor
-}
-$('#mhz-pause')&&$('#mhz-pause').addEventListener('click',()=>{ if(mhzCur) mhzSetPaused(!mhzPaused); });
+// mirror servers — one dead host never stops the retune
+const RB_HOSTS=['https://de1.api.radio-browser.info','https://nl1.api.radio-browser.info',
+  'https://at1.api.radio-browser.info'];
+// tag -> relevance weight (smaller = preferred). A dedicated emergency feed
+// beats a plain news station unless the news station is much closer.
+const EMG_TAGS=[
+  {tag:'emergency',w:0.35},{tag:'emergency & public safety',w:0.35},
+  {tag:'public safety',w:0.45},{tag:'civil defense',w:0.4},
+  {tag:'noaa',w:0.4},{tag:'weather',w:0.6},{tag:'news',w:1}];
+let emgPool=null;         // merged station pool (fetched once, cached when non-empty)
+let emgPoolPromise=null;  // shared in-flight fetch so concurrent callers wait as one
+let emgCur=null;          // stationuuid currently tuned
 
-async function loadSystems(tries){
-  try{
-    const j=await getJSON(OMHZ+'/systems');
-    mhzSystems=(j.systems||j||[]).filter(s=>s.shortName);
-    mhzSystems.sort((a,b)=>(a.name||'').localeCompare(b.name||''));
-    const sel=$('#mhz-sys'); sel.innerHTML='';
-    sel.appendChild(el('option','','— select system ('+mhzSystems.length+') —'));
-    mhzSystems.forEach(s=>{
-      const o=el('option'); o.value=s.shortName;
-      o.textContent=(s.name||s.shortName)+(s.state?' · '+s.state:'');
-      sel.appendChild(o);
-    });
-    $('#mhz-status').textContent=mhzSystems.length+' systems · pick one to start scanning';
-    autoTune(); // if a position fix already exists, tune the local system now
-  }catch(e){
-    // quietly retry a few times with backoff — no error text
-    if((tries||0)<4){ setTimeout(()=>loadSystems((tries||0)+1),3000*Math.pow(2,tries||0)); return; }
-    $('#mhz-status').textContent='loading systems…';
+async function rbGet(path){
+  let err;
+  for(const h of RB_HOSTS){
+    try{ return await getJSON(h+path,{timeout:15000}); }catch(e){ err=e; }
   }
+  throw err||new Error('radio-browser unreachable');
 }
-
-function selectSystem(shortName){
-  // start from NOW: only calls received after you select auto-play, in order,
-  // then it idles until the next live call — never replays the archive.
-  mhzCur=shortName; mhzSince=Date.now(); mhzSeen.clear(); mhzQueue=[];
-  $('#mhz-list').innerHTML='';
-  mhzSetPaused(true); // paused on load — monitor fills the list; press ▶ to hear
-  const s=mhzSystems.find(x=>x.shortName===shortName);
-  $('#mhz-status').innerHTML='<span class="spin"></span> '+
-    escapeHtml(s?(s.name||shortName):shortName)+' — monitoring (paused)';
-  if(mhzPoll) clearInterval(mhzPoll);
-  pollCalls();
-  mhzPoll=setInterval(pollCalls,8000);
-}
-
-async function pollCalls(){
-  if(!mhzCur) return;
-  try{
-    const j=await getJSON(OMHZ+'/'+mhzCur+'/calls/newer?time='+(mhzSince||0));
-    const calls=j.calls||j||[];
-    calls.sort((a,b)=>new Date(a.time||a.start_time)-new Date(b.time||b.start_time));
-    for(const c of calls){
-      const id=c._id||c.id||c.url;
-      if(!id||mhzSeen.has(id)) continue;
-      mhzSeen.add(id);
-      const t=new Date(c.time||c.start_time).getTime(); if(t>mhzSince) mhzSince=t;
-      const call={id,url:c.url,tg:c.talkgroupNum||c.talkgroup||'?',
-        tgName:String(c.talkgroupName||c.talkgroupAlpha||'').trim(),
-        time:c.time||c.start_time,len:c.len||c.length||0};
-      mhzQueue.push(call); addCallRow(call);
-    }
-    sortCalls(); trimList();
-    if(!mhzPlaying && !mhzPaused) playNext();
-    const s=mhzSystems.find(x=>x.shortName===mhzCur);
-    $('#mhz-status').textContent=(mhzPaused?'⏸ ':'▶ ')+(s?(s.name||mhzCur):mhzCur)+
-      ' · '+mhzSeen.size+' calls'+(mhzScan?' · SCAN':'');
-  }catch(e){ /* keep last status; silent retry on next poll */ }
-}
-
-function addCallRow(call){
-  const list=$('#mhz-list');
-  const row=el('div','rrow'); row.dataset.id=call.id;
-  row.dataset.t=new Date(call.time).getTime()||0;
-  const label=call.tgName||('TG '+call.tg);
-  row.innerHTML=`<div class="rmain"><b>${escapeHtml(label)}</b>
-    <span>TG ${escapeHtml(String(call.tg))} · ${fmtTime(call.time)} · ${call.len||'?'}${U('s')}</span></div>
-    <button class="btn sm">▶</button>`;
-  row.onclick=()=>playCall(call,row);
-  list.insertBefore(row,list.firstChild);
-}
-function sortCalls(){ // guarantee newest call at the very top
-  const list=$('#mhz-list');
-  [...list.children].sort((a,b)=>(+b.dataset.t||0)-(+a.dataset.t||0))
-    .forEach(r=>list.appendChild(r));
-}
-function trimList(){
-  const list=$('#mhz-list');
-  while(list.children.length>60) list.removeChild(list.lastChild);
-}
-function playNext(){
-  if(mhzPaused){ mhzPlaying=false; return; }      // paused: don't auto-advance
-  if(!mhzQueue.length){ mhzPlaying=false;
-    if(mhzScan) advanceScan(); return; }
-  const call=mhzQueue.shift();
-  const row=$('#mhz-list').querySelector(`[data-id="${CSS.escape(call.id)}"]`);
-  playCall(call,row);
-}
-function playCall(call,row){
-  document.querySelectorAll('.rrow.playing').forEach(r=>r.classList.remove('playing'));
-  if(row) row.classList.add('playing');
-  mhzPlaying=true; atcPlaying=null;
-  audio.src=call.url;
-  $('#nowplaying').textContent='📟 '+(call.tgName||('TG '+call.tg))+' · '+fmtTime(call.time);
-  audio.play().catch(()=>{});
-}
-audio.addEventListener('ended',()=>{
-  document.querySelectorAll('.rrow.playing').forEach(r=>r.classList.remove('playing'));
-  if(mhzCur&&!atcPlaying&&!KW.live&&!mhzPaused) playNext();
-  else { mhzPlaying=false; if(!KW.live) $('#nowplaying').textContent='— idle —'; }
-});
-audio.addEventListener('error',()=>{ if(mhzCur&&!atcPlaying&&!KW.live&&!mhzPaused){ mhzPlaying=false; playNext(); } });
-
-$('#mhz-sys').addEventListener('change',e=>{
-  if(e.target.value){ mhzScan=false; $('#mhz-scan').classList.remove('on'); selectSystem(e.target.value); }
-});
-$('#mhz-scan').addEventListener('click',()=>{
-  mhzScan=!mhzScan; $('#mhz-scan').classList.toggle('on',mhzScan);
-  if(mhzScan){
-    if(!mhzSystems.length){ toast('systems not loaded','warn'); mhzScan=false;
-      $('#mhz-scan').classList.remove('on'); return; }
-    mhzScanIdx=Math.floor(mhzSystems.length*0.0); advanceScan();
-    toast('scan mode: cycling systems','warn');
-  }
-});
-function advanceScan(){
-  if(!mhzScan||!mhzSystems.length) return;
-  mhzScanIdx=(mhzScanIdx+1)%mhzSystems.length;
-  const sys=mhzSystems[mhzScanIdx];
-  $('#mhz-sys').value=sys.shortName;
-  selectSystem(sys.shortName);
-}
-
-/* ---- Broadcast domain: radio-browser.info -------------------------------- */
-function playBroadcast(url,name){
-  mhzCur=null; atcPlaying=null; mhzPlaying=false;
-  audio.src=url;
-  $('#nowplaying').textContent='📻 '+name;
-  audio.play().catch(()=>{});
-  document.querySelectorAll('#cast-list .rrow.playing').forEach(r=>r.classList.remove('playing'));
-}
-window.playBroadcast=playBroadcast;
-
-async function loadCast(query){
-  const list=$('#cast-list'); list.innerHTML='<div class="note">loading…</div>';
-  try{
-    let url;
-    if(query){
-      url='https://de1.api.radio-browser.info/json/stations/search?hidebroken=true&limit=80&order=clickcount&reverse=true&name='+encodeURIComponent(query);
-      $('#cast-head').textContent='Results for “'+query+'” — tap to play.';
-    } else if(USER.cc){
-      url='https://de1.api.radio-browser.info/json/stations/search?hidebroken=true&limit=80&order=clickcount&reverse=true&countrycode='+encodeURIComponent(USER.cc);
-      $('#cast-head').textContent='Top stations in '+USER.cc+' — tap to play.';
-    } else {
-      url='https://de1.api.radio-browser.info/json/stations/search?hidebroken=true&limit=80&order=clickcount&reverse=true';
-      $('#cast-head').textContent='Top stations worldwide — tap to play.';
-    }
-    const j=await getJSON(url,{timeout:20000});
-    list.innerHTML='';
-    (j||[]).filter(s=>s.url_resolved||s.url).slice(0,80).forEach(s=>{
-      const row=el('div','rrow');
-      row.innerHTML=`<div class="rmain"><b>${escapeHtml(s.name.trim()||'station')}</b>
-        <span>${escapeHtml(s.countrycode||'')} · ${escapeHtml((s.tags||'').split(',').slice(0,2).join(', '))} · ${escapeHtml(s.codec||'')} ${s.bitrate?s.bitrate+U('k'):''}</span></div>
-        <button class="btn sm">▶</button>`;
-      row.onclick=()=>{ document.querySelectorAll('#cast-list .rrow.playing').forEach(r=>r.classList.remove('playing'));
-        row.classList.add('playing'); playBroadcast(s.url_resolved||s.url,s.name.trim()); };
-      list.appendChild(row);
+function loadEmgPool(){
+  if(emgPool) return Promise.resolve(emgPool);
+  if(emgPoolPromise) return emgPoolPromise;
+  emgPoolPromise=(async()=>{
+    const byId={};
+    const results=await Promise.allSettled(EMG_TAGS.map(t=>
+      rbGet('/json/stations/search?tag='+encodeURIComponent(t.tag)+
+        '&has_geo_info=true&hidebroken=true&limit=2000&order=clickcount&reverse=true')));
+    results.forEach((r,i)=>{
+      if(r.status!=='fulfilled'||!Array.isArray(r.value)) return;
+      const w=EMG_TAGS[i].w;
+      r.value.forEach(s=>{
+        const lat=+s.geo_lat, lon=+s.geo_long, url=s.url_resolved||s.url;
+        if(!isFinite(lat)||!isFinite(lon)||!url) return;
+        const prev=byId[s.stationuuid];
+        if(prev){ prev.w=Math.min(prev.w,w); return; } // keep the strongest weight
+        byId[s.stationuuid]={id:s.stationuuid,name:(s.name||'station').trim(),
+          url,lat,lon,cc:s.countrycode||'',
+          tags:(s.tags||'').split(',').filter(Boolean).slice(0,3).join(', '),w};
+      });
     });
-    if(!list.children.length) list.innerHTML='<div class="note">no stations found.</div>';
-  }catch(e){ list.innerHTML='<div class="note">loading…</div>'; setTimeout(()=>loadCast(query),3000); }
-}
-let castLoaded=false;
-
-
-/* =====================================================================
-   9. RADIO DOMAIN 3 — LiveATC + live METARs (aviationweather.gov)
-   ===================================================================== */
-let atcPlaying=null;
-const METAR={}; // icao -> parsed metar
-
-function buildATC(){
-  const list=$('#atc-list');
-  LIVEATC.forEach(a=>{
-    const row=el('div','rrow'); row.dataset.icao=a.icao;
-    row.innerHTML=`<div class="rmain"><b>${escapeHtml(a.name)}</b>
-      <span>${escapeHtml(a.icao)} · ${escapeHtml(a.desc)}</span>
-      <span class="wx" data-wx="${a.icao}"></span></div>
-      <button class="btn sm play">▶</button>
-      <button class="btn sm" title="open LiveATC player">↗</button>`;
-    const [playBtn,extBtn]=row.querySelectorAll('button');
-    playBtn.onclick=e=>{e.stopPropagation();playATC(a,row);};
-    extBtn.onclick=e=>{e.stopPropagation();window.open(a.page,'_blank','noopener');};
-    row.onclick=()=>gl.flyTo({center:[a.lon,a.lat],zoom:9});
-    list.appendChild(row);
-  });
-}
-function playATC(a,row){
-  document.querySelectorAll('#atc-list .rrow.playing').forEach(r=>r.classList.remove('playing'));
-  row.classList.add('playing');
-  mhzPlaying=false; atcPlaying=a;
-  audio.src=a.stream;
-  $('#nowplaying').textContent='🛬 '+a.name+' ('+a.icao+')';
-  audio.play().catch(()=>{
-    $('#nowplaying').textContent='opening LiveATC player ↗';
-    window.open(a.page,'_blank','noopener');
-  });
-  const t=setTimeout(()=>{ if(audio.readyState===0&&atcPlaying===a)
-    $('#nowplaying').textContent='↗ opens the LiveATC player'; },6000);
-  audio.addEventListener('playing',()=>clearTimeout(t),{once:true});
+    const pool=Object.values(byId);
+    if(pool.length){ emgPool=pool; }
+    else { emgPoolPromise=null; }   // nothing came back — allow a later retry
+    return pool;
+  })();
+  return emgPoolPromise;
 }
 
-async function loadMETARs(){
-  // aviationweather.gov data API — no ACAO header seen from this vantage;
-  // degrade gracefully (rows simply show no wx line) rather than break.
-  try{
-    const ids=LIVEATC.map(a=>a.icao).join(',');
-    const j=await getJSON('https://aviationweather.gov/api/data/metar?ids='+ids+'&format=json',
-      {timeout:15000});
-    (Array.isArray(j)?j:[]).forEach(m=>{
-      if(!m.icaoId) return;
-      METAR[m.icaoId]=m;
-      const s=$(`[data-wx="${m.icaoId}"]`);
-      if(s) s.innerHTML=
-        (m.temp!=null?cToF(m.temp)+U('°F'):'')+
-        (m.wdir!=null&&m.wspd!=null?' · '+m.wdir+U('°')+'/'+m.wspd+U('kt'):'')+
-        (m.visib?' · '+m.visib+U('sm'):'');
-    });
-    $('#atc-head').textContent='LiveATC tower feeds · METARs live — ▶ tries inline, ↗ opens LiveATC.';
-  }catch(e){
-    $('#atc-head').textContent='LiveATC tower feeds — ▶ tries inline, ↗ opens LiveATC.';
+// Pick + play the nearest emergency broadcast to (lat,lon). Called on every
+// location change. If the winner is already tuned, it's left playing.
+async function emergencyTune(lat,lon){
+  if(lat==null||lon==null) return;
+  const pool=await loadEmgPool();
+  if(!pool||!pool.length){
+    $('#emg-name').textContent='no emergency signal found';
+    setTimeout(()=>{ emgPool=null; if(USER.lat!=null) emergencyTune(USER.lat,USER.lon); },30000);
+    return;
   }
-}
-
-/* =====================================================================
-   10. RADIO NODE PINS on the map (LiveATC towers)
-   ===================================================================== */
-function initRadioPins(){
-  const atcFC={type:'FeatureCollection',features:LIVEATC.map(a=>({
-    type:'Feature',geometry:{type:'Point',coordinates:[a.lon,a.lat]},
-    properties:{_kind:'atc',name:a.name,icao:a.icao,page:a.page}}))};
-
-  const symLayout=img=>({'icon-image':img,'icon-size':iconSize(0.5),'visibility':'none',
-    'icon-allow-overlap':true,'icon-ignore-placement':true}); // signal pins off by default
-  gl.addSource('src-atc',{type:'geojson',data:atcFC});
-  gl.addLayer({id:'ly-atc',type:'symbol',source:'src-atc',layout:symLayout('ico-atc')});
-
-  gl.on('click','ly-atc',e=>{
-    const p=e.features[0].properties;
-    const m=METAR[p.icao];
-    new maplibregl.Popup().setLngLat(e.features[0].geometry.coordinates)
-      .setHTML(`<div class="pop"><h4>🛬 ${escapeHtml(p.name)}</h4>
-        <div class="kv"><span>icao</span>${escapeHtml(p.icao)}</div>
-        ${m?`<div class="kv"><span>metar</span>${escapeHtml(String(m.rawOb||'').slice(0,90))}</div>`:''}
-        <div class="lnk"><a target="_blank" rel="noopener" href="${escapeHtml(p.page)}">LiveATC player ↗</a></div></div>`).addTo(gl);
+  let best=null,bs=Infinity;
+  pool.forEach(s=>{
+    const score=havKm(lat,lon,s.lat,s.lon)*s.w;   // weighted great-circle distance
+    if(score<bs){ bs=score; best={s,km:havKm(lat,lon,s.lat,s.lon)}; }
   });
-  gl.on('mouseenter','ly-atc',()=>gl.getCanvas().style.cursor='pointer');
-  gl.on('mouseleave','ly-atc',()=>gl.getCanvas().style.cursor='');
-
-  const row=el('div','layer off');
-  row.innerHTML=`<input type="checkbox" id="ck-atc">
-    <span class="pic emj">🛬</span>
-    <label for="ck-atc">LiveATC towers</label><span class="cnt">${LIVEATC.length}</span>`;
-  $('#grp-signals').appendChild(row);
-  row.querySelector('input').addEventListener('change',ev=>{
-    gl.setLayoutProperty('ly-atc','visibility',ev.target.checked?'visible':'none');
-    row.classList.toggle('off',!ev.target.checked);
-  });
+  if(!best) return;
+  updateEmgLabel(best);
+  if(best.s.id===emgCur) return;                   // already on the nearest — keep playing
+  emgCur=best.s.id;
+  playEmergency(best.s);
 }
-
-/* =====================================================================
-   11. UI — radio tabs + mobile bottom-sheet navigation
-   ===================================================================== */
-document.querySelectorAll('#radio-tabs button').forEach(b=>{
-  b.onclick=()=>{
-    document.querySelectorAll('#radio-tabs button').forEach(x=>x.classList.remove('active'));
-    document.querySelectorAll('.rpane').forEach(x=>x.classList.remove('active'));
-    b.classList.add('active');
-    $('#pane-'+b.dataset.t).classList.add('active');
-    if(b.dataset.t==='cast'&&!castLoaded){ castLoaded=true; loadCast(''); }
-  };
+function updateEmgLabel(best){
+  const s=best.s;
+  $('#emg-name').textContent='📻 '+s.name;
+  $('#emg-sub').innerHTML=(s.cc?escapeHtml(s.cc)+' · ':'')+fmtMi(best.km)+' away'+
+    (s.tags?' · '+escapeHtml(s.tags):'');
+}
+function playEmergency(s){
+  audio.src=s.url;
+  const p=audio.play();
+  if(p&&p.catch) p.catch(()=>{}); // autoplay may be blocked until a user gesture
+}
+// Live streams don't "end"; on a stream error, drop that station and retune to
+// the next-nearest so a dead feed never leaves the board silent.
+let emgErrTs=0;
+audio.addEventListener('error',()=>{
+  if(!emgCur) return;
+  const now=Date.now(); if(now-emgErrTs<4000) return; emgErrTs=now;
+  if(emgPool) emgPool=emgPool.filter(s=>s.id!==emgCur);
+  emgCur=null;
+  if(USER.lat!=null) emergencyTune(USER.lat,USER.lon);
 });
-$('#cast-go').addEventListener('click',()=>loadCast($('#cast-q').value.trim()));
-$('#cast-q').addEventListener('keydown',e=>{ if(e.key==='Enter'){e.preventDefault();loadCast($('#cast-q').value.trim());} });
+// Browsers block audio autoplay until the page has seen a user gesture. Retry
+// the moment one happens — this is an unlock, not a control. No buttons.
+['pointerdown','touchstart','keydown'].forEach(ev=>
+  window.addEventListener(ev,()=>{
+    if(emgCur&&audio.paused){ const p=audio.play(); if(p&&p.catch) p.catch(()=>{}); }
+  },{passive:true}));
 
-// viewport-dependent layers (all aircraft, broadcast stations) refetch on pan/zoom
+// viewport-dependent layers (all aircraft, flood gauges) refetch on pan/zoom
 let moveDebounce=null, lastGeoC=null;
 gl.on('moveend',()=>{
   clearTimeout(moveDebounce);
   moveDebounce=setTimeout(()=>{
     // viewport-based feeds refetch for the new area, then the SITREP re-reads it
-    ['nearair','broadcast','water'].forEach(id=>{
+    ['nearair','water'].forEach(id=>{
       const st=LAYER_STATE[id];
       if(st&&st.on&&st.started) runLayer(LAYERS.find(l=>l.id===id));
     });
@@ -1691,7 +1331,7 @@ async function updateAreaLabel(){
 // mobile: MAP / LAYERS / RADIO bottom nav toggles the panels as sheets
 const mnavBtns=document.querySelectorAll('#mnav button');
 function openSheet(which){
-  ['layers','radio','sitrep'].forEach(id=>$('#'+id).classList.toggle('open',id===which));
+  ['layers','sitrep'].forEach(id=>$('#'+id).classList.toggle('open',id===which));
   mnavBtns.forEach(b=>b.classList.toggle('active',b.dataset.p===which));
 }
 mnavBtns.forEach(b=>b.addEventListener('click',()=>openSheet(b.dataset.p)));
@@ -1722,67 +1362,6 @@ const VOLCANOES=[
   ['Yasur',-19.532,169.447,361],['Klyuchevskoy',56.056,160.642,4754],['Shiveluch',56.653,161.360,3283],
   ['Bezymianny',55.972,160.595,2882],['Karymsky',54.049,159.443,1536],['Bardarbunga',64.633,-17.516,2009]
 ];
-// LiveATC feeds. stream = best-effort direct mp3; page = official player fallback.
-const LIVEATC=[
-  {name:'New York Kennedy',icao:'KJFK',lat:40.64,lon:-73.78,desc:'Tower',
-    stream:'https://s1-bos.liveatc.net/kjfk_twr',page:'https://www.liveatc.net/hlisten.php?mount=kjfk_twr&icao=kjfk'},
-  {name:'Los Angeles Intl',icao:'KLAX',lat:33.94,lon:-118.41,desc:'Tower',
-    stream:'https://s1-fmt2.liveatc.net/klax1',page:'https://www.liveatc.net/hlisten.php?mount=klax1&icao=klax'},
-  {name:"Chicago O'Hare",icao:'KORD',lat:41.98,lon:-87.90,desc:'Tower',
-    stream:'https://s1-bos.liveatc.net/kord_twr',page:'https://www.liveatc.net/hlisten.php?mount=kord_twr&icao=kord'},
-  {name:'Atlanta Hartsfield',icao:'KATL',lat:33.64,lon:-84.43,desc:'Tower',
-    stream:'https://s1-bos.liveatc.net/katl_twr',page:'https://www.liveatc.net/hlisten.php?mount=katl_twr&icao=katl'},
-  {name:'London Heathrow',icao:'EGLL',lat:51.47,lon:-0.46,desc:'Tower',
-    stream:'https://s1-fmt2.liveatc.net/egll_twr',page:'https://www.liveatc.net/hlisten.php?mount=egll_twr&icao=egll'},
-  {name:'Boston Logan',icao:'KBOS',lat:42.36,lon:-71.01,desc:'Tower',
-    stream:'https://s1-bos.liveatc.net/kbos_twr',page:'https://www.liveatc.net/hlisten.php?mount=kbos_twr&icao=kbos'},
-  {name:'San Francisco Intl',icao:'KSFO',lat:37.62,lon:-122.38,desc:'Tower',
-    stream:'https://s1-fmt2.liveatc.net/ksfo_twr',page:'https://www.liveatc.net/hlisten.php?mount=ksfo_twr&icao=ksfo'},
-  {name:'Miami Intl',icao:'KMIA',lat:25.79,lon:-80.29,desc:'Tower',
-    stream:'https://s1-bos.liveatc.net/kmia_twr',page:'https://www.liveatc.net/hlisten.php?mount=kmia_twr&icao=kmia'},
-  {name:'Dallas Fort Worth',icao:'KDFW',lat:32.90,lon:-97.04,desc:'Tower',
-    stream:'https://s1-fmt2.liveatc.net/kdfw_twr',page:'https://www.liveatc.net/hlisten.php?mount=kdfw_twr&icao=kdfw'},
-  {name:'Denver Intl',icao:'KDEN',lat:39.86,lon:-104.67,desc:'Tower',
-    stream:'https://s1-fmt2.liveatc.net/kden_twr',page:'https://www.liveatc.net/hlisten.php?mount=kden_twr&icao=kden'},
-  {name:'Seattle Tacoma',icao:'KSEA',lat:47.45,lon:-122.31,desc:'Tower',
-    stream:'https://s1-fmt2.liveatc.net/ksea_twr',page:'https://www.liveatc.net/hlisten.php?mount=ksea_twr&icao=ksea'},
-  {name:'Las Vegas Harry Reid',icao:'KLAS',lat:36.08,lon:-115.15,desc:'Tower',
-    stream:'https://s1-fmt2.liveatc.net/klas_twr',page:'https://www.liveatc.net/hlisten.php?mount=klas_twr&icao=klas'},
-  {name:'Phoenix Sky Harbor',icao:'KPHX',lat:33.43,lon:-112.01,desc:'Tower',
-    stream:'https://s1-fmt2.liveatc.net/kphx_twr',page:'https://www.liveatc.net/hlisten.php?mount=kphx_twr&icao=kphx'},
-  {name:'Toronto Pearson',icao:'CYYZ',lat:43.68,lon:-79.63,desc:'Tower',
-    stream:'https://s1-bos.liveatc.net/cyyz_twr',page:'https://www.liveatc.net/hlisten.php?mount=cyyz_twr&icao=cyyz'},
-  {name:'Amsterdam Schiphol',icao:'EHAM',lat:52.31,lon:4.76,desc:'Approach',
-    stream:'https://s1-fmt2.liveatc.net/eham_app',page:'https://www.liveatc.net/hlisten.php?mount=eham_app&icao=eham'},
-  {name:'Dublin Intl',icao:'EIDW',lat:53.42,lon:-6.27,desc:'Tower',
-    stream:'https://s1-fmt2.liveatc.net/eidw_twr',page:'https://www.liveatc.net/hlisten.php?mount=eidw_twr&icao=eidw'},
-  {name:'Zurich Kloten',icao:'LSZH',lat:47.46,lon:8.55,desc:'Tower',
-    stream:'https://s1-fmt2.liveatc.net/lszh_twr',page:'https://www.liveatc.net/hlisten.php?mount=lszh_twr&icao=lszh'},
-  {name:'Hong Kong Intl',icao:'VHHH',lat:22.31,lon:113.91,desc:'Tower',
-    stream:'https://s1-fmt2.liveatc.net/vhhh_twr',page:'https://www.liveatc.net/hlisten.php?mount=vhhh_twr&icao=vhhh'},
-  {name:'Tokyo Haneda',icao:'RJTT',lat:35.55,lon:139.78,desc:'Tower',
-    stream:'https://s1-fmt2.liveatc.net/rjtt_twr',page:'https://www.liveatc.net/hlisten.php?mount=rjtt_twr&icao=rjtt'},
-  {name:'Sydney Kingsford',icao:'YSSY',lat:-33.95,lon:151.18,desc:'Tower',
-    stream:'https://s1-fmt2.liveatc.net/yssy_twr',page:'https://www.liveatc.net/hlisten.php?mount=yssy2&icao=yssy'},
-  // extended set — stream is a best-effort _twr guess, ↗ always opens LiveATC's
-  // search page for the airport (works regardless of exact mount name)
-  ...[['Newark','KEWR',40.69,-74.17],['LaGuardia','KLGA',40.78,-73.87],['Washington Dulles','KIAD',38.95,-77.46],
-   ['Washington Reagan','KDCA',38.85,-77.04],['Philadelphia','KPHL',39.87,-75.24],['Detroit','KDTW',42.21,-83.35],
-   ['Minneapolis','KMSP',44.88,-93.22],['Charlotte','KCLT',35.21,-80.94],['Houston Bush','KIAH',29.99,-95.34],
-   ['Salt Lake City','KSLC',40.79,-111.98],['Portland','KPDX',45.59,-122.60],['San Diego','KSAN',32.73,-117.19],
-   ['Orlando','KMCO',28.43,-81.31],['Fort Lauderdale','KFLL',26.07,-80.15],['Vancouver','CYVR',49.19,-123.18],
-   ['Montreal','CYUL',45.47,-73.74],['Calgary','CYYC',51.11,-114.02],['Mexico City','MMMX',19.44,-99.07],
-   ['Frankfurt','EDDF',50.04,8.56],['Munich','EDDM',48.35,11.79],['Paris CDG','LFPG',49.01,2.55],
-   ['Madrid','LEMD',40.47,-3.56],['Barcelona','LEBL',41.30,2.08],['Rome Fiumicino','LIRF',41.80,12.24],
-   ['Vienna','LOWW',48.11,16.57],['Copenhagen','EKCH',55.62,12.65],['Oslo','ENGM',60.19,11.10],
-   ['Manchester','EGCC',53.35,-2.28],['Gatwick','EGKK',51.15,-0.19],['Brussels','EBBR',50.90,4.48],
-   ['Singapore Changi','WSSS',1.36,103.99],['Bangkok','VTBS',13.68,100.75],['Delhi','VIDP',28.57,77.10],
-   ['Dubai','OMDB',25.25,55.36],['Johannesburg','FAOR',-26.13,28.24],['São Paulo','SBGR',-23.43,-46.47],
-   ['Auckland','NZAA',-37.01,174.79],['Melbourne','YMML',-37.67,144.84]].map(a=>({
-    name:a[0],icao:a[1],lat:a[2],lon:a[3],desc:'Tower',
-    stream:'https://s1-fmt2.liveatc.net/'+a[1].toLowerCase()+'_twr',
-    page:'https://www.liveatc.net/search/?icao='+a[1].toLowerCase()}))
-];
 
 /* =====================================================================
    13. BOOT
@@ -1798,10 +1377,7 @@ gl.on('load',()=>{
     runLayer(cfg);
     if(cfg.refresh>0) setInterval(()=>runLayer(cfg),cfg.refresh*1000);
   });
-  initRadioPins();
-  buildATC();
-  loadSystems();
-  loadMETARs(); setInterval(loadMETARs,300000);
+  loadEmgPool(); // warm the emergency-broadcast pool so the first fix tunes fast
   setMapPadding();
   locate();
   sitrepTick(); // SITREP works off the map area, even before a location fix
