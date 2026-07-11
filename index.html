@@ -332,40 +332,36 @@ async function adsb(path){
   }
   throw err||new Error('all ADS-B hosts unreachable');
 }
-// WORLDWIDE aircraft. No keyless CORS endpoint serves every plane at once
-// (OpenSky's global feed is CORS-locked to its own domain AND rate-limited to
-// ~100 anon calls/day; the CORS-open readsb mirrors cap point queries at
-// 250 nm). So we sweep a global grid of busy-airspace anchors every cycle and
-// merge — planes render worldwide, not just around the map centre.
-const AC_GRID=[
-  // North America
-  [47,-122],[34,-118],[33,-112],[40,-97],[41,-88],[42,-74],[28,-81],[45,-75],
-  // Latin America
-  [19,-99],[4,-74],[-12,-77],[-23,-46],[-34,-58],
-  // Europe (dense)
-  [51,0],[48,3],[50,9],[40,-3],[42,13],[52,17],[41,29],[59,18],[55,37],
-  // Middle East / Africa
-  [25,53],[33,44],[30,31],[6,3],[-26,28],[33,-6],
-  // South & SE Asia
-  [27,77],[19,74],[13,100],[1,104],[-6,107],
-  // East Asia
-  [22,114],[31,121],[39,116],[35,139],[37,127],[25,121],
-  // Oceania
-  [-34,151],[-37,145],[-32,116],[-40,175]
-];
-async function adsbWorld(){
+// Aircraft in the CURRENT MAP AREA. The CORS-open readsb mirrors cap point
+// queries at 250 nm, so we tile the visible bounds with as many 250-nm cells
+// as it takes (1 when zoomed in, a few for a region), merge and dedupe by hex.
+// Refetched on every map move and once a minute. A budget caps the cell count
+// so an extreme zoom-out samples rather than firing hundreds of requests.
+async function adsbViewport(){
+  const b=gl.getBounds();
+  const S=b.getSouth(),N=b.getNorth(),W=b.getWest(),E=b.getEast();
+  const midLat=(N+S)/2;
+  const latSpan=Math.max(0.02,N-S);
+  const lonSpan=Math.max(0.02,(E-W))*Math.max(0.15,Math.cos(midLat*Math.PI/180));
+  const COVER=6;          // degrees a 250-nm cell usefully covers
+  const MAX_CELLS=20;     // per-refresh request budget
+  let rows=Math.max(1,Math.ceil(latSpan/COVER));
+  let cols=Math.max(1,Math.ceil(lonSpan/COVER));
+  while(rows*cols>MAX_CELLS){ (cols>=rows?cols--:rows--); }  // shrink to budget when zoomed way out
+  const centers=[];
+  for(let r=0;r<rows;r++) for(let c=0;c<cols;c++)
+    centers.push([S+(N-S)*(r+0.5)/rows, W+(E-W)*(c+0.5)/cols]);
   const seen=new Set(), ac=[];
   const results=await Promise.allSettled(
-    AC_GRID.map(([la,lo])=>adsb('/point/'+la+'/'+lo+'/250')));
+    centers.map(([la,lo])=>adsb('/point/'+la.toFixed(3)+'/'+lo.toFixed(3)+'/250')));
   results.forEach(r=>{
     if(r.status!=='fulfilled') return;
     (r.value.ac||[]).forEach(a=>{
-      const id=a.hex||a.r||(a.lat+','+a.lon);   // dedupe overlap between anchors
+      const id=a.hex||a.r||(a.lat+','+a.lon);   // dedupe overlap between cells
       if(seen.has(id)) return; seen.add(id);
       ac.push(a);
     });
   });
-  if(!ac.length) throw new Error('no ADS-B coverage this cycle');
   return {ac};
 }
 function acFeatures(j,kind){
@@ -584,12 +580,13 @@ const USER={lat:null,lon:null,place:'',region:'',cc:'',src:null};
 
 /* ---------------- Movement ---------------- */
 defLayer({
-  id:'nearair', label:'Aircraft (worldwide)', color:'#2fe07a', group:'air', refresh:90,
+  id:'nearair', label:'Aircraft (in view)', color:'#2fe07a', group:'air', refresh:60,
   icon:'ac-near', rotate:true, iconSize:0.6,
-  // every civil (non-military) aircraft worldwide — global grid sweep, merged
+  // every civil (non-military) aircraft in the current map area; refetched on
+  // pan/zoom (see moveend) and once a minute
   loader: async ()=>
     ({type:'FeatureCollection',
-      features:acFeatures(await adsbWorld(),'nearair').filter(f=>!f.properties.mil)}),
+      features:acFeatures(await adsbViewport(),'nearair').filter(f=>!f.properties.mil)}),
   popup:acPopup
 });
 
@@ -1390,13 +1387,13 @@ audio.addEventListener('error',()=>{
     if(!emgPaused&&emgCur&&audio.paused){ const p=audio.play(); if(p&&p.catch) p.catch(()=>{}); }
   },{passive:true}));
 
-// Aircraft are now worldwide (global grid), so only the US flood gauges — which
-// the USGS API caps to a small bbox — still need a per-view refetch on pan/zoom.
+// Viewport-scoped feeds refetch for the new area on every map move: aircraft
+// (in-view tiling) and the US flood gauges (USGS bbox cap).
 let moveDebounce=null, lastGeoC=null;
 gl.on('moveend',()=>{
   clearTimeout(moveDebounce);
   moveDebounce=setTimeout(()=>{
-    ['water'].forEach(id=>{
+    ['nearair','water'].forEach(id=>{
       const st=LAYER_STATE[id];
       if(st&&st.on&&st.started) runLayer(LAYERS.find(l=>l.id===id));
     });

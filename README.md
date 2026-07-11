@@ -1,18 +1,18 @@
 # sitrep
 
-**One map. Every keyless public signal, worldwide. The nearest emergency
-broadcast, auto-tuned to where you are.**
+**One map. Every keyless public signal. The nearest NOAA Weather Radio,
+auto-tuned to where you are.**
 
-A single self-contained HTML file OSINT dashboard: **worldwide** aircraft, live
-earthquakes, military aircraft, emergency squawks, NWS + global disaster
-warnings, the ISS, satellites, natural disasters, rocket launches, geopolitics
-— flanked by two docked, full-height, equal-width side panels (**OBJECTS**
-left, **SITREP** right). The SITREP panel also **auto-plays the closest
-emergency broadcast** to your detected location and re-tunes it whenever that
-location changes.
+A single self-contained HTML file OSINT dashboard: live aircraft, earthquakes,
+military aircraft, emergency squawks, NWS + global disaster warnings, the ISS,
+satellites, natural disasters, rocket launches — flanked by two docked,
+full-height, equal-width side panels (**OBJECTS** left, **SITREP** right). The
+SITREP panel also **auto-plays the nearest NOAA Weather Radio station** to your
+detected location and re-tunes it whenever that location changes.
 
-Every feed loads its **full** dataset (planes worldwide, the whole Starlink
-constellation, all live seismicity) — never just a slice around the map centre.
+Aircraft load for the **current map area** and refresh on every pan/zoom and
+once a minute; the global feeds (satellites, seismicity, warnings…) load in
+full.
 
 No backend. No build step. No API keys. No `npm install`. **Open `index.html`
 directly in a browser.** Fully responsive — works on iPhone, iPad, and desktop.
@@ -58,7 +58,7 @@ disasters…).
   outliers at the top (aircraft squawking 7500/7600/7700, NWS warnings,
   red/orange GDACS alerts, M5+ quakes). When anything is flagged, the **SITREP
   title turns red** (warnings) or **amber** (alerts).
-- ✈ every aircraft in view (auto-enabled worldwide layer)
+- ✈ every aircraft in view (auto-enabled, refetched as you pan)
 - 🎖 military aircraft in view, with closest callsign
 - 🚨 aircraft squawking 7700/7600/7500 worldwide, with distance to nearest
 - 🌍 nearest earthquake and 🔥 nearest natural event, with distances
@@ -92,7 +92,7 @@ station and falls back to the next-nearest.
 
 | Group | Layer | Source | Refresh |
 |---|---|---|---|
-| Air | Aircraft (**worldwide**, civil) | adsb global grid sweep | 90 s |
+| Air | Aircraft (**in view**, civil) | adsb viewport tiling | on move · 60 s |
 | | Military aircraft (worldwide) | adsb ADS-B `/mil` | 60 s |
 | | Emergency squawks (7700/7600/7500) | adsb | 60 s |
 | Surface | Amtrak trains | amtraker v3 | 60 s |
@@ -117,12 +117,12 @@ excluded) and **GDACS** (global multi-hazard alerts).
 loads in the background so the SITREP and anomaly detection stay complete
 without cluttering the map.
 
-> **Worldwide-aircraft caveat.** No keyless, CORS-open API serves every plane
-> on Earth in one call (OpenSky's global feed is CORS-locked to its own domain
-> and rate-limited; the CORS-open ADS-B mirrors cap point queries at 250 nm).
-> sitrep therefore sweeps a global grid of busy-airspace anchors each cycle and
-> merges the results — planes render across every continent, though the sparsest
-> mid-ocean tracks can slip between anchors.
+> **Aircraft coverage.** The CORS-open ADS-B mirrors cap point queries at
+> 250 nm, so sitrep tiles the visible map bounds with as many 250-nm cells as
+> the view needs — one when you're zoomed into a city, a handful for a region —
+> then merges and dedupes by hex. It refetches on every pan/zoom and once a
+> minute. A per-refresh cell budget means an extreme zoom-out samples the area
+> rather than firing hundreds of requests.
 
 **Dossier:** right-click (desktop) or long-press (touch) anywhere →
 reverse-geocoded place (Nominatim) + country profile (RestCountries) + head of
