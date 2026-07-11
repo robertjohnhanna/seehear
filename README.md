@@ -1,14 +1,18 @@
-# seehear
+# sitrep
 
-**One map. Every keyless public signal. The nearest emergency broadcast,
-auto-tuned to where you are.**
+**One map. Every keyless public signal, worldwide. The nearest emergency
+broadcast, auto-tuned to where you are.**
 
-A single self-contained HTML file OSINT dashboard: live earthquakes, military
-aircraft, emergency squawks, the ISS, satellites, natural disasters, global
-disaster alerts, rocket launches, geopolitics — flanked by two docked,
-full-height, equal-width side panels (**OBJECTS** left, **SITREP** right). The
-SITREP panel also **auto-plays the closest emergency broadcast** to your
-detected location and re-tunes it whenever that location changes.
+A single self-contained HTML file OSINT dashboard: **worldwide** aircraft, live
+earthquakes, military aircraft, emergency squawks, NWS + global disaster
+warnings, the ISS, satellites, natural disasters, rocket launches, geopolitics
+— flanked by two docked, full-height, equal-width side panels (**OBJECTS**
+left, **SITREP** right). The SITREP panel also **auto-plays the closest
+emergency broadcast** to your detected location and re-tunes it whenever that
+location changes.
+
+Every feed loads its **full** dataset (planes worldwide, the whole Starlink
+constellation, all live seismicity) — never just a slice around the map centre.
 
 No backend. No build step. No API keys. No `npm install`. **Open `index.html`
 directly in a browser.** Fully responsive — works on iPhone, iPad, and desktop.
@@ -38,7 +42,7 @@ button in the SITREP header.
 
 ## SITREP — situational awareness at a glance
 
-On load, seehear locates you (instant IP fix via ipwho.is, refined by GPS if
+On load, sitrep locates you (instant IP fix via ipwho.is, refined by GPS if
 you allow the browser prompt — denial is silently tolerated), flies the map to
 your position, drops a pulsing marker, and builds a live **SITREP briefing**
 that refreshes every 60 s.
@@ -48,10 +52,10 @@ pan or zoom and it re-reads what's in view (nearest aircraft, quakes,
 disasters…).
 
 - **Anomalies** — a correlation pass across every in-view feed surfaces the
-  outliers at the top (aircraft squawking 7500/7600/7700, red/orange GDACS
-  alerts, M5+ quakes). When anything is flagged, the **SITREP title turns
-  red** (warnings) or **amber** (alerts).
-- ✈ every aircraft in view (auto-enabled layer, adsb point query)
+  outliers at the top (aircraft squawking 7500/7600/7700, NWS warnings,
+  red/orange GDACS alerts, M5+ quakes). When anything is flagged, the **SITREP
+  title turns red** (warnings) or **amber** (alerts).
+- ✈ every aircraft in view (auto-enabled worldwide layer)
 - 🎖 military aircraft in view, with closest callsign
 - 🚨 aircraft squawking 7700/7600/7500 worldwide, with distance to nearest
 - 🌍 nearest earthquake and 🔥 nearest natural event, with distances
@@ -67,7 +71,7 @@ all-caps style, with measurement units left in natural case.
 ## Emergency broadcast — auto-tuned, no controls
 
 Pinned at the foot of the SITREP panel is a single, control-free emergency
-radio feed. seehear pulls a global pool of geolocated
+radio feed. sitrep pulls a global pool of geolocated
 **emergency / public-safety / weather / civil-defense / news** stations from
 **radio-browser.info** (the only keyless, CORS-friendly geolocated radio
 index), ranks them by great-circle distance **weighted toward the more
@@ -86,26 +90,38 @@ the next-nearest.
 
 | Group | Layer | Source | Refresh |
 |---|---|---|---|
-| Air | Aircraft (in view, civil) | adsb point query | 30 s |
-| | Military aircraft | adsb ADS-B | 60 s |
+| Air | Aircraft (**worldwide**, civil) | adsb global grid sweep | 90 s |
+| | Military aircraft (worldwide) | adsb ADS-B `/mil` | 60 s |
 | | Emergency squawks (7700/7600/7500) | adsb | 60 s |
 | Surface | Amtrak trains | amtraker v3 | 60 s |
 | Space | ISS live position | wheretheiss.at | 15 s |
 | | Bright satellites | CelesTrak TLE → SGP4 propagated in-browser | 60 s |
 | | GPS constellation | CelesTrak TLE → SGP4 | 2 min |
-| | Starlink constellation (sampled) | CelesTrak TLE → SGP4 | 2 min |
+| | Starlink constellation (**full**) | CelesTrak TLE → SGP4 | 2 min |
 | | Rocket launches (upcoming, at the pad) | Launch Library 2 | 60 min |
-| Hazard | Earthquakes (24 h, M2.5+) | USGS | 60 s |
+| Hazard | **Earthquakes (live)** — sized by strength, coloured by recency | EMSC seismicportal | 2 min |
+| | **NWS warnings (US)** — warnings only, not watches | NOAA / api.weather.gov | 2 min |
+| | Global disasters / warnings — quakes/cyclones/floods (alert-graded) | GDACS (UN/EC) | 30 min |
 | | Natural events — wildfires, storms, volcanoes, ice | NASA EONET v3 | 10 min |
-| | Global disasters — quakes/cyclones/floods (alert-graded) | GDACS (UN/EC) | 30 min |
-| | Live seismic (real-time, global) | EMSC seismicportal | 2 min |
 | | River / flood gauges (in view) | USGS water services | 10 min |
 | | Holocene volcanoes | Smithsonian GVP (curated static) | — |
 | Conflict | Ukraine frontline | DeepStateMap | 30 min |
 
+Earthquakes come from a **single** live source (EMSC) — the old USGS "24 h"
+layer was a duplicate and was removed. **Warnings** are worldwide across the two
+free, keyless, CORS-open warning APIs: **NWS** (every US warning type, watches
+excluded) and **GDACS** (global multi-hazard alerts).
+
 **Starts checked:** all aircraft (civil + military) — every other intel feed
 loads in the background so the SITREP and anomaly detection stay complete
 without cluttering the map.
+
+> **Worldwide-aircraft caveat.** No keyless, CORS-open API serves every plane
+> on Earth in one call (OpenSky's global feed is CORS-locked to its own domain
+> and rate-limited; the CORS-open ADS-B mirrors cap point queries at 250 nm).
+> sitrep therefore sweeps a global grid of busy-airspace anchors each cycle and
+> merges the results — planes render across every continent, though the sparsest
+> mid-ocean tracks can slip between anchors.
 
 **Dossier:** right-click (desktop) or long-press (touch) anywhere →
 reverse-geocoded place (Nominatim) + country profile (RestCountries) + head of
@@ -138,5 +154,5 @@ The list of public endpoints (and the keyless/keyed split) draws on
 ShadowBroker's data-source table
 ([github.com/BigBodyCobain/Shadowbroker](https://github.com/BigBodyCobain/Shadowbroker),
 AGPL-3.0). Only the *list of public endpoints* — public knowledge — is reused,
-not any of their code. ShadowBroker is the full-fidelity Docker build; seehear
+not any of their code. ShadowBroker is the full-fidelity Docker build; sitrep
 is deliberately the opposite: minimal, keyless, one file.

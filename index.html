@@ -6,12 +6,12 @@
 <meta name="theme-color" content="#0a0e14">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="description" content="seehear — keyless multi-domain OSINT dashboard: one map, every liftable public signal, auto-tuned emergency broadcast.">
+<meta name="description" content="sitrep — keyless multi-domain OSINT dashboard: one map, every liftable public signal, auto-tuned emergency broadcast.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%93%A1%3C/text%3E%3C/svg%3E">
-<title>seehear — keyless OSINT + emergency broadcast</title>
+<title>sitrep — keyless OSINT + emergency broadcast</title>
 
 <!-- ============================================================
-     seehear — self-contained OSINT map + auto emergency broadcast
+     sitrep — self-contained OSINT map + auto emergency broadcast
      ------------------------------------------------------------
      Constraints (non-negotiable): one HTML file, no backend, no
      build step, no API keys, no npm. Opens directly in a browser.
@@ -227,7 +227,7 @@
 <!-- objects panel -->
 <div id="layers" class="panel">
   <div class="sheet-grip" data-close="layers"></div>
-  <div id="obj-head">◧ OBJECTS <span class="brand">SEEHEAR</span></div>
+  <div id="obj-head">◧ OBJECTS <span class="brand">SITREP</span></div>
   <div id="layers-scroll">
     <div class="sec-h">Aircraft</div><div id="grp-air"></div>
     <div class="sec-h">Maritime &amp; rail</div><div id="grp-surface"></div>
@@ -317,6 +317,42 @@ async function adsb(path){
   }
   throw err||new Error('all ADS-B hosts unreachable');
 }
+// WORLDWIDE aircraft. No keyless CORS endpoint serves every plane at once
+// (OpenSky's global feed is CORS-locked to its own domain AND rate-limited to
+// ~100 anon calls/day; the CORS-open readsb mirrors cap point queries at
+// 250 nm). So we sweep a global grid of busy-airspace anchors every cycle and
+// merge — planes render worldwide, not just around the map centre.
+const AC_GRID=[
+  // North America
+  [47,-122],[34,-118],[33,-112],[40,-97],[41,-88],[42,-74],[28,-81],[45,-75],
+  // Latin America
+  [19,-99],[4,-74],[-12,-77],[-23,-46],[-34,-58],
+  // Europe (dense)
+  [51,0],[48,3],[50,9],[40,-3],[42,13],[52,17],[41,29],[59,18],[55,37],
+  // Middle East / Africa
+  [25,53],[33,44],[30,31],[6,3],[-26,28],[33,-6],
+  // South & SE Asia
+  [27,77],[19,74],[13,100],[1,104],[-6,107],
+  // East Asia
+  [22,114],[31,121],[39,116],[35,139],[37,127],[25,121],
+  // Oceania
+  [-34,151],[-37,145],[-32,116],[-40,175]
+];
+async function adsbWorld(){
+  const seen=new Set(), ac=[];
+  const results=await Promise.allSettled(
+    AC_GRID.map(([la,lo])=>adsb('/point/'+la+'/'+lo+'/250')));
+  results.forEach(r=>{
+    if(r.status!=='fulfilled') return;
+    (r.value.ac||[]).forEach(a=>{
+      const id=a.hex||a.r||(a.lat+','+a.lon);   // dedupe overlap between anchors
+      if(seen.has(id)) return; seen.add(id);
+      ac.push(a);
+    });
+  });
+  if(!ac.length) throw new Error('no ADS-B coverage this cycle');
+  return {ac};
+}
 function acFeatures(j,kind){
   return (j.ac||[]).filter(a=>a.lat!=null&&a.lon!=null).map(a=>({
     type:'Feature',geometry:{type:'Point',coordinates:[a.lon,a.lat]},
@@ -366,6 +402,22 @@ function nearView(srcId,b,lat,lon){
     const d=havKm(lat,lon,flat,flon); if(d<bd){bd=d;best={f,km:d};}});
   return best;
 }
+// polygon feature -> a representative [lon,lat] (first vertex), for fly-to / bounds
+function polyPt(f){
+  const g=f.geometry; if(!g) return null;
+  if(g.type==='Point') return g.coordinates;
+  if(g.type==='Polygon') return g.coordinates[0] && g.coordinates[0][0];
+  if(g.type==='MultiPolygon') return g.coordinates[0] && g.coordinates[0][0] && g.coordinates[0][0][0];
+  return null;
+}
+// NWS warnings (fill polygons) overlapping the current view — any vertex in bounds
+function nwsInView(b){
+  return featsIn('src-nws').filter(f=>{
+    const g=f.geometry; if(!g) return false;
+    const rings = g.type==='Polygon'?g.coordinates : g.type==='MultiPolygon'?g.coordinates.flat() : [];
+    return rings.some(r=>r.some(pt=>inBounds(b,pt[0],pt[1])));
+  });
+}
 const escapeHtml = s => String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 /* =====================================================================
@@ -392,7 +444,7 @@ const gl = new maplibregl.Map({
 // scroll/pinch, recentre is the ⌖ ME button, and attribution lives in the
 // left-panel footer so nothing overlaps the panels.
 try{ gl.setProjection && gl.setProjection({type:'globe'}); }catch(e){/* flat fallback */}
-window.__seehear={map:gl}; // debug/test handle
+window.__sitrep={map:gl}; // debug/test handle
 
 /* =====================================================================
    ICONS — rasterised to canvas and registered with map.addImage().
@@ -517,28 +569,12 @@ const USER={lat:null,lon:null,place:'',region:'',cc:'',src:null};
 
 /* ---------------- Movement ---------------- */
 defLayer({
-  id:'quakes', label:'Earthquakes 24h', color:'#ff5c6c', group:'hazard', refresh:60, sized:true, defaultOff:true, bg:true,
-  loader: async ()=>{
-    const j=await getJSON('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_day.geojson');
-    (j.features||[]).forEach(f=>{ f.properties._r=3+(f.properties.mag||0)*2.1; f.properties._kind='quake'; });
-    return j;
-  },
-  popup:p=>`<h4>M ${p.mag} earthquake</h4>
-    <div class="kv"><span>place</span>${escapeHtml(p.place)}</div>
-    <div class="kv"><span>time</span>${fmtTime(p.time)}</div>
-    ${p.tsunami?'<div class="kv"><span>tsunami</span><b style="color:var(--danger)">flagged</b></div>':''}
-    <div class="lnk"><a href="${escapeHtml(p.url)}" target="_blank" rel="noopener">USGS event ↗</a></div>`
-});
-
-defLayer({
-  id:'nearair', label:'Aircraft', color:'#2fe07a', group:'air', refresh:30,
+  id:'nearair', label:'Aircraft (worldwide)', color:'#2fe07a', group:'air', refresh:90,
   icon:'ac-near', rotate:true, iconSize:0.6,
-  // all civil (non-military) aircraft in the current map view (refetched on pan)
-  loader: async ()=>{
-    const c=gl.getCenter();
-    const j=await adsb(`/point/${c.lat.toFixed(3)}/${c.lng.toFixed(3)}/250`);
-    return {type:'FeatureCollection',features:acFeatures(j,'nearair').filter(f=>!f.properties.mil)};
-  },
+  // every civil (non-military) aircraft worldwide — global grid sweep, merged
+  loader: async ()=>
+    ({type:'FeatureCollection',
+      features:acFeatures(await adsbWorld(),'nearair').filter(f=>!f.properties.mil)}),
   popup:acPopup
 });
 
@@ -619,16 +655,13 @@ defLayer({
 defLayer({
   id:'starlink', label:'Starlink (SpaceX)', color:'#dff0ff', group:'space', refresh:120, defaultOff:true, icon:'ico-sat', iconSize:0.36,
   loader: async ()=>{
+    // full constellation — every Starlink sat, SGP4-propagated in-browser
     const txt=await getText('https://celestrak.org/NORAD/elements/gp.php?GROUP=starlink&FORMAT=tle');
-    const fc=tleToFC(txt);
-    // ~8k Starlink sats — sample to keep SGP4 + render light
-    if(fc.features.length>700){ const step=Math.ceil(fc.features.length/700);
-      fc.features=fc.features.filter((_,i)=>i%step===0); }
-    return fc;
+    return tleToFC(txt);
   },
   popup:p=>`<h4>🛰 ${escapeHtml(p.name)}</h4>
     <div class="kv"><span>alt</span>${p.alt} km</div>
-    <div class="kv"><span>net</span>SpaceX Starlink (sampled) · SGP4</div>`
+    <div class="kv"><span>net</span>SpaceX Starlink · SGP4</div>`
 });
 
 defLayer({
@@ -751,7 +784,7 @@ defLayer({
   // upcoming orbital launches worldwide, plotted at the pad. Launch Library 2
   // (thespacedevs) — keyless, CORS *, anonymous rate-limited so we poll hourly.
   loader: async ()=>{
-    const j=await getJSON('https://ll.thespacedevs.com/2.2.0/launch/upcoming/?limit=40&hide_recent_previous=true',{timeout:20000});
+    const j=await getJSON('https://ll.thespacedevs.com/2.2.0/launch/upcoming/?limit=100&hide_recent_previous=true',{timeout:20000});
     return {type:'FeatureCollection',features:(j.results||[])
       .filter(r=>r.pad&&r.pad.latitude&&r.pad.longitude).map(r=>({
         type:'Feature',geometry:{type:'Point',coordinates:[+r.pad.longitude,+r.pad.latitude]},
@@ -766,19 +799,27 @@ defLayer({
 });
 
 defLayer({
-  id:'emsc', label:'Live seismic (EMSC)', color:'#ff8a5c', group:'hazard', refresh:120, defaultOff:true, sized:true, icon:'ico-quake', iconSize:0.4,
-  // real-time global seismicity from EMSC — denser & faster than USGS 24h
+  // THE earthquake layer (USGS 24h duplicate removed). Real-time global
+  // seismicity from EMSC — dots SIZED by magnitude and COLOURED by recency,
+  // so a big fresh quake reads instantly. bg-loaded for SITREP anomalies.
+  id:'emsc', label:'Earthquakes (live)', color:'#ff8a5c', group:'hazard', refresh:120,
+  defaultOff:true, bg:true, sized:true, colored:true,
   loader: async ()=>{
-    const j=await getJSON('https://www.seismicportal.eu/fdsnws/event/1/query?limit=400&format=json&minmag=2',{timeout:15000});
+    const j=await getJSON('https://www.seismicportal.eu/fdsnws/event/1/query?limit=1000&format=json&minmag=2',{timeout:15000});
+    const now=Date.now();
     (j.features||[]).forEach(f=>{ const p=f.properties||{};
-      f.properties={_kind:'emsc',_r:3+(p.mag||0)*2,mag:p.mag,
+      const mag=+p.mag||0, age=(now-Date.parse(p.time))/3.6e6; // hours since event
+      // colour = recency (fresh → hot), but any major quake stays vivid red
+      let col= age<1?'#ff2d55': age<6?'#ff6a3d': age<24?'#ffb454': age<72?'#e0c34b':'#7f8c9b';
+      if(mag>=6) col='#ff2d55'; else if(mag>=5&&age<72) col='#ff6a3d';
+      f.properties={_kind:'emsc',_r:2.6+mag*2.6,_col:col,mag:p.mag,age:age,
         place:p.flynn_region||p.region||'',time:p.time,depth:p.depth}; });
     return j;
   },
   popup:p=>`<h4>M ${p.mag} EARTHQUAKE</h4>
     <div class="kv"><span>region</span>${escapeHtml(p.place)}</div>
     <div class="kv"><span>depth</span>${Math.round(p.depth||0)} ${U('km')}</div>
-    <div class="kv"><span>time</span>${fmtTime(p.time)}</div>
+    <div class="kv"><span>time</span>${fmtTime(p.time)}${p.age!=null?' · '+(p.age<1?Math.round(p.age*60)+U(' min'):Math.round(p.age)+U(' h'))+' ago':''}</div>
     <div class="kv"><span>src</span>EMSC (live)</div>`
 });
 
@@ -804,6 +845,32 @@ defLayer({
   popup:p=>`<h4>💧 ${escapeHtml(p.name)}</h4>
     <div class="kv"><span>gauge</span>${escapeHtml(String(p.level))} ${U('ft')}</div>
     <div class="kv"><span>src</span>USGS water</div>`
+});
+
+defLayer({
+  // NOAA / NWS active alerts, filtered to WARNINGS ONLY (not watches, advisories
+  // or statements) — the US half of the worldwide warnings picture (GDACS below
+  // is the global multi-hazard half). Keyless, CORS *. Polygons where present
+  // (tornado / severe-thunderstorm / flash-flood / red-flag warnings carry them).
+  id:'nws', label:'NWS warnings (US)', color:'#ff4455', group:'hazard', refresh:120,
+  defaultOff:true, bg:true, geom:'fill', colored:true,
+  loader: async ()=>{
+    const j=await getJSON('https://api.weather.gov/alerts/active',{timeout:20000});
+    const feats=[];
+    (j.features||[]).forEach(f=>{
+      const p=f.properties||{}, ev=(p.event||'').trim();
+      if(!/warning$/i.test(ev)) return;   // WARNINGS only — excludes Watch/Advisory/Statement
+      if(!f.geometry) return;             // needs an area polygon to draw
+      feats.push({type:'Feature',geometry:f.geometry,properties:{_kind:'nws',
+        event:ev,severity:p.severity||'',area:p.areaDesc||'',
+        _col:/Extreme/i.test(p.severity)?'#ff2d55':/Severe/i.test(p.severity)?'#ff6a3d':'#ffb454'}});
+    });
+    return {type:'FeatureCollection',features:feats};
+  },
+  popup:p=>`<h4 style="color:var(--danger)">⚠ ${escapeHtml(String(p.event).toUpperCase())}</h4>
+    ${p.severity?`<div class="kv"><span>severity</span>${escapeHtml(p.severity)}</div>`:''}
+    <div class="kv"><span>area</span>${escapeHtml(String(p.area).slice(0,90))}</div>
+    <div class="kv"><span>src</span>NOAA / NWS</div>`
 });
 
 /* ---------------- Geopolitics / OSINT ---------------- */
@@ -838,10 +905,11 @@ function ensureMapLayer(cfg){
   if(gl.getSource(sid)) return;
   gl.addSource(sid,{type:'geojson',data:{type:'FeatureCollection',features:[]}});
   if(cfg.geom==='fill'){
+    const fillCol=cfg.colored?['coalesce',['get','_col'],cfg.color]:cfg.color;
     gl.addLayer({id:'ly-'+cfg.id,type:'fill',source:sid,
-      paint:{'fill-color':cfg.color,'fill-opacity':0.26,'fill-outline-color':cfg.color}});
+      paint:{'fill-color':fillCol,'fill-opacity':0.26,'fill-outline-color':fillCol}});
     gl.addLayer({id:'lyl-'+cfg.id,type:'line',source:sid,
-      paint:{'line-color':cfg.color,'line-width':1.4,'line-opacity':0.85}});
+      paint:{'line-color':fillCol,'line-width':1.4,'line-opacity':0.85}});
   }else if(cfg.icon){
     gl.addLayer({id:'ly-'+cfg.id,type:'symbol',source:sid,layout:{
       'icon-image': cfg.iconProp?['coalesce',['get','_icon'],cfg.icon]:cfg.icon,
@@ -1133,6 +1201,7 @@ async function sitrepTick(){
     `<div class="sit-row${cls?' '+cls:''}"><span class="ic">${ic}</span>`+
     `<span class="tx"><s1>${l1}</s1>${l2?`<s2>${l2}</s2>`:''}</span>${act||''}</div>`);
   const flyBtn=f=>`<button class="act" data-act="fly" data-ll="${f.geometry.coordinates.slice(0,2).join(',')}">VIEW</button>`;
+  const polyFlyBtn=f=>{const p=polyPt(f);return p?`<button class="act" data-act="fly" data-ll="${p[0]+','+p[1]}">VIEW</button>`:'';};
 
   // -- ANOMALIES in view (+ global space weather). No header line: the
   //    "SITREP" title in the bar turns red when anything is flagged. --
@@ -1143,7 +1212,11 @@ async function sitrepTick(){
   const gRed=featsIn('src-gdacs').filter(f=>inBounds(b,f.geometry.coordinates[0],f.geometry.coordinates[1])&&(f.properties.level==='Red'||f.properties.level==='Orange'));
   if(gRed.length){ const nr=nearView('src-gdacs',b,lat,lon);
     anom.push([gRed.some(f=>f.properties.level==='Red')?'danger':'alert','🌀','DISASTER ALERT',gRed.length+' red/orange in view'+(nr?' · '+fmtMi(nr.km):''),nr?flyBtn(nr.f):'']); }
-  const bigQ=featsIn('src-quakes').filter(f=>inBounds(b,f.geometry.coordinates[0],f.geometry.coordinates[1])&&(+f.properties.mag)>=5).sort((x,y)=>y.properties.mag-x.properties.mag)[0];
+  const nws=nwsInView(b);
+  if(nws.length){ const ex=nws.some(f=>/Extreme/i.test(f.properties.severity));
+    const top=nws.slice().sort((x,y)=>({Extreme:3,Severe:2}[y.properties.severity]||1)-({Extreme:3,Severe:2}[x.properties.severity]||1))[0];
+    anom.push([ex?'danger':'alert','⚠','WEATHER WARNING',nws.length+' NWS warning'+(nws.length>1?'s':'')+' in view · '+escapeHtml(String(top.properties.event)),polyFlyBtn(top)]); }
+  const bigQ=featsIn('src-emsc').filter(f=>inBounds(b,f.geometry.coordinates[0],f.geometry.coordinates[1])&&(+f.properties.mag)>=5).sort((x,y)=>y.properties.mag-x.properties.mag)[0];
   if(bigQ) anom.push(['danger','🌍','MAJOR EARTHQUAKE','M'+bigQ.properties.mag+' · '+escapeHtml(String(bigQ.properties.place||'').slice(0,42)),flyBtn(bigQ)]);
   // title severity: 0 none · 1 alert (amber) · 2 warning (red)
   let titleSev=0;
@@ -1164,7 +1237,7 @@ async function sitrepTick(){
   if(milN){ const nm=nearView('src-mil',b,lat,lon);
     row('alert','🎖',milN+' MILITARY AIRCRAFT IN VIEW',
       nm?('closest '+escapeHtml(nm.f.properties.flight)+' · '+fmtMi(nm.km)):'', nm?flyBtn(nm.f):''); }
-  const nq=nearView('src-quakes',b,lat,lon);
+  const nq=nearView('src-emsc',b,lat,lon);
   if(nq) row('','🌍','M'+nq.f.properties.mag+' EARTHQUAKE · '+fmtMi(nq.km),
     escapeHtml(String(nq.f.properties.place||''))+' · '+fmtTime(nq.f.properties.time),flyBtn(nq.f));
   const ne=nearView('src-eonet',b,lat,lon);
@@ -1298,13 +1371,13 @@ audio.addEventListener('error',()=>{
     if(emgCur&&audio.paused){ const p=audio.play(); if(p&&p.catch) p.catch(()=>{}); }
   },{passive:true}));
 
-// viewport-dependent layers (all aircraft, flood gauges) refetch on pan/zoom
+// Aircraft are now worldwide (global grid), so only the US flood gauges — which
+// the USGS API caps to a small bbox — still need a per-view refetch on pan/zoom.
 let moveDebounce=null, lastGeoC=null;
 gl.on('moveend',()=>{
   clearTimeout(moveDebounce);
   moveDebounce=setTimeout(()=>{
-    // viewport-based feeds refetch for the new area, then the SITREP re-reads it
-    ['nearair','water'].forEach(id=>{
+    ['water'].forEach(id=>{
       const st=LAYER_STATE[id];
       if(st&&st.on&&st.started) runLayer(LAYERS.find(l=>l.id===id));
     });
@@ -1383,7 +1456,7 @@ gl.on('load',()=>{
   sitrepTick(); // SITREP works off the map area, even before a location fix
   if(!sitrepTimer) sitrepTimer=setInterval(sitrepTick,60000);
   [700,3000,7000].forEach(t=>setTimeout(()=>{ setMapPadding(); sitrepTick(); },t));
-  toast('SEEHEAR ONLINE · '+LAYERS.length+' LIVE FEEDS','');
+  toast('SITREP ONLINE · '+LAYERS.length+' LIVE FEEDS','');
 });
 </script>
 </body>
