@@ -1425,11 +1425,11 @@ async function locate(){
   }
   if(USER.lat==null) $('#sit-loc').textContent='no fix — tap ⌖ on the map';
 }
-// "center on me": fly to the fix (respecting panel padding); if none yet,
-// kick off IP + GPS location and prompt for precise GPS.
+// "center on me": pan to the fix at the CURRENT zoom (no zoom change); if none
+// yet, kick off IP + GPS location and prompt for precise GPS.
 function centerOnMe(){
   if(USER.lat!=null){
-    flyToRadiusMi(USER.lat,USER.lon,10);
+    gl.easeTo({center:[USER.lon,USER.lat],duration:800});
   } else {
     toast('LOCATING…','');
     locate();
