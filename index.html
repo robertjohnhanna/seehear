@@ -152,10 +152,13 @@
   /* news items are one blurb clamped to exactly three lines */
   .sit-row .tx.news{display:-webkit-box;-webkit-line-clamp:3;line-clamp:3;
     -webkit-box-orient:vertical;white-space:normal;overflow:hidden;color:var(--ink)}
-  .sit-row .act{flex:0 0 auto;align-self:center;background:var(--panel2);border:1px solid var(--accent);
-    color:var(--accent);border-radius:14px;padding:4px 11px;font-size:13px;cursor:pointer;
-    letter-spacing:.5px;min-height:28px}
-  .sit-row .act:active{background:var(--accent);color:#06231e}
+  /* the whole card is the click target — no button. A chevron hints tappability. */
+  .sit-row.clickable{cursor:pointer}
+  .sit-row.clickable::after{content:"›";flex:0 0 auto;align-self:center;color:var(--ink-dim);
+    font-size:20px;line-height:1;padding-left:2px}
+  @media(hover:hover){.sit-row.clickable:hover{background:var(--panel2)}}
+  .sit-row.clickable:active{background:var(--panel2)}
+  .sit-row.clickable:hover::after,.sit-row.clickable:active::after{color:var(--accent)}
   .sit-row.alert s1{color:var(--warn)}
   .sit-row.danger s1{color:var(--danger)}
   .sit-empty{padding:14px 12px;font-size:13px;color:var(--ink-dim);line-height:1.5}
@@ -1076,14 +1079,15 @@ async function sitrepTick(){
   const c=gl.getCenter(), b=viewBounds();   // only the area visible between the panels
   const lat=c.lat, lon=c.lng;
   const rows=[];
-  // Every row is 3 lines (l1/l2/l3) + an action button. Helpers below always
-  // yield a button so no row is action-less.
+  // Every row is 3 lines (l1/l2/l3). The WHOLE card is the click target — the
+  // action (fly-to / open) rides as data-* on the row, so tapping anywhere on a
+  // plane card flies to the plane, an outlook card opens SPC, etc. A row with no
+  // valid action gets no data-* and isn't clickable.
   const row=(cls,ic,l1,l2,l3,act)=>rows.push(
-    `<div class="sit-row${cls?' '+cls:''}"><span class="ic">${ic}</span>`+
-    `<span class="tx"><s1>${l1||''}</s1><s2>${l2||''}</s2><s3>${l3||''}</s3></span>`+
-    `${act||''}</div>`);
-  const llBtn=(lo,la,lbl)=>isFinite(lo)&&isFinite(la)?`<button class="act" data-act="fly" data-ll="${lo+','+la}">${lbl||'VIEW'}</button>`:'';
-  const openBtn=(url,lbl)=>`<button class="act" data-act="open" data-url="${escapeHtml(url)}">${lbl||'OPEN'}</button>`;
+    `<div class="sit-row${cls?' '+cls:''}${act?' clickable':''}"${act?' '+act:''}><span class="ic">${ic}</span>`+
+    `<span class="tx"><s1>${l1||''}</s1><s2>${l2||''}</s2><s3>${l3||''}</s3></span></div>`);
+  const llBtn=(lo,la)=>isFinite(lo)&&isFinite(la)?`data-act="fly" data-ll="${lo+','+la}"`:'';
+  const openBtn=url=>`data-act="open" data-url="${escapeHtml(url)}"`;
   // Distance + direction are measured from the CROSSHAIR (map centre) — the
   // location chip already reverse-geocodes it, so the whole panel describes the
   // point you're looking at. It sits on you by default and after the ME button.
@@ -1181,7 +1185,7 @@ async function sitrepTick(){
     '<div class="sit-empty">NO SIGNALS IN THIS AREA — PAN OR ZOOM THE MAP</div>';
 }
 
-// action handler for SITREP card buttons: fly to a point, or open a source page
+// action handler for a clicked SITREP card: fly to a point, or open a source page
 function handleAct(btn){
   const act=btn.dataset.act;
   if(act==='fly'&&btn.dataset.ll){
