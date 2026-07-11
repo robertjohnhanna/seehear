@@ -423,7 +423,7 @@ const gl = new maplibregl.Map({
       {id:'radar',type:'raster',source:'radar',
         paint:{'raster-opacity':0.5,'raster-resampling':'linear'}}]
   },
-  center:[-96,39], zoom:2.2, minZoom:1.1, maxZoom:16,   // start zoomed well out (continental context) until a location fix lands
+  center:[-96,39], zoom:1.4, minZoom:1.1, maxZoom:16,   // start zoomed well out (near-global context) until a location fix lands
   renderWorldCopies:true, attributionControl:false
 });
 // No on-map controls — they were hidden behind the right panel. Zoom is
