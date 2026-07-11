@@ -95,8 +95,13 @@ SITREP bar are all anchored to the bottom edge.
 | | Conflict/protest events | GDELT 2.0 geo | 6 h |
 | | Malware C2 count | abuse.ch Feodo | 5 min |
 
-**Status badges:** planetary Kp index and GOES X-ray flare class (NOAA SWPC),
-CISA KEV catalog size, UTC clock.
+**Space-weather / cyber:** planetary Kp index, GOES X-ray flare class (NOAA
+SWPC) and the CISA KEV catalog size ride in the SITREP conditions row; a UTC
+clock sits in the SITREP header.
+
+**Starts checked:** all aircraft (civil + military), NWS alerts, and weather
+radar — other intel feeds load in the background so the SITREP and anomaly
+detection stay complete without cluttering the map.
 
 **Dossier:** right-click (desktop) or long-press (touch) anywhere →
 reverse-geocoded place (Nominatim) + current weather (Open-Meteo) + country

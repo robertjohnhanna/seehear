@@ -228,8 +228,9 @@
     overflow:hidden;text-overflow:ellipsis;max-width:40%;text-align:right;flex:0 1 auto}
   #sit-head .chev{color:var(--ink-dim);transition:transform .2s;cursor:pointer;
     padding:2px 4px;flex:0 0 auto}
-  #loc-btn{flex:0 0 auto;border-color:var(--accent);color:var(--accent);font-weight:700;
-    white-space:nowrap;padding:5px 10px;min-height:30px;font-size:11px}
+  #loc-btn{flex:0 0 auto;width:30px;height:30px;padding:0;font-size:16px;line-height:1;
+    background:var(--panel2);border:1px solid var(--accent);color:var(--accent);border-radius:7px;
+    display:flex;align-items:center;justify-content:center}
   #loc-btn:active{background:var(--accent);color:#00140a}
   #sitrep.collapsed .chev{transform:rotate(180deg)}
   #sitrep.collapsed #sit-body{display:none}
@@ -252,9 +253,10 @@
   .sit-anom:first-child{border-top:none}
   .sit-div{grid-column:1/-1;height:1px;background:var(--line);margin:5px 12px}
   /* ---- minimalist ALL-CAPS chrome. Units opt out via .u ---- */
-  #obj-head,.sec-h,.layer label,#radio-tabs button,.rrow .rmain b,#sit-head .title,
-  .rpane-head,.btn,.mbtn,.pop h4,.pop .kv span,.badge,#mnav button,#tuner-node,
-  .sit-row .tx s1,#cast-head,#atc-head,.sit-row .act,#panel-foot{text-transform:uppercase}
+  #obj-head,.sec-h,.layer label,#radio-tabs button,.rrow .rmain b,.rrow .rmain span,
+  #sit-head .title,.rpane-head,.btn,.mbtn,.pop h4,.pop .kv span,.badge,#mnav button,
+  #tuner-node,.sit-row .tx s1,.sit-row .tx s2,#cast-head,#atc-head,#mhz-status,
+  .sit-row .act,#panel-foot{text-transform:uppercase}
   .u{text-transform:none!important;letter-spacing:0;font-style:normal}
   .sit-row .tx s1{letter-spacing:.3px}
 
@@ -264,7 +266,7 @@
 
   /* ---------- mobile bottom navigation + sheets ---------- */
   #mnav{display:none}
-  @media (max-width:900px), (pointer:coarse) and (max-width:1100px){
+  @media (max-width:1000px){
     /* map stops at the nav bar so no tiles bleed under it */
     #map{bottom:calc(54px + var(--sa-b))}
     #mnav{position:absolute;left:0;right:0;bottom:0;z-index:30;display:flex;
@@ -351,6 +353,7 @@
         <button class="mbtn" data-m="nbfm">FM</button>
       </div>
       <div id="tuner-bands"></div>
+      <select id="hf-station" style="width:100%;margin-bottom:8px"><option value="">— KNOWN STATIONS —</option></select>
       <div id="smeter-wrap"><div id="smeter"></div><span id="smeter-val">S–</span></div>
       <div id="tuner-ctl">
         <button class="btn sm" id="t-nearest" title="tune the closest receiver to you">◎ NEAREST</button>
@@ -396,14 +399,9 @@
   <div class="sheet-grip" data-close="sitrep"></div>
   <div id="sit-head">
     <span class="title" id="sit-title">◈ SITREP</span>
-    <div id="sit-badges">
-      <span class="badge" id="kp-badge" title="Geomagnetic K-index (NOAA SWPC)"><span class="dot" id="kp-dot"></span>Kp <b id="kp-val">–</b></span>
-      <span class="badge" id="xray-badge" title="GOES X-ray flare class">☀ <b id="xray-val">–</b></span>
-      <span class="badge" id="kev-badge" title="CISA known-exploited CVEs">KEV <b id="kev-val">–</b></span>
-      <span class="badge" title="UTC"><b id="utc">--:--</b></span>
-    </div>
+    <span class="badge" id="utc-badge" title="UTC"><b id="utc">--:--</b></span>
     <span class="loc" id="sit-loc">LOCATING…</span>
-    <button class="btn sm" id="loc-btn" title="center map on my location">⌖ ME</button>
+    <button id="loc-btn" title="center map on my location">⌖</button>
     <span id="sit-exp" title="expand to fill">▲</span>
     <span class="chev" id="sit-chev" title="minimize">▾</span>
   </div>
@@ -641,7 +639,7 @@ const USER={lat:null,lon:null,place:'',region:'',cc:'',src:null};
 
 /* ---------------- Movement ---------------- */
 defLayer({
-  id:'quakes', label:'Earthquakes 24h', color:'#ff5c6c', group:'hazard', refresh:60, sized:true,
+  id:'quakes', label:'Earthquakes 24h', color:'#ff5c6c', group:'hazard', refresh:60, sized:true, defaultOff:true, bg:true,
   loader: async ()=>{
     const j=await getJSON('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_day.geojson');
     (j.features||[]).forEach(f=>{ f.properties._r=3+(f.properties.mag||0)*2.1; f.properties._kind='quake'; });
@@ -674,7 +672,7 @@ defLayer({
 });
 
 defLayer({
-  id:'sos', label:'Emergency squawks', color:'#ff2d55', group:'air', refresh:60,
+  id:'sos', label:'Emergency squawks', color:'#ff2d55', group:'air', refresh:60, defaultOff:true, bg:true,
   icon:'ac-sos', rotate:true, iconSize:0.6,
   loader: async ()=>{
     // 7700 = general emergency, 7600 = radio failure, 7500 = unlawful interference
@@ -728,7 +726,7 @@ defLayer({
 });
 
 defLayer({
-  id:'iss', label:'ISS (live)', color:'#ffffff', group:'space', refresh:15, icon:'ico-iss', iconSize:0.62,
+  id:'iss', label:'ISS (live)', color:'#ffffff', group:'space', refresh:15, defaultOff:true, icon:'ico-iss', iconSize:0.62,
   loader: async ()=>{
     const s=await getJSON('https://api.wheretheiss.at/v1/satellites/25544');
     return {type:'FeatureCollection',features:[{type:'Feature',
@@ -823,7 +821,7 @@ function tleToFC(txt){
 
 /* ---------------- Hazard / Environment ---------------- */
 defLayer({
-  id:'eonet', label:'Natural events (NASA)', color:'#ff8a3d', group:'hazard', refresh:600, colored:true,
+  id:'eonet', label:'Natural events (NASA)', color:'#ff8a3d', group:'hazard', refresh:600, colored:true, defaultOff:true, bg:true,
   icon:'ico-fire', iconProp:true, iconSize:0.5,
   loader: async ()=>{
     // NASA EONET v3 — live wildfires, severe storms, volcanoes, ice…  ACAO:*
@@ -902,7 +900,7 @@ defLayer({
 });
 
 defLayer({
-  id:'gdacs', label:'Global disasters', color:'#ff6a3d', group:'hazard', refresh:1800, colored:true, bg:true,
+  id:'gdacs', label:'Global disasters', color:'#ff6a3d', group:'hazard', refresh:1800, colored:true, defaultOff:true, bg:true,
   // GDACS — UN/EC global disaster alerts: quakes, cyclones, floods, volcanoes,
   // droughts, wildfires; colour = alert level (green/orange/red). Keyless, CORS *.
   loader: async ()=>{
@@ -1117,22 +1115,34 @@ async function runLayer(cfg){
   const st=LAYER_STATE[cfg.id];
   const row=$('#row-'+cfg.id);
   const cntEl=row&&row.querySelector('.cnt');
-  if(cntEl) cntEl.innerHTML='<span class="spin"></span>';
-  try{
-    const fc=await cfg.loader();
-    const src=gl.getSource('src-'+cfg.id);
-    if(src) src.setData(fc);
-    st.cnt=(fc.features||[]).length;
-    st.at=Date.now(); st.errored=false;
-    if(cntEl) cntEl.textContent=st.cnt;
-    if(row) row.title=cfg.label+' · updated '+fmtTime(st.at);
-  }catch(e){
-    st.errored=true;
-    if(cntEl) cntEl.innerHTML='<span style="color:var(--danger)" title="'+escapeHtml(e.message)+'">×</span>';
-    console.warn('[layer '+cfg.id+']',e.message);
-    if(!st.warned){ st.warned=true;
-      toast(cfg.label+': feed unavailable ('+e.message+')'+(cfg.note?' — see layer ⚠':''),'err'); }
+  if(cntEl && !st.retrying) cntEl.innerHTML='<span class="spin"></span>';
+  // up to 3 attempts with exponential backoff before giving up this cycle
+  let lastErr=null;
+  for(let attempt=0;attempt<3;attempt++){
+    try{
+      const fc=await cfg.loader();
+      const src=gl.getSource('src-'+cfg.id);
+      if(src) src.setData(fc);
+      st.cnt=(fc.features||[]).length;
+      st.at=Date.now(); st.errored=false; st.retrying=false;
+      if(cntEl) cntEl.textContent=st.cnt;
+      if(row) row.title=cfg.label+' · updated '+fmtTime(st.at);
+      return;
+    }catch(e){
+      lastErr=e;
+      if(attempt<2){ st.retrying=true;
+        if(cntEl) cntEl.innerHTML='<span class="spin" title="retry '+(attempt+1)+'…"></span>';
+        await new Promise(r=>setTimeout(r,1200*Math.pow(3,attempt))); // 1.2s, 3.6s
+      }
+    }
   }
+  st.errored=true; st.retrying=false;
+  if(cntEl) cntEl.innerHTML='<span style="color:var(--danger)" title="'+escapeHtml(lastErr?lastErr.message:'error')+'">×</span>';
+  console.warn('[layer '+cfg.id+']',lastErr&&lastErr.message);
+  // only surface a toast for UNEXPECTED failures — known-iffy feeds (with a
+  // note) fail silently and just show × plus their ⓘ explanation.
+  if(!st.warned && !cfg.note){ st.warned=true;
+    toast(cfg.label+': FEED UNAVAILABLE — WILL RETRY','err'); }
 }
 
 function scheduleLayer(cfg){
@@ -1291,11 +1301,7 @@ async function loadKp(){
     }
     if(kp==null) throw new Error('no data');
     KP=kp;
-    $('#kp-val').textContent=kp.toFixed(1);
-    const col=kp>=7?'#ff5c6c':kp>=5?'#ffcb47':'#4be08a';
-    const dot=$('#kp-dot'); dot.style.background=col; dot.style.boxShadow='0 0 6px '+col;
-    $('#kp-badge').title=`Kp ${kp} — ${kp>=5?'geomagnetic STORM':'quiet/unsettled'} (NOAA SWPC)`;
-  }catch(e){ $('#kp-val').textContent='×'; }
+  }catch(e){ KP=null; }
 }
 async function loadXray(){
   try{
@@ -1304,27 +1310,18 @@ async function loadXray(){
     const cls=f&&(f.current_class||f.max_class);
     if(!cls) throw new Error('no data');
     XRAY=cls;
-    $('#xray-val').textContent=cls;
-    $('#xray-badge').title='GOES X-ray: current '+cls+
-      (f.max_class?' · today’s max '+f.max_class:'')+' (M/X = significant flare)';
-    if(/^[MX]/.test(cls)) $('#xray-val').style.color='var(--warn)';
-  }catch(e){ $('#xray-val').textContent='×'; }
+  }catch(e){ XRAY=null; }
 }
 async function loadKEV(){
   try{
     const j=await getJSON('https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json',
       {timeout:12000});
-    const n=(j.vulnerabilities||[]).length;
-    $('#kev-val').textContent=n.toLocaleString();
-    $('#kev-badge').title='CISA: '+n+' known-exploited CVEs in catalog';
-  }catch(e){
-    $('#kev-val').textContent='n/a';
-    $('#kev-badge').title='CISA KEV is CORS-blocked in-browser (no ACAO header)';
-  }
+    KEVN=(j.vulnerabilities||[]).length;
+  }catch(e){ KEVN=null; }
 }
 setInterval(()=>{ $('#utc').textContent=new Date().toISOString().slice(11,16); },1000);
 $('#utc').textContent=new Date().toISOString().slice(11,16);
-let KP=null, XRAY=null; // cached for SITREP anomaly detection
+let KP=null, XRAY=null, KEVN=null; // space-weather + cyber, shown in the SITREP conditions row
 
 /* =====================================================================
    6b. LOCATION + SITREP — the "at a glance" intelligence layer
@@ -1486,9 +1483,11 @@ async function sitrepTick(){
     try{ const w=await getJSON(`https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(3)}&longitude=${lon.toFixed(3)}&current=temperature_2m,wind_speed_10m,weather_code`);
       wxCache.d=w.current; }catch(e){}
   }
+  const spx='Kp '+(KP!=null?KP:'–')+' · ☀ '+(XRAY||'–')+' · KEV '+(KEVN!=null?KEVN.toLocaleString():'–');
   if(wxCache.d) row('','🌦',
     cToF(wxCache.d.temperature_2m)+U('°F')+' · '+kmhToMph(wxCache.d.wind_speed_10m)+U(' mph')+' · '+(WMO[wxCache.d.weather_code]||''),
-    'AREA CONDITIONS');
+    spx);
+  else row('','🛰',spx,'SPACE WEATHER · CYBER');
 
   // -- everything else scoped to the map area (nearest-in-view) --
   const acN=countView('src-nearair',b);
@@ -1689,7 +1688,7 @@ function playCall(call,row){
   mhzPlaying=true; atcPlaying=null;
   audio.src=call.url;
   $('#nowplaying').textContent='📟 '+(call.tgName||('TG '+call.tg))+' · '+fmtTime(call.time);
-  audio.play().catch(()=>{ $('#nowplaying').textContent='autoplay blocked — press ▶ on the player'; });
+  audio.play().catch(()=>{});
 }
 audio.addEventListener('ended',()=>{
   document.querySelectorAll('.rrow.playing').forEach(r=>r.classList.remove('playing'));
@@ -1776,6 +1775,12 @@ function buildHF(){
   $('#t-stop').onclick=kwStop;
   $('#t-nearest').onclick=kwNearest;
   $('#t-scan').onclick=kwScan;
+  // known HF stations dropdown
+  const sel=$('#hf-station');
+  HFSTATIONS.forEach((st,i)=>{ const o=el('option'); o.value=i;
+    o.textContent=st[0]+' · '+st[1]+' kHz '+st[2].toUpperCase(); sel.appendChild(o); });
+  sel.addEventListener('change',e=>{ const st=HFSTATIONS[+e.target.value];
+    if(st){ kwSetMode(st[2]); kwSetFreq(st[1]); } });
   kwSetMode('am'); kwSetFreq(7100);
   rebuildHFList();
 }
@@ -1789,7 +1794,7 @@ function rebuildHFList(){
     const row=el('div','rrow'); row.dataset.host=k[1];
     const dist=USER.lat!=null?' · '+fmtMi(havKm(USER.lat,USER.lon,k[2][0],k[2][1])):'';
     row.innerHTML=`<div class="rmain"><b>${escapeHtml(k[0])}</b>
-      <span>${escapeHtml(k[3]||'HF 0–30 MHz')}${dist}</span></div><button class="btn sm">tune</button>`;
+      <span>${escapeHtml(k[3]||'HF')} · 0–30 ${U('MHz')}${dist}</span></div><button class="btn sm">tune</button>`;
     row.onclick=()=>{ gl.flyTo({center:[k[2][1],k[2][0]],zoom:6}); kwSelect(k[1],k[0]); };
     list.appendChild(row);
   });
@@ -1972,7 +1977,7 @@ function playBroadcast(url,name){
   stopKiwi(); mhzCur=null; atcPlaying=null; mhzPlaying=false;
   audio.src=url;
   $('#nowplaying').textContent='📻 '+name;
-  audio.play().catch(()=>{ $('#nowplaying').textContent='press ▶ on the player to start'; });
+  audio.play().catch(()=>{});
   document.querySelectorAll('#cast-list .rrow.playing').forEach(r=>r.classList.remove('playing'));
 }
 window.playBroadcast=playBroadcast;
@@ -1996,7 +2001,7 @@ async function loadCast(query){
     (j||[]).filter(s=>s.url_resolved||s.url).slice(0,80).forEach(s=>{
       const row=el('div','rrow');
       row.innerHTML=`<div class="rmain"><b>${escapeHtml(s.name.trim()||'station')}</b>
-        <span>${escapeHtml(s.countrycode||'')} · ${escapeHtml((s.tags||'').split(',').slice(0,2).join(', '))} · ${escapeHtml(s.codec||'')} ${s.bitrate?s.bitrate+'k':''}</span></div>
+        <span>${escapeHtml(s.countrycode||'')} · ${escapeHtml((s.tags||'').split(',').slice(0,2).join(', '))} · ${escapeHtml(s.codec||'')} ${s.bitrate?s.bitrate+U('k'):''}</span></div>
         <button class="btn sm">▶</button>`;
       row.onclick=()=>{ document.querySelectorAll('#cast-list .rrow.playing').forEach(r=>r.classList.remove('playing'));
         row.classList.add('playing'); playBroadcast(s.url_resolved||s.url,s.name.trim()); };
@@ -2018,32 +2023,32 @@ async function refreshRadar(){
     const j=await getJSON('https://api.rainviewer.com/public/weather-maps.json',{timeout:12000});
     const past=j.radar&&j.radar.past; if(!past||!past.length) return;
     const frame=past[past.length-1];
+    // RainViewer native tiles top out ~z10; a low source maxzoom makes MapLibre
+    // OVERZOOM (scale z10 tiles) at closer zoom instead of requesting missing
+    // tiles and showing nothing. size 256, colour scheme 4, smooth+snow on.
     const tiles=[j.host+frame.path+'/256/{z}/{x}/{y}/4/1_1.png'];
     if(gl.getSource('src-radar')){ gl.getSource('src-radar').setTiles(tiles); }
     else{
-      // RainViewer serves up to z~12; cap maxzoom so MapLibre overzooms
-      // instead of requesting unsupported tiles (fixes blank/error at high zoom)
-      gl.addSource('src-radar',{type:'raster',tiles,tileSize:256,minzoom:0,maxzoom:12});
-      // insert just above the basemap so data points stay on top
+      gl.addSource('src-radar',{type:'raster',tiles,tileSize:256,minzoom:0,maxzoom:10});
       const first=gl.getStyle().layers.find(l=>l.id!=='carto');
       gl.addLayer({id:'ly-radar',type:'raster',source:'src-radar',
-        paint:{'raster-opacity':0.6}}, first?first.id:undefined);
+        paint:{'raster-opacity':0.65,'raster-fade-duration':0}}, first?first.id:undefined);
     }
     gl.setLayoutProperty('ly-radar','visibility',radarOn?'visible':'none');
   }catch(e){ console.warn('[radar]',e.message); }
 }
 function initRadar(){
   const g=$('#grp-hazard');
-  const row=el('div','layer off');
-  row.innerHTML=`<input type="checkbox" id="ck-radar">
+  const row=el('div','layer');           // radar ON by default
+  row.innerHTML=`<input type="checkbox" id="ck-radar" checked>
     <span class="pic emj">🌧️</span>
     <label for="ck-radar">Weather radar</label><span class="cnt">◐</span>`;
   g.appendChild(row);
-  row.querySelector('input').addEventListener('change',ev=>{
-    radarOn=ev.target.checked; row.classList.toggle('off',!radarOn);
-    if(radarOn){ refreshRadar(); if(!radarTimer) radarTimer=setInterval(refreshRadar,300000); }
-    else if(gl.getLayer('ly-radar')) gl.setLayoutProperty('ly-radar','visibility','none');
-  });
+  const apply=on=>{ radarOn=on; row.classList.toggle('off',!on);
+    if(on){ refreshRadar(); if(!radarTimer) radarTimer=setInterval(refreshRadar,300000); }
+    else if(gl.getLayer('ly-radar')) gl.setLayoutProperty('ly-radar','visibility','none'); };
+  row.querySelector('input').addEventListener('change',ev=>apply(ev.target.checked));
+  apply(true); // start visible
 }
 
 /* =====================================================================
@@ -2313,6 +2318,23 @@ const KIWI=[
   ['HB9 Switzerland','hb9.kiwisdr.com:8073',[47.4,8.5],'Zürich, CH']
 ];
 let KIWI_LIST=KIWI; // replaced by the full public directory at boot
+// known HF stations [name, kHz, mode] — time signals, VOLMET, oceanic aviation,
+// maritime, and the ham calling / digital frequencies. All stable & real.
+const HFSTATIONS=[
+  ['WWV (Colorado)',2500,'am'],['WWV',5000,'am'],['WWV',10000,'am'],['WWV',15000,'am'],['WWV',20000,'am'],
+  ['WWVH (Hawaii)',15000,'am'],['CHU (Canada)',3330,'usb'],['CHU',7850,'usb'],['CHU',14670,'usb'],
+  ['RWM (Moscow)',4996,'cw'],['RWM',9996,'cw'],['RWM',14996,'cw'],['BPM (China)',10000,'am'],
+  ['Shannon VOLMET',5505,'usb'],['Shannon VOLMET',8957,'usb'],['Shannon VOLMET',13264,'usb'],
+  ['New York VOLMET',6604,'usb'],['New York VOLMET',10051,'usb'],['Gander VOLMET',3485,'usb'],
+  ['NAT Aviation A',8906,'usb'],['NAT Aviation C',5598,'usb'],['NAT Aviation D',8891,'usb'],
+  ['Marine distress',2182,'usb'],['Marine HF',8291,'usb'],
+  ['160m FT8',1840,'usb'],['80m FT8',3573,'usb'],['80m SSB',3985,'lsb'],['40m FT8',7074,'usb'],
+  ['40m SSB',7200,'lsb'],['30m FT8',10136,'usb'],['20m FT8',14074,'usb'],['20m SSB net',14300,'usb'],
+  ['20m SSTV',14230,'usb'],['20m PSK31',14070,'usb'],['17m FT8',18100,'usb'],['15m FT8',21074,'usb'],
+  ['15m SSB',21300,'usb'],['12m FT8',24915,'usb'],['10m FT8',28074,'usb'],['10m SSB',28400,'usb'],
+  ['WWCR (Nashville)',5935,'am'],['WBCQ (Maine)',7490,'am'],['WRMI (Florida)',9395,'am'],
+  ['Radio Havana',6000,'am'],['China Radio Intl',9570,'am']
+];
 // LiveATC feeds. stream = best-effort direct mp3; page = official player fallback.
 const LIVEATC=[
   {name:'New York Kennedy',icao:'KJFK',lat:40.64,lon:-73.78,desc:'Tower',
