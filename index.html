@@ -1412,12 +1412,11 @@ const CATS=[
      MOA:'MILITARY OPS AREA',W:'WARNING AREA',A:'ALERT AREA',D:'DANGER AREA',STDM:'STADIUM TFR'}[f.properties.cls]||'AIRSPACE'),
    sub:f=>cut(f.properties.name||'—',26),
    detail:f=>f.properties.sev==='hard'?'drones prohibited':f.properties.cls==='STDM'?'during events':'verify NOTAMs'},
-  // Controlled airspace (Class B/C/D + surface E) in range — an authorization
-  // card: drones need LAANC / ATC authorization here. Neutral by default (the
-  // class alone isn't a no-fly), but when you're OVERHEAD it (crosshair inside),
-  // the card escalates to match the chart's LAANC ceiling: red if that airspace
-  // grounds you (0 ft ceiling), amber if it caps you below 400 — see the ctrl
-  // override in sitrepTick. Deduped below so Class B's shelves collapse to one.
+  // Controlled airspace (Class B/C/D + surface E) in range — a NEUTRAL naming
+  // card: drones need LAANC / ATC authorization here, but the class alone isn't
+  // a no-fly. The actual drone-ceiling severity is carried by the FAA CEILING
+  // card (driven by the LAANC grid the chart uses). Deduped below so Class B's
+  // shelves collapse to one.
   {src:'airspace', hazard:false, ctrl:true, filter:f=>f.properties.sev==='ctrl', icon:'🗼', cls:()=>'',
    head:f=>({B:'CLASS B AIRSPACE',C:'CLASS C AIRSPACE',D:'CLASS D AIRSPACE',E:'CLASS E AIRSPACE'}[f.properties.cls]||'AIRSPACE'),
    sub:f=>cut(f.properties.name||'—',26),
@@ -1511,6 +1510,23 @@ function sitrepTick(){
   setAcAlert(breachers.map(a=>({type:'Feature',
     geometry:{type:'Point',coordinates:a.pt},properties:{}})));
 
+  // -- FAA CEILING (pinned): surfaces the chart's OWN airspace gate directly.
+  //    The chart caps/grounds on the FAA LAANC UASFM grid + defense TFRs
+  //    (getAirspace → FLY.detail.aspCapFt), whose 0-ft cells follow approach
+  //    corridors and don't match the drawn Class-airspace bubbles. So the chart
+  //    can be FAA-grounded with no charted-airspace card in range. This card
+  //    reads the SAME aspCapFt the chart's FAA column reads, so the two can
+  //    never disagree: red no-fly when it grounds, amber when it caps < 400 ft.
+  //    (Unknown → no card; the NOW header + title already amber "unverified".) --
+  const faaCap=(FLY.detail&&!FLY.detail.aspUnknown)?FLY.detail.aspCapFt:null;
+  if(faaCap!=null && faaCap<SPEC.regFt){
+    const rangeTxt='within '+RNG.mi.toFixed(1)+U(' mi');
+    if(faaCap<0) cards.push(['danger','⛔','FAA NO-FLY','LAANC grid · 0 ft ceiling',
+      rangeTxt,openBtn(faaMapUrl(lat,lon)),true]);
+    else cards.push(['alert','🛑','FAA CEILING '+faaCap+U(' ft'),'LAANC grid',
+      rangeTxt,openBtn(faaMapUrl(lat,lon)),true]);
+  }
+
   // -- GENERAL context cards (area-wide, not a single map point). Collected here
   //    but appended at the BOTTOM of the pile (after the distance-sorted items) —
   //    they're background context, not the nearest thing to the crosshair. --
@@ -1542,13 +1558,6 @@ function sitrepTick(){
   //    AIRCRAFT card, i.e. at warning distance/altitude). Tiers: red hazards,
   //    amber hazards, everything else — distance sorts WITHIN each tier.
   //    Capped so a busy area can't flood it. --
-  // The LAANC ceiling the chart computed for the RANGE RING (worst ceiling
-  // anywhere within RNG.mi of the crosshair — the same buffer the chart caps
-  // on). A controlled-airspace card that's IN RANGE escalates to match it
-  // (grounded → red, capped → amber), not just when you're overhead — the ring
-  // is what the flyability sweeps. -1 = no-fly, <400 = capped, 400 = no limit;
-  // null when unknown.
-  const aspCap=(FLY.detail&&!FLY.detail.aspUnknown)?FLY.detail.aspCapFt:null;
   const items=[];
   CATS.forEach(cfg=>catItems(cfg,lat,lon,rangeKm).forEach(f=>{
     const g=f.geometry; if(!g) return;
@@ -1566,19 +1575,13 @@ function sitrepTick(){
       headOv='LOW AIRCRAFT'; subOv=cut(f.properties.flight||f.properties.hex||'aircraft',12);
       det=breachInfo.get(acKey(f.properties));
     }
-    // IN-RANGE controlled airspace: colour + label it by the LAANC ceiling the
-    // chart swept across the whole ring — red no-fly if it grounds, amber if it
-    // caps below 400. line 3 already carries "overhead"/distance, so det is just
-    // the consequence.
-    else if(cfg.ctrl&&aspCap!=null){
-      if(aspCap<0){ cls='danger'; det='no-fly'; }
-      else if(aspCap<SPEC.regFt){ cls='alert'; det='ceiling '+aspCap+U(' ft'); }
-    }
-    // colour drives tier so a breaching plane / "no-fly overhead" sorts up with
-    // the hazards; everything else keeps its original hazard/neutral tier.
-    const tier=flash?0
-      :(cfg.ctrl&&(cls==='danger'||cls==='alert')) ? (cls==='danger'?0:1)
-      :(cfg.hazard?(cls==='danger'?0:1):2);
+    // Controlled-airspace polygon cards (Class B/C/D/E) stay NEUTRAL naming
+    // context ("authorization"): the LAANC-ceiling severity is carried by the
+    // dedicated FAA CEILING card above, which reads the SAME getAirspace result
+    // the chart does — so they can't disagree the way polygon-vs-grid did.
+    // colour drives tier so a breaching plane sorts up with the hazards;
+    // everything else keeps its original hazard/neutral tier.
+    const tier=flash?0:(cfg.hazard?(cls==='danger'?0:1):2);
     let pt, km;
     if(g.type==='Point'){ pt=g.coordinates; km=havKm(lat,lon,pt[1],pt[0]); }
     else {

@@ -68,13 +68,19 @@ context cards):
   sorts to the top; it reverts to the normal ✈️/🪖/🚨 card the moment it
   climbs out or leaves. Always exactly one card per plane. The same deduped
   collector feeds the chart's TRFC cells, so card, chart and map halo agree.
+- ⛔ **FAA NO-FLY / FAA CEILING** — surfaces the chart's own airspace gate: it
+  reads the exact `aspCapFt` the flyability chart's FAA column computes (the
+  FAA LAANC UASFM grid + defense TFRs swept over the range ring), so the card
+  and the chart can never disagree. Red "no-fly" when the LAANC ceiling in
+  range is 0, amber "ceiling N ft" when it caps below 400. Appears whenever the
+  chart is FAA-limited — even where no charted-airspace polygon is in range
+  (the LAANC grid's 0-ft cells follow approach corridors, not the drawn
+  bubbles).
 - 🚨 emergency squawks (7700/7600/7500) · ⚠️ NWS **warnings** (not watches) ·
   ⛔/⚠️ FAA restrictions (defense, prohibited, security, MOA, stadium…) ·
-  🏞️ NPS land · 🗼 controlled airspace (Class B/C/D/E — neutral
-  "authorization" by default, but when the LAANC ceiling **anywhere in the
-  range ring** grounds or caps you, every in-range controlled-airspace card
-  turns red "no-fly" / amber "ceiling N ft" to match the chart) · ✈️ / 🪖
-  civil and military traffic
+  🏞️ NPS land · 🗼 controlled airspace (Class B/C/D/E — neutral naming context:
+  authorization required, with the actual ceiling severity carried by the FAA
+  card above) · ✈️ / 🪖 civil and military traffic
 - Context cards at the bottom: 🌪️/⛈️ SPC Day-1 outlooks, 🧲 geomagnetic
   storms (Kp ≥ 5), ☀️ M/X solar flares, and the 🌡️ local forecast (always
   present).
