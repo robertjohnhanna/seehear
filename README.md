@@ -41,7 +41,7 @@ code in the cell where the limit bites:
 | FAA | LAANC grid ceiling caps the band; a National-Defense TFR in range grounds | FAA ArcGIS (point + range buffer) |
 | PROH / NSUF / PARK | Prohibited area, security UAS zone, or NPS land under the crosshair grounds | FAA ArcGIS · NPS |
 | PCPN | NEXRAD echo inside the range ring grounds NOW | Iowa State Mesonet mosaic (pixel-sampled) |
-| TRFC | manned aircraft in range under 1,000 ft AGL reds (and flashes red/white) its altitude row in NOW | ADS-B |
+| TRFC | manned aircraft under 1,000 ft AGL within the low-aircraft net (3× the ring) reds (and flashes red/white) its altitude row in NOW | ADS-B |
 
 **Fail-safe posture:** a feed that can't be verified never silently reads
 "clear". Unknown inputs fail *open* for the grid values but amber the NOW
@@ -57,10 +57,12 @@ The bold altitude label marks the highest currently flyable row. **Max wind**
 0.5–15) has its own stepper in the floating control at the **bottom-centre of the
 map** — `(−) RANGE ⌖ n.n MI (+)`, which also holds the center-on-me (⌖) button.
 Both settings are persisted per device. Range drives the FAA query radius, the
-traffic/radar sweep, the SITREP card radius, and the dashed **range ring** drawn
-around the crosshair. Zoom is capped so the ring never exceeds ⅓ of the view —
-and the cap tracks the ring **both ways**: shrink the range and you can zoom in
-further; widen it and the camera eases back out.
+radar sweep, the SITREP card radius, and the dashed **range ring** drawn around
+the crosshair. A second, **light-grey dotted ring at 3× the range** marks the
+low-aircraft warning net (see LOW AIRCRAFT below) — the same 3× radius the zoom
+cap uses, so one knob keeps them in lock-step. Zoom is capped so the range ring
+never exceeds ⅓ of the view — and the cap tracks the ring **both ways**: shrink
+the range and you can zoom in further; widen it and the camera eases back out.
 Both the range ring and the range control's own outline are tinted to the
 current verdict — green clear, amber reduced/unverified, red grounded — so the
 one-glance colour reaches the map even when the panel is off-screen.
@@ -72,14 +74,18 @@ range ring. Cards are tiered — red hazards, amber hazards, then routine
 traffic — and distance-sorted within each tier (capped at 14, plus pinned and
 context cards):
 
-- ✈️/🚁 **LOW AIRCRAFT** — when a plane is in range **and** under 1,000 ft AGL
-  (AGL = QNH-corrected altitude − ground elevation under that plane; see below),
-  that plane's own card transforms into the red flashing LOW AIRCRAFT alert and
-  sorts to the top; it reverts to the normal card the moment it climbs out or
-  leaves. Always exactly one card per plane. The same deduped collector feeds
-  the chart's TRFC cells, so card, chart and map halo agree. Every plane card —
-  civil, military, emergency and low-aircraft — shows its ADS-B **ground speed**
-  (MPH) on line 3, right after the altitude.
+- ✈️/🚁 **LOW AIRCRAFT** — when a plane is under 1,000 ft AGL (AGL = QNH-corrected
+  altitude − ground elevation under that plane; see below) **and** inside the
+  low-aircraft warning net — **3× the range ring** (the light-grey dotted ring),
+  a wider reach than the rest of the SITREP so low manned traffic is flagged
+  early — that plane's own card transforms into the red flashing LOW AIRCRAFT
+  alert and sorts to the top; it reverts to the normal card the moment it climbs
+  out or leaves. (A breaching plane beyond the range ring but inside the grey ring
+  gets a card too; ordinary cruising traffic out there does not.) Always exactly
+  one card per plane. The same deduped collector + radius feeds the chart's TRFC
+  cells, so card, chart and map halo agree. Every plane card — civil, military,
+  emergency and low-aircraft — shows its ADS-B **ground speed** (MPH) on line 3,
+  right after the altitude.
 - ⛔ **FAA NO-FLY / FAA CEILING** — surfaces the chart's own airspace gate: it
   reads the exact `aspCapFt` the flyability chart's FAA column computes (the
   FAA LAANC UASFM grid + defense TFRs swept over the range ring), so the card

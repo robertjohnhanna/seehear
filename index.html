@@ -1284,10 +1284,16 @@ let userMarker=null, sitrepTimer=null;
 // Frame the map to a `miles`-radius circle around (lat,lon). fitBounds honours
 // the panel padding, so the point lands centred in the visible area between the
 // panels.
+// THE shared "3× the range ring" factor. One knob drives three things that must
+// stay in lock-step: the framing radius on a location fix, the max-zoom cap (the
+// ring must stay ≤ ⅓ of the view), and the LOW-AIRCRAFT warning radius (+ its
+// grey dotted ring). Change this and all of them move together.
+const RING_VIEW_MULT=3;
+const ringViewMi=()=>RING_VIEW_MULT*RNG.mi;   // statute miles — the 3× radius
 // The view radius applied once a location fix lands: 3× the range-ring radius
 // (RNG.mi), so the range ring sits in the middle third of the view with drone-
 // relevant context around it. Scales with the user's range setting.
-const fixViewMi=()=>3*RNG.mi;   // statute miles
+const fixViewMi=()=>ringViewMi();   // statute miles
 function flyToRadiusMi(lat,lon,miles,opts){
   cancelCenterZoom();
   const km=miles*MI_TO_KM;
@@ -1548,6 +1554,11 @@ function sitrepTick(){
   // Fully synchronous: reads only already-loaded layer/chart state.
   const c=gl.getCenter();
   const lat=c.lat, lon=c.lng, rangeKm=RNG.mi*MI_TO_KM;
+  // The LOW-AIRCRAFT warning reaches further than the range ring: manned traffic
+  // below 1,000 ft AGL is worth flagging early, so it's scanned out to the shared
+  // 3× radius (ringViewMi — same factor as the zoom cap; the grey dotted ring
+  // marks it). Everything else in the SITREP stays inside the range ring.
+  const warnKm=ringViewMi()*MI_TO_KM;
   SOS_HEX=new Set(featsIn('sos').map(f=>f.properties.hex).filter(Boolean));
   const rows=[];
   // Every row is 3 lines (l1/l2/l3). The WHOLE card is the click target — the
@@ -1572,7 +1583,8 @@ function sitrepTick(){
   const cards=[];   // [cls, icon, l1, l2, l3, action, hazard]
 
   // -- LOW AIRCRAFT BREACH: a plane (civil / military / emergency) inside the
-  //    RANGE setting AND under the WARN_AGL_FT (1,000') warning altitude. Rather
+  //    WARNING net (warnKm = 3× the range ring, marked by the grey dotted ring)
+  //    AND under the WARN_AGL_FT (1,000') warning altitude. Rather
   //    than a separate pinned card, the plane's OWN card (below) transforms into
   //    the red flashing LOW AIRCRAFT alert while it breaches, and reverts to the
   //    normal plane card when it climbs out / leaves — always exactly ONE card
@@ -1583,7 +1595,7 @@ function sitrepTick(){
   //    breachInfo maps a plane's hex/callsign → its AGL label; the item loop
   //    reads it. Ground aircraft (alt='ground'/'?') skip. --
   const acGround=groundElevFt(lat,lon);          // ft AMSL at crosshair, null until fetched
-  const near=planesNear(lat,lon,rangeKm);
+  const near=planesNear(lat,lon,warnKm);         // low-traffic net = 3× the ring
   // pull terrain under the crosshair + every plausibly-low plane in one batch
   ensureGroundElev([[lat,lon],...near.filter(a=>a.alt<AGL_CAND_MAX_FT).map(a=>[a.pt[1],a.pt[0]])]);
   const breachers=near
@@ -1693,8 +1705,14 @@ function sitrepTick(){
   //    amber hazards, everything else — distance sorts WITHIN each tier.
   //    Capped so a busy area can't flood it. --
   const items=[];
-  CATS.forEach(cfg=>catItems(cfg,lat,lon,rangeKm).forEach(f=>{
+  CATS.forEach(cfg=>catItems(cfg,lat,lon,cfg.air?warnKm:rangeKm).forEach(f=>{
     const g=f.geometry; if(!g) return;
+    // Aircraft are collected out to the 3× warning net, but a plane BEYOND the
+    // range ring only earns a card if it's a LOW-AIRCRAFT breach — otherwise the
+    // panel would fill with distant cruising traffic. Inside the ring, every plane
+    // still gets its normal card.
+    if(cfg.air && !breachInfo.has(acKey(f.properties))
+       && havKm(lat,lon,g.coordinates[1],g.coordinates[0])>rangeKm) return;
     // pt = the CLOSEST EDGE point to the crosshair (label + sorting distance);
     // for an airspace/TFR zone the tap instead recentres on the polygon CENTRE
     // (flyPt below). Inside still sorts to the top / reads "overhead".
@@ -2102,15 +2120,16 @@ async function sampleRadarPrecip(lat,lon,rngMi){
 }
 
 // ---- TRFC: the NOW-column altitude rows occupied by manned traffic — every
-// plane (civil/military/emergency) inside the RANGE setting and under the
-// warning altitude, its AGL rounded to the nearest 50 ft row. Traffic just above
-// the 400 ft band (but under the warning altitude) clamps to the top row: it
-// still denies the top of the band (FAA give-way). Uses the SAME planesNear()
-// collector as the SITREP's LOW AIRCRAFT card, so card and chart always agree.
+// plane (civil/military/emergency) inside the LOW-AIRCRAFT warning net (the
+// shared 3× ring radius, ringViewMi) and under the warning altitude, its AGL
+// rounded to the nearest 50 ft row. Traffic just above the 400 ft band (but under
+// the warning altitude) clamps to the top row: it still denies the top of the
+// band (FAA give-way). Uses the SAME planesNear() collector + radius as the
+// SITREP's LOW AIRCRAFT card, so card and chart always agree.
 function flyTrafficRows(){
   const c=gl.getCenter(), rows=new Set();
   const cross=groundElevFt(c.lat,c.lng);   // ft AMSL at crosshair, fallback ground
-  const near=planesNear(c.lat,c.lng,RNG.mi*MI_TO_KM);
+  const near=planesNear(c.lat,c.lng,ringViewMi()*MI_TO_KM);
   ensureGroundElev([[c.lat,c.lng],...near.filter(a=>a.alt<AGL_CAND_MAX_FT).map(a=>[a.pt[1],a.pt[0]])]);
   near.forEach(a=>{
     const {agl}=planeAglFt(a,cross);   // per-plane terrain, QNH-corrected MSL
@@ -2533,8 +2552,10 @@ function ringFC(lat,lon,miles){
 }
 let _ringRaf=0;
 function updateRing(){
-  const s=gl.getSource('src-ring'); if(!s) return;
-  const c=gl.getCenter(); s.setData(ringFC(c.lat,c.lng,RNG.mi));
+  const c=gl.getCenter();
+  const s=gl.getSource('src-ring'); if(s) s.setData(ringFC(c.lat,c.lng,RNG.mi));
+  // the light-grey dotted ring marks the LOW-AIRCRAFT warning net (3× the range)
+  const w=gl.getSource('src-warnring'); if(w) w.setData(ringFC(c.lat,c.lng,ringViewMi()));
 }
 // coalesce the burst of 'move' events into one setData per animation frame
 function scheduleRing(){ if(_ringRaf) return; _ringRaf=requestAnimationFrame(()=>{ _ringRaf=0; updateRing(); }); }
@@ -2559,7 +2580,7 @@ function enforceRingZoom(){
     +(_pad?[_pad.top,_pad.left,_pad.right,_pad.bottom].join(','):'0');
   if(key===_ringZoomKey) return;
   _ringZoomKey=key;
-  const km=3*RNG.mi*MI_TO_KM;
+  const km=ringViewMi()*MI_TO_KM;   // the shared 3× radius (see RING_VIEW_MULT)
   const dLat=km/111.32, dLon=km/(111.32*Math.max(0.2,Math.cos(c.lat*Math.PI/180)));
   // cameraForBounds CLAMPS its result to the current maxZoom, so from a locked-in
   // (zoomed-to-the-cap) state it could only ever ratchet the cap DOWN and never
@@ -2593,6 +2614,13 @@ gl.on('load',()=>{
     paint:{'circle-radius':14,'circle-color':'#ff4455','circle-opacity':0.4,
       'circle-stroke-color':'#ffffff','circle-stroke-width':1.5,'circle-stroke-opacity':0.9}});
   if(gl.getLayer('ly-nearair')) gl.moveLayer('ly-acalert','ly-nearair');
+  // LOW-AIRCRAFT warning ring — a light-grey DOTTED circle at the 3× radius
+  // (ringViewMi), marking how far out the manned-traffic-below-1,000ft alert
+  // reaches. Added before the green ring so the accent ring reads on top.
+  gl.addSource('src-warnring',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
+  gl.addLayer({id:'ly-warnring',type:'line',source:'src-warnring',
+    layout:{'line-cap':'round'},
+    paint:{'line-color':'#aab4bf','line-width':1.4,'line-opacity':0.5,'line-dasharray':[0,2.6]}});
   // range ring — a dashed accent circle tracking the crosshair at RNG.mi, added
   // last so it sits on top of the map layers (under the HTML crosshair overlay)
   gl.addSource('src-ring',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
