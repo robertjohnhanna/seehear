@@ -139,9 +139,9 @@ zoom, and re-pulled only when you travel out of that region. That's why
 airspace stays painted when you zoom out, and it never touches the periodic
 pulse. Every loader retries with backoff and a failure never wipes the map.
 
-**Dossier:** right-click (desktop) or long-press (touch) anywhere →
-reverse-geocoded place (Nominatim) + country profile (RestCountries) + head of
-state (Wikidata) + Wikipedia summary.
+The map has **no click popups** — everything inside the range ring is described
+by the SITREP cards, so the map stays a clean picture and the panel carries the
+detail.
 
 ## Location & privacy
 
@@ -157,8 +157,7 @@ parameters to the public weather APIs.
   TFRs, and NOTAMs change; verify with official sources before flying.
 - US-centric hazard feeds: NWS, SPC, FAA, NEXRAD, and NPS cover the United
   States; aircraft, weather, and space-weather feeds are global.
-- Units are imperial (mi/ft, °F, mph); aircraft popups use aviation units
-  (ft, kt). The UI is all-caps, units included — only a unit whose meaning
+- Units are imperial (mi/ft, °F, mph). The UI is all-caps, units included — only a unit whose meaning
   depends on its case (SI symbols, a mixed-case index) would stay verbatim.
 - An aircraft that breaches the range **and** the 1,000 ft AGL warning
   altitude flashes red/white on the map (a pulsing halo), in the SITREP
