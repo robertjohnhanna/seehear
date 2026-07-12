@@ -67,7 +67,7 @@
      area left of the docked SITREP panel. pointer-events:none so it never blocks
      the map; natural case + a low z so it reads as part of the basemap. */
   #map-attrib{position:absolute;z-index:3;bottom:3px;left:0;
-    right:calc(320px + var(--sa-r));text-align:center;pointer-events:none;
+    right:calc(360px + var(--sa-r));text-align:center;pointer-events:none;
     color:#000;opacity:.55;font-family:var(--mono);font-size:9px;letter-spacing:.2px;
     text-transform:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
     padding:0 8px}
@@ -85,7 +85,7 @@
     backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
     display:flex;flex-direction:column;overflow:hidden}
   #sitrep{top:0;right:0;left:auto;width:360px;bottom:0;
-    padding-right:var(--sa-r);border:1px solid var(--line)}
+    border:1px solid var(--line)}
   /* data-refresh countdown on the SITREP title line, right-justified. Tapping it
      forces an immediate refresh, so it reads as a control. */
   #refresh-badge{margin-left:auto;color:var(--ink-dim);font-weight:400;letter-spacing:.5px;
@@ -288,11 +288,16 @@
        Hidden by default (the map is page one); body.panel-open slides it in.
        100dvh (dynamic viewport) tracks the shrinking address bar so the panel
        never spills below Safari's chrome. */
-    .panel{left:0!important;right:0!important;top:0!important;bottom:0!important;
+    .panel{left:0!important;right:0!important;top:0!important;bottom:auto!important;
       width:auto!important;height:100dvh;z-index:30;padding:0!important;
       background:var(--panel);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
       border:none;border-radius:0;box-shadow:none;
-      transform:translateY(100%);
+      /* CLOSED: translate by the LARGE viewport unit (vh — on iOS this includes the
+         toolbar band that 100dvh excludes) + a margin, so the panel fully clears
+         the screen in every toolbar state and never peeks at the bottom. Height
+         stays 100dvh so the OPEN panel fits the CURRENT viewport without spilling
+         under the address bar. */
+      transform:translateY(calc(100vh + 40px));
       transition:transform .26s cubic-bezier(.22,.61,.36,1);visibility:visible}
     body.panel-open .panel{transform:translateY(0)}
     #sit-head{padding-top:calc(var(--sa-t) + 11px)}
@@ -1177,29 +1182,63 @@ async function loadWeather(force){
   }catch(e){ /* keep the last-good WX */ }
   finally{ wxBusy=false; scheduleSitrep(); }
 }
-// The weather SITREP card [cls, icon, l1, l2, l3, action, hazard]. Always present.
-// It ALSO carries the weather-feed health (so there's no separate DATA "weather"
-// card for the same object): wxState 'down' = the chart's weather never loaded
-// (red, chart can't compute — this is what surfaces a total-outage hang), 'stale'
-// = the feed is failing but last-good conditions still show (amber), 'ok' =
-// healthy. 'down'/'stale' are tappable to force a refresh.
-function wxCard(wxState){
+// THE ONE weather card. There's a single weather feed, so there's a single card
+// for it — no transient "WX WARNING" duplicating the static forecast card. It
+// changes RANK, COLOUR and TEXT with its own severity:
+//   • a weather GATE is limiting the NOW column → the card is PROMOTED to a top
+//     hazard (red grounded / amber reduced-ceiling), headlined by the gate, with
+//     the current conditions folded onto line 3 (so nothing is shown twice);
+//   • otherwise it's the routine conditions card at the BOTTOM (neutral), which
+//     also carries feed health: 'stale' = failing but last-good shows (amber),
+//     'down' = never loaded so the chart is blind (red, promoted so a total
+//     outage can't hide at the bottom behind a green skeleton).
+// Returns {pin, card}: pin=true floats it up with the other hazards; the card is
+// the usual [cls, icon, l1, l2, l3, action, hazard] tuple. wn = FLY.detail.wxNow.
+function wxCard(wxState, wn){
   const rnd=n=>n==null?null:Math.round(n);
   const retry='data-act="refresh"';
-  if(wxState==='down') return ['danger','🌡️','WEATHER UNAVAILABLE','feed down · chart can\'t compute',
-    'tap to retry',retry,true];
-  if(!WX) return wxState==='stale'   // no conditions loaded yet
+  // compact current-conditions line — reused as line 3 of a promoted gate card so
+  // the temperature / sky / wind still appear exactly once (no separate card)
+  const condLine=()=>{
+    if(!WX) return '';
+    const [,d]=WMO[WX.code]||['','—'];
+    const t=rnd(WX.tempF), w=rnd(WX.windMph), wd=WX.windDir!=null?compass(WX.windDir)+' ':'';
+    return (t!=null?t+'° · ':'')+d.toUpperCase()+(w!=null?' · '+wd+w+U(' mph'):'');
+  };
+  // feed totally down — chart can't compute; pin it so the outage is unmissable
+  if(wxState==='down') return {pin:true, card:['danger','🌡️','WEATHER UNAVAILABLE',
+    'feed down · chart can\'t compute','tap to retry',retry,true]};
+  // an active weather GATE promotes the card to a top hazard (grounded red / capped
+  // amber); conditions ride line 3, so the sky/temp aren't repeated elsewhere
+  if(wn){
+    const wxCap=Math.min(wn.windCeilFt,wn.cloudCapFt);   // weather-only ceiling (ft)
+    if(wn.gust||wn.vis||wn.precip||wxCap<0){
+      let ic,head,sub;
+      if(wn.precip){ ic='⛈️'; head='PRECIPITATION'; sub='radar echo in range'; }
+      else if(wn.gust){ ic='💨'; head='HIGH WIND'; sub='gust '+Math.round(wn.gustMph)+U(' mph')+' · max '+LIM.wind; }
+      else if(wn.windCeilFt<0){ ic='💨'; head='HIGH WIND'; sub=Math.round(wn.windPeakMph)+U(' mph')+' aloft · max '+LIM.wind; }
+      else if(wn.vis){ ic='🌫️'; head='LOW VISIBILITY'; sub=(wn.visSM!=null?wn.visSM.toFixed(1):'—')+U(' SM')+' · under 3 min'; }
+      else { ic='☁️'; head='LOW CLOUD'; sub='base '+Math.round(wn.cloudCapFt+SPEC.clrFt)+U(' ft')+' · need 500 clr'; }
+      return {pin:true, card:['danger',ic,head,sub,condLine(),'',true]};
+    }
+    if(wxCap<SPEC.regFt){
+      const wind=wn.windCeilFt<=wn.cloudCapFt;
+      return {pin:true, card:['alert',wind?'💨':'☁️',(wind?'WIND':'CLOUD')+' CEILING '+wxCap+U(' ft'),
+        wind?'winds aloft over max':'low cloud base',condLine(),'',true]};
+    }
+  }
+  // no gate — routine conditions card at the bottom (neutral / amber-if-stale)
+  if(!WX) return {pin:false, card: wxState==='stale'   // no conditions loaded yet
     ? ['alert','🌡️','WEATHER','feed unreachable','tap to retry',retry,true]
-    : ['','🌡️','WEATHER','ACQUIRING FORECAST…','','',false];
+    : ['','🌡️','WEATHER','ACQUIRING FORECAST…','','',false]};
   const [emoji,desc]=WMO[WX.code]||['🌡️','—'];
   const t=rnd(WX.tempF), f=rnd(WX.feelsF), w=rnd(WX.windMph), hi=rnd(WX.hiF), lo=rnd(WX.loF);
   const l1=(t!=null?t+'°':'—')+' · '+desc.toUpperCase();
   const wd=WX.windDir!=null?compass(WX.windDir)+' ':'';
   const l2='WIND '+wd+(w!=null?w+U(' mph'):'—')+(f!=null?' · FEELS '+f+'°':'');
   const l3=(hi!=null?'HIGH '+hi+'°':'')+(hi!=null&&lo!=null?' · ':'')+(lo!=null?'LOW '+lo+'°':'');
-  // feed failing but we still have last-good conditions → amber "stale, tap"
-  if(wxState==='stale') return ['alert',emoji,l1,l2,(l3?l3+' · ':'')+'STALE — TAP',retry,true];
-  return ['',emoji,l1,l2,l3,'',false];
+  if(wxState==='stale') return {pin:false, card:['alert',emoji,l1,l2,(l3?l3+' · ':'')+'STALE — TAP',retry,true]};
+  return {pin:false, card:['',emoji,l1,l2,l3,'',false]};
 }
 /* =====================================================================
    7. LOCATION + SITREP — the "at a glance" intelligence layer
@@ -1534,43 +1573,10 @@ function sitrepTick(){
       rangeTxt,openBtn(faaMapUrl(lat,lon)),true]);
   }
 
-  // -- WX WARNING (pinned): the most severe WEATHER gate limiting the NOW column.
-  //    Precipitation, gusts, winds-aloft-over-max and low visibility GROUND; wind
-  //    aloft and cloud base can instead just cap the ceiling. Reads the chart's
-  //    own NOW gates (FLY.detail.wxNow) so card and chart agree. FAA and Kp have
-  //    their own cards; this is the pure-weather one. Picks the single most severe
-  //    trigger: grounding (red) outranks a reduced ceiling (amber). --
+  // The weather card (built below) folds every weather GATE — precipitation,
+  // gusts, winds aloft, low visibility, low cloud — into itself: there's one
+  // weather feed, so one card. No separate "WX WARNING" duplicating it.
   const wn=FLY.detail&&FLY.detail.wxNow;
-  if(wn){
-    const wxCap=Math.min(wn.windCeilFt,wn.cloudCapFt);   // weather-only ceiling (ft)
-    if(wn.gust||wn.vis||wn.precip||wxCap<0){
-      // line 3 carries the MEASURED value behind whichever gate is grounding —
-      // real telemetry, not a restatement of the red "grounded" state.
-      let ic,head,sub,l3;
-      if(wn.precip){
-        ic='⛈️'; head='PRECIPITATION'; sub='radar echo in range';
-        const cond=(WX&&WMO[WX.code])?WMO[WX.code][1]:null;   // what's actually falling
-        l3=cond?cond.toUpperCase():'nexrad reflectivity';
-      }else if(wn.gust){
-        ic='💨'; head='HIGH WIND'; sub='surface gusts over max';
-        l3='gust '+Math.round(wn.gustMph)+U(' mph')+' · max '+LIM.wind;
-      }else if(wn.windCeilFt<0){
-        ic='💨'; head='HIGH WIND'; sub='winds aloft over max';
-        l3=Math.round(wn.windPeakMph)+U(' mph')+' aloft · max '+LIM.wind;
-      }else if(wn.vis){
-        ic='🌫️'; head='LOW VISIBILITY'; sub='under 3 SM';
-        l3=(wn.visSM!=null?wn.visSM.toFixed(1):'—')+U(' SM')+' reported';
-      }else{
-        ic='☁️'; head='LOW CLOUD'; sub='cloud base too low';
-        l3='base '+Math.round(wn.cloudCapFt+SPEC.clrFt)+U(' ft')+' · need 500 clr';
-      }
-      cards.push(['danger',ic,head,sub,l3,'',true]);
-    }else if(wxCap<SPEC.regFt){
-      const wind=wn.windCeilFt<=wn.cloudCapFt;
-      cards.push(['alert',wind?'💨':'☁️',wind?'WIND CEILING':'CLOUD CEILING',
-        wind?'winds aloft over max':'low cloud base','ceiling '+wxCap+U(' ft'),'',true]);
-    }
-  }
 
   // -- SPACE WEATHER (pinned): a geomagnetic Kp storm degrades the GPS/compass a
   //    drone relies on. Right-sized to actual drone impact (NOAA flags GPS
@@ -1591,9 +1597,9 @@ function sitrepTick(){
   //    keeps its last-good value and only ambers the NOW header quietly. This card
   //    surfaces that explicitly (and touch-accessibly, unlike the hover tooltip)
   //    once a feed has been stale past the grace window. WEATHER is excluded here
-  //    — its health rides the always-present WX card below (no duplicate card for
-  //    the same feed) — so this covers FAA airspace / Kp / radar only. Amber; tap
-  //    to force a refresh; clears the moment every feed is fresh. --
+  //    — its health rides the weather card itself (no duplicate card for the same
+  //    feed) — so this covers FAA airspace / Kp / radar only. Amber; tap to force
+  //    a refresh; clears the moment every feed is fresh. --
   const unstable=flyUnknownStable();
   const wxStale=unstable.includes('weather');
   const dataBad=unstable.filter(x=>x!=='weather');
@@ -1601,9 +1607,14 @@ function sitrepTick(){
     cards.push(['alert','📡','DATA UNVERIFIED',cut(dataBad.join(' · '),30),
       'tap to retry','data-act="refresh"',true]);
   }
-  // weather-feed health for the WX card: down = never loaded (red, chart blind),
-  // stale = failing but last-good conditions still show (amber)
+  // weather-feed health for the weather card: down = never loaded (red, chart
+  // blind), stale = failing but last-good conditions still show (amber)
   const wxState=wxStale?(FLY.data?'stale':'down'):'ok';
+  // Build THE weather card now: if a weather gate is limiting the NOW column (or
+  // the feed is down), it's a top hazard and pins here with FAA / Kp / DATA; a
+  // routine conditions card instead sinks to the bottom (pushed after the items).
+  const wxc=wxCard(wxState, wn);
+  if(wxc.pin) cards.push(wxc.card);
 
   // -- GENERAL context cards (area-wide, not a single map point). Collected here
   //    but appended at the BOTTOM of the pile (after the distance-sorted items) —
@@ -1612,7 +1623,7 @@ function sitrepTick(){
   // SEVERE WEATHER OUTLOOK (SPC Day 1): is the map-centre under a severe /
   // tornado risk TODAY? It's just an OUTLOOK — "expected", not a warning — so
   // it's an INFO card (no colour, no title contribution) that sits just above
-  // the weather card. Actual grounding weather is the WX WARNING card above.
+  // the weather card. Actual grounding weather promotes the weather card itself.
   const spcCards=[];
   const spcF=featsIn('spc');
   if(spcF.length){
@@ -1708,7 +1719,8 @@ function sitrepTick(){
   });
   general.forEach(c=>cards.push(c));   // area-wide context cards sink to the bottom
   spcCards.forEach(c=>cards.push(c));  // SPC outlook (info) sits just above weather
-  cards.push(wxCard(wxState));         // weather forecast + feed health — always the bottom card
+  if(!wxc.pin) cards.push(wxc.card);   // routine conditions card — the bottom card
+                                       // (a gate/outage already pinned it up top)
 
   // title severity: 0 none · 1 alert (amber) · 2 warn (red). Driven by the
   // flyability NOW column FIRST — any grounding value/condition reds it, any
@@ -2146,7 +2158,7 @@ function flyComputeDetail(){
   };
   const traffic=flyTrafficRows();
   const restrict=flyRestriction();   // a hard Prohibited/security zone grounds every column
-  let wxNow=null;   // NOW-column weather-gate diagnostics for the WX WARNING card
+  let wxNow=null;   // NOW-column weather-gate diagnostics for the weather card
   const grid=cols.map((c,n)=>{
     const prof=makeProfile(c.windPts);
     const visSM=c.visM!=null?c.visM*M_TO_SM:null;
@@ -2158,7 +2170,7 @@ function flyComputeDetail(){
     const cloudCapFt=c.baseFt==null?Infinity:(c.baseFt-SPEC.clrFt);
     let hitFt=null; for(const ft of ALTS_UP){ if(atLim(prof(ft))){ hitFt=ft; break; } }
     const windCeilFt=hitFt==null?SPEC.regFt:hitFt-50;
-    // capture NOW's weather gates for the SITREP WX WARNING card (which picks the
+    // capture NOW's weather gates for the SITREP weather card (which picks the
     // most severe of precip / wind / gust / visibility / cloud to show). Carries
     // the raw measured values too, so the card's third line reads real telemetry
     // (gust mph, wind aloft peak, visibility SM, cloud base) rather than a
@@ -2231,7 +2243,7 @@ function flyComputeDetail(){
     // SITREP reads this for its SPACE WEATHER card, so card + chart KP gate agree.
     kpNow:kpAt(0),
     // wxNow: the NOW-column weather gates (gust/vis/precip + wind & cloud ceilings)
-    // — the SITREP WX WARNING card reads these so card + chart NOW column agree.
+    // — the SITREP weather card reads these so card + chart NOW column agree.
     wxNow,
     grid:grid.map(g=>({n:g.n,maxFly:g.maxFly,grounded:g.grounded,reason:g.reason,reasonAlt:g.reasonAlt}))};
 }

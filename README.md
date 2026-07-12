@@ -95,18 +95,23 @@ context cards):
   its last-good value and only ambers the NOW header quietly. If **FAA airspace,
   Kp, or radar** stays stale past a ~35 s grace window (a self-healing blip won't
   pop it), this amber card names them. Tap to force a refresh; it clears the
-  moment every feed is fresh. (Weather health rides the WX card instead — see
+  moment every feed is fresh. (Weather health rides the weather card itself — see
   below — so there's never a duplicate card for the same feed.)
-- ⛈️/💨 **WX WARNING** — the single most severe *weather* gate limiting the NOW
-  column: precipitation, high surface gusts, winds-aloft-over-max and low
-  visibility **ground** (red); wind aloft or a low cloud base can instead just
-  **cap the ceiling** (amber "wind/cloud ceiling N ft"). It reads the chart's own
-  NOW gates, so card and chart agree, and picks grounding over a reduced ceiling.
-- The 🌡️ **WEATHER** card doubles as the weather-feed health indicator: it turns
-  **amber** ("stale — tap") when the feed is failing but last-good conditions
-  still show, and **red** ("weather unavailable") when the feed never loaded and
-  the chart can't compute — the red case reddens the title so a total weather
-  outage can't hide behind a green skeleton.
+- 🌡️ **WEATHER** — there's one weather feed, so there's **one weather card**, and
+  it changes rank, colour and text with its own severity (no separate transient
+  "weather warning" duplicating the forecast):
+  - a weather **gate** limiting the NOW column **promotes** it to a top hazard —
+    precipitation, high gusts, winds-aloft-over-max and low visibility **ground**
+    (red ⛈️/💨/🌫️); wind aloft or a low cloud base instead **cap the ceiling**
+    (amber "wind/cloud ceiling N ft"). The headline is the gate and the measured
+    value; the **current conditions fold onto line 3**, so the sky/temp/wind show
+    exactly once. It reads the chart's own NOW gates, so card and chart agree.
+  - otherwise it's the routine **conditions card at the bottom** (temp, sky,
+    wind, feels-like, hi/lo), which also carries feed health: **amber**
+    ("stale — tap") when the feed is failing but last-good conditions still show,
+    **red** ("weather unavailable", promoted) when it never loaded and the chart
+    can't compute — the red case reddens the title so a total outage can't hide
+    behind a green skeleton.
 - 🚨 emergency squawks (7700/7600/7500) · ⚠️ NWS **warnings** (not watches) ·
   ✈️ / 🪖 civil and military traffic. Airspace cards follow a **solid three-way
   model** — *authorization* (controlled airspace, needs a ceiling) is not the
