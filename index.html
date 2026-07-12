@@ -66,6 +66,14 @@
   #crosshair{position:absolute;z-index:5;left:50%;top:50%;
     transform:translate(-50%,-50%);pointer-events:none;opacity:.8;
     filter:drop-shadow(0 0 1px #000) drop-shadow(0 0 2px #0008)}
+  /* static map attribution — ghosted black, centred along the bottom of the map
+     area left of the docked SITREP panel. pointer-events:none so it never blocks
+     the map; natural case + a low z so it reads as part of the basemap. */
+  #map-attrib{position:absolute;z-index:3;bottom:3px;left:0;
+    right:calc(320px + var(--sa-r));text-align:center;pointer-events:none;
+    color:#000;opacity:.55;font-family:var(--mono);font-size:9px;letter-spacing:.2px;
+    text-transform:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    padding:0 8px}
   button{font-family:var(--mono);cursor:pointer}
   a{color:var(--accent)}
   ::-webkit-scrollbar{width:8px;height:8px}
@@ -282,11 +290,16 @@
     /* map is full-width on mobile; keep the controls above the bottom nav */
     #loc-btn{right:calc(14px + var(--sa-r));bottom:calc(var(--navh) + var(--sa-b) + 14px)}
     #load-ring{left:calc(14px + var(--sa-l));bottom:calc(var(--navh) + var(--sa-b) + 16px)}
+    /* full map width, sat just above the bottom nav */
+    #map-attrib{right:0;bottom:calc(var(--navh) + var(--sa-b) + 3px)}
   }
 </style>
 </head>
 <body>
 <div id="map"></div>
+<!-- static map attribution (OSM/CARTO licence) — ghosted in black so it sinks
+     into the dark basemap, centred along the bottom of the visible map area -->
+<div id="map-attrib" aria-hidden="true">© OpenStreetMap · © CARTO · NEXRAD · Iowa State Mesonet</div>
 <!-- fixed reticle marking the exact map centre (what SITREP / the ME button use) -->
 <svg id="crosshair" width="30" height="30" viewBox="0 0 30 30" aria-hidden="true">
   <g fill="none" stroke="#fff" stroke-width="1.4" stroke-linecap="round">
