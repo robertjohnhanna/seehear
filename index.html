@@ -86,14 +86,25 @@
     display:flex;flex-direction:column;overflow:hidden}
   #sitrep{top:0;right:0;left:auto;width:360px;bottom:0;
     border:1px solid var(--line)}
-  /* data-refresh countdown on the SITREP title line, right-justified. Tapping it
-     forces an immediate refresh, so it reads as a control. */
-  #refresh-badge{margin-left:auto;color:var(--ink-dim);font-weight:400;letter-spacing:.5px;
-    font-size:13px;white-space:nowrap;font-variant-numeric:tabular-nums;flex:0 0 auto;
-    cursor:pointer;-webkit-user-select:none;user-select:none}
-  #refresh-badge b{color:var(--ink)}
-  #refresh-badge:active{color:var(--accent)}
-  @media(hover:hover){#refresh-badge:hover{color:var(--ink)}}
+  /* REFRESH DIAL — a circular sweep that FILLS over the refresh cycle (a number-
+     less countdown) with a ↻ glyph; tap = refresh now. While a feed is fetching it
+     spins (a rotating arc), folding in the old load spinner. Two instances share
+     .rdial: one right-justified in the SITREP header, and a duplicate at the map's
+     top-right shown only on an iPhone in PORTRAIT (map OR panel visible, not both). */
+  .rdial{position:relative;width:24px;height:24px;flex:0 0 auto;border:none;background:none;
+    padding:0;cursor:pointer;color:var(--ink-dim);-webkit-user-select:none;user-select:none}
+  .rdial .rdial-prog{position:absolute;inset:0;border-radius:50%;
+    background:conic-gradient(var(--accent) var(--rp,0deg), #2a3a4d 0deg);
+    -webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 3px),#000 calc(100% - 3px));
+            mask:radial-gradient(farthest-side,transparent calc(100% - 3px),#000 calc(100% - 3px))}
+  .rdial .rdial-ico{position:absolute;inset:0;width:100%;height:100%;padding:6px;box-sizing:border-box;color:var(--ink-dim)}
+  .rdial:active .rdial-ico{color:var(--accent)}
+  @media(hover:hover){.rdial:hover .rdial-ico{color:var(--ink)}}
+  .rdial.busy .rdial-prog{background:conic-gradient(var(--accent) 90deg,#2a3a4d 0deg);animation:sp .8s linear infinite}
+  #refresh-badge{margin-left:auto}
+  #map-refresh{position:absolute;z-index:16;top:calc(var(--sa-t) + 12px);right:calc(14px + var(--sa-r));
+    display:none;filter:drop-shadow(0 0 4px #000)}
+  @media (max-width:1000px) and (orientation:portrait){ #map-refresh{display:block} }
   /* ---------- canifly — the static drone-preflight chart ----------
      Ported from the canifly repo (which stays standalone and untouched): just
      the flyability grid + the settings box, no title/coords/refresh line.
@@ -233,18 +244,6 @@
   #ctrlbar .cb-plus::before,#ctrlbar .cb-plus::after{background:var(--ok)}   /* + glyph = green */
   #ctrlbar .cb-btn:active{background:#fff}
   #ctrlbar .cb-btn:active::before,#ctrlbar .cb-btn:active::after{background:#00140a}
-  /* data-loading ring: TOP-LEFT corner of the map, fades in + spins while any
-     feed is fetching (initial load, the refresh pulse, a pan refetch), fades out when
-     idle. Sits below the safe-area inset so a notch never clips it. */
-  #load-ring{position:absolute;z-index:16;left:calc(16px + var(--sa-l));top:calc(var(--sa-t) + 16px);
-    width:22px;height:22px;border:2.5px solid #2a3a4d;border-top-color:var(--accent);
-    border-radius:50%;opacity:0;transition:opacity .3s;pointer-events:none;
-    filter:drop-shadow(0 0 3px #000)}
-  #load-ring.on{opacity:.9;animation:sp .8s linear infinite}
-  /* the same spinner, inline just after the SITREP title (shares updateLoadRing) */
-  #sit-load{flex:0 0 auto;width:13px;height:13px;border:2px solid #2a3a4d;
-    border-top-color:var(--accent);border-radius:50%;opacity:0;transition:opacity .3s}
-  #sit-load.on{opacity:.9;animation:sp .8s linear infinite}
   #sit-body{display:flex;flex-direction:column;align-content:start;
     overflow-y:auto;padding:4px 0;-webkit-overflow-scrolling:touch;flex:1 1 auto;min-height:0}
   /* every SITREP row is a uniform 3-line block: icon · three text lines · an
@@ -312,7 +311,6 @@
     /* floating map controls sit above the safe-area bottom */
     #ctrl-wrap{left:calc(14px + var(--sa-l));right:calc(14px + var(--sa-r));
       bottom:calc(var(--sa-b) + 14px)}
-    #load-ring{left:calc(14px + var(--sa-l));top:calc(var(--sa-t) + 12px)}
     #map-attrib{right:0;bottom:calc(var(--sa-b) + 2px)}
   }
 </style>
@@ -337,8 +335,10 @@
 <div id="sitrep" class="panel">
   <div id="sit-head">
     <span class="title" id="sit-title">◈ CANIFLY</span>
-    <span id="sit-load" aria-hidden="true" title="loading data…"></span>
-    <span id="refresh-badge" role="button" tabindex="0" title="tap to refresh now"><b id="refresh-count">15</b>s to update</span>
+    <button id="refresh-badge" class="rdial" type="button" title="tap to refresh · auto every 15 s" aria-label="refresh data now">
+      <span class="rdial-prog"></span>
+      <svg class="rdial-ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v4h-4"/></svg>
+    </button>
   </div>
   <!-- canifly drone-preflight chart — the flyability grid, driven by the
        map-centre crosshair on the same unified data-refresh pulse. -->
@@ -351,8 +351,13 @@
   </div>
 </div>
 
-<!-- data-loading ring: spins in the bottom-left of the map while any feed is fetching -->
-<div id="load-ring" aria-hidden="true" title="loading data…"></div>
+<!-- refresh dial duplicated at the map's top-right — shown only on an iPhone in
+     portrait (map OR panel visible, not both) so the countdown / tap-to-refresh is
+     reachable from the map page. -->
+<button id="map-refresh" class="rdial" type="button" title="tap to refresh · auto every 15 s" aria-label="refresh data now">
+  <span class="rdial-prog"></span>
+  <svg class="rdial-ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v4h-4"/></svg>
+</button>
 
 <!-- combined control, centred at the bottom of the map: range steppers +
      center-on-me in one box styled like the original center-on-me button.
@@ -1169,20 +1174,14 @@ function pulse(force){
   // airspace to its location/range-keyed cache — all inside flyRefresh().
   // loadWeather self-throttles (~5 min / >2 km moves) unless forced.
   flyRefresh(); loadWeather(force); refreshRadar();
-  refreshBase=Date.now();
-  const el=$('#refresh-count'); if(el) el.textContent=REFRESH_S;
+  refreshBase=Date.now();   // the refresh dials refill from here (updateLoadRing)
 }
-function forceRefresh(){ pulse(true); }   // tapping the "Xs to update" badge / DATA card
-// data-refresh countdown ("Xs to update") in the SITREP header
-function refreshTick(){
-  const elapsed=Math.floor((Date.now()-refreshBase)/1000);
-  if(elapsed>=REFRESH_S) pulse();
-  else { const el=$('#refresh-count'); if(el) el.textContent=REFRESH_S-elapsed; }
-}
-(function bindRefreshBadge(){
-  const b=$('#refresh-badge'); if(!b) return;
-  b.addEventListener('click',forceRefresh);
-  b.addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); forceRefresh(); } });
+function forceRefresh(){ pulse(true); }   // tapping a refresh dial / the DATA card
+// fires the pulse at the end of each cycle; the dial fill is painted by updateLoadRing
+function refreshTick(){ if(Date.now()-refreshBase>=REFRESH_S*1000) pulse(); }
+// both refresh dials (SITREP header + iPhone-portrait map) force a refresh on tap
+(function bindRefreshDials(){
+  document.querySelectorAll('.rdial').forEach(b=>b.addEventListener('click',forceRefresh));
 })();
 
 // No layer selector: every layer's map source + style is created here and stays
@@ -2576,13 +2575,14 @@ function flyOnMove(){
   flyRefresh();
 }
 
-// Data-loading spinner — on while ANY map layer, the canifly chart or the weather
-// pull is mid-fetch (initial load, the refresh pulse, a pan refetch). Drives both the
-// bottom-left map ring and the inline spinner after the SITREP title.
+// Paint the refresh dial(s): the arc FILLS from 0→360° across the refresh cycle
+// (a numberless countdown), and while ANY map layer / the canifly chart / the
+// weather pull is mid-fetch the dial SPINS instead (the .busy class swaps the fill
+// for a rotating arc — this folds in the old load spinner). Runs on a 200 ms tick.
 function updateLoadRing(){
   const busy = flyBusy || wxBusy || LAYERS.some(cfg=>{ const st=LAYER_STATE[cfg.id]; return st&&st.loading; });
-  const r=$('#load-ring'); if(r) r.classList.toggle('on',busy);
-  const s=$('#sit-load');  if(s) s.classList.toggle('on',busy);
+  const deg = (Math.min(1,(Date.now()-refreshBase)/(REFRESH_S*1000))*360).toFixed(0)+'deg';
+  document.querySelectorAll('.rdial').forEach(d=>{ d.classList.toggle('busy',busy); d.style.setProperty('--rp',deg); });
 }
 
 /* =====================================================================

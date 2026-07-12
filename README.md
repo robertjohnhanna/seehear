@@ -204,7 +204,14 @@ back to the map. No drag, no snap points — one tap flips the page, and each pa
 gets the whole screen. The panel uses the dynamic viewport height so it never
 spills below Safari's address bar. This two-page toggle is **portrait-only** — a
 phone in **landscape** is wide enough for the docked-right panel, so it falls
-through to the same layout as a tablet or desktop.
+through to the same layout as a tablet or desktop. Because the panel's **refresh
+dial** (see below) is hidden while you're on the map page, a duplicate sits at the
+map's top-right in portrait so it's always reachable.
+
+A **refresh dial** — a circular sweep that fills over the 15 s cycle (a
+numberless countdown) with a ↻ glyph — sits at the top-right of the panel header;
+it **spins** while a feed is fetching (it replaces the old corner load spinner)
+and a tap forces an immediate refresh.
 
 ## Location & privacy
 
@@ -235,7 +242,7 @@ public weather APIs.
   pulsing halo), in the SITREP title, on its LOW AIRCRAFT card, and on the chart's
   **TRFC** ceiling cell (all in sync — the TRFC cell only appears for an in-range
   breach). Aircraft further out (to the grey 3× ring) are still tracked as ordinary
-  distance-sorted cards, just without the alert. Tapping the "Xs to update" badge
+  distance-sorted cards, just without the alert. Tapping the **refresh dial**
   forces an immediate refresh.
 - AGL is computed per plane: **QNH-corrected** barometric altitude (ADS-B
   reports pressure altitude off 29.92″; the local sea-level pressure from the
