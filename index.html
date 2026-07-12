@@ -476,9 +476,10 @@ function polyPt(f){
 }
 // The point on a polygon feature's BOUNDARY nearest to (lon,lat) — the closest
 // EDGE point (projected onto the nearest edge segment, not just the nearest
-// vertex), used so an airspace card flies to the edge closest to you. Planar
-// lon/lat with a cos(lat) x-scale — exact enough at these scales. Returns
-// {pt:[lon,lat], km}.
+// vertex), used for a card's distance/direction label, sorting, and range
+// inclusion (the nearest edge is what determines whether a zone is in range).
+// Planar lon/lat with a cos(lat) x-scale — exact enough at these scales.
+// Returns {pt:[lon,lat], km}.
 function nearestEdge(f,lon,lat){
   const g=f.geometry; if(!g) return null;
   const rings=g.type==='Polygon'?g.coordinates:g.type==='MultiPolygon'?g.coordinates.flat():[];
@@ -492,6 +493,30 @@ function nearestEdge(f,lon,lat){
     if(d2<bd){ bd=d2; best=[lon+cx/k, lat+cy]; }
   }});
   return best?{pt:best,km:havKm(lat,lon,best[1],best[0])}:null;
+}
+// Area-weighted centroid [lon,lat] of a polygon feature — the "middle" of the
+// zone, used so an airspace/TFR card flies the crosshair to the centre of the
+// polygon rather than its nearest edge. Outer rings only, each ring weighted by
+// |area| so a MultiPolygon (or mixed winding) centres correctly. Planar lon/lat
+// (exact enough at these scales); falls back to the vertex mean, then polyPt,
+// for a degenerate (zero-area) polygon.
+function polyCenter(f){
+  const g=f.geometry; if(!g) return null;
+  const rings=g.type==='Polygon'?[g.coordinates[0]]
+    :g.type==='MultiPolygon'?g.coordinates.map(p=>p[0]):[];
+  let accX=0,accY=0,accW=0,vx=0,vy=0,vn=0;
+  for(const r of rings){ if(!r||r.length<3) continue;
+    let A=0,X=0,Y=0;
+    for(let i=0,j=r.length-1;i<r.length;j=i++){
+      const cross=r[j][0]*r[i][1]-r[i][0]*r[j][1];
+      A+=cross; X+=(r[j][0]+r[i][0])*cross; Y+=(r[j][1]+r[i][1])*cross;
+      vx+=r[i][0]; vy+=r[i][1]; vn++;
+    }
+    if(A!==0){ const w=Math.abs(A); accX+=(X/(3*A))*w; accY+=(Y/(3*A))*w; accW+=w; }
+  }
+  if(accW>0) return [accX/accW, accY/accW];
+  if(vn>0) return [vx/vn, vy/vn];
+  return polyPt(f);
 }
 // point-in-polygon (ray casting) for a GeoJSON Polygon/MultiPolygon feature —
 // used to test whether a location sits inside an SPC outlook risk area
@@ -1579,10 +1604,9 @@ function sitrepTick(){
   const items=[];
   CATS.forEach(cfg=>catItems(cfg,lat,lon,rangeKm).forEach(f=>{
     const g=f.geometry; if(!g) return;
-    // pt = where tapping the card flies to; km = distance for sorting/label.
-    // For a polygon this is the CLOSEST EDGE point to the crosshair — so an
-    // airspace card takes you to the nearest edge near you, even when you're
-    // standing inside it (inside still sorts to the top / reads "overhead").
+    // pt = the CLOSEST EDGE point to the crosshair (label + sorting distance);
+    // for an airspace/TFR zone the tap instead recentres on the polygon CENTRE
+    // (flyPt below). Inside still sorts to the top / reads "overhead".
     const inside=g.type!=='Point'&&pointInFeature(f,lon,lat);
     let cls=cfg.cls?cfg.cls(f):'', det=null, headOv=null, subOv=null, icOv=null, flash=false, hazardOv=null;
     // BREACHING aircraft: this plane's own card BECOMES the LOW AIRCRAFT alert
@@ -1607,7 +1631,11 @@ function sitrepTick(){
       pt=ne.pt; km=inside?0:ne.km;
     }
     if(!pt) return;
-    items.push({cfg,f,pt,cls,tier,inside,km,det,headOv,subOv,icOv,flash,hazardOv});
+    // pt drives the label (direction/distance) + sorting = the NEAREST EDGE.
+    // flyPt is where tapping recentres the crosshair: an airspace/TFR polygon
+    // flies to its CENTRE, everything else flies to the same edge it's labelled.
+    const flyPt=(g.type!=='Point'&&cfg.src==='airspace')?(polyCenter(f)||pt):pt;
+    items.push({cfg,f,pt,flyPt,cls,tier,inside,km,det,headOv,subOv,icOv,flash,hazardOv});
   }));
   // A named airspace zone (esp. Class B) arrives as many same-name shelf
   // polygons — collapse them to the NEAREST single card per class+name.
@@ -1618,14 +1646,14 @@ function sitrepTick(){
   const shown=items.filter(it=>it.cfg.src!=='airspace'||nearestAsp.get(aspKey(it))===it);
   shown.sort((a,z)=>a.tier-z.tier||a.km-z.km);
   const ITEM_CAP=14;
-  shown.slice(0,ITEM_CAP).forEach(({cfg,f,pt,cls,inside,det,headOv,subOv,icOv,flash,hazardOv})=>{
+  shown.slice(0,ITEM_CAP).forEach(({cfg,f,pt,flyPt,cls,inside,det,headOv,subOv,icOv,flash,hazardOv})=>{
     const detTxt=det!=null?det:(cfg.detail?cfg.detail(f):'');
     const ic=icOv!=null?icOv:(typeof cfg.icon==='function'?cfg.icon(f):cfg.icon);
     const head=headOv!=null?headOv:cfg.head(f);
     const sub=subOv!=null?subOv:((cfg.sub?cfg.sub(f):'')||'—');
     cards.push([cls, ic, head, sub,
       (inside?'overhead':dirMi(pt[1],pt[0]))+(detTxt?' · '+detTxt:''),
-      llBtn(pt[0],pt[1]), hazardOv!=null?hazardOv:cfg.hazard, flash?true:undefined]);
+      llBtn(flyPt[0],flyPt[1]), hazardOv!=null?hazardOv:cfg.hazard, flash?true:undefined]);
   });
   general.forEach(c=>cards.push(c));   // area-wide context cards sink to the bottom
   cards.push(wxCard());                // weather forecast — always the bottom card
