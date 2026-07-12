@@ -181,15 +181,14 @@
   .maplibregl-popup-anchor-bottom .maplibregl-popup-tip{border-top-color:#000}
   .maplibregl-popup-anchor-top .maplibregl-popup-tip{border-bottom-color:#000}
   .pop h4{margin:0 0 6px;color:var(--accent);font-size:13px;overflow-wrap:anywhere}
-  /* kv is a block, not flex: the label is a fixed-width inline-block and the
-     value flows as inline text that WRAPS (long place names / areas no longer
-     overflow the box). :first-child keeps unit .u spans out of the label rule. */
-  .pop .kv{font-size:13px;margin:2px 0;overflow-wrap:anywhere}
+  /* kv is one line: a fixed-width label + a value that never wraps. Anything
+     too long to fit clips with an ellipsis instead of spilling onto a second
+     line (values are written terse enough that this rarely bites). */
+  .pop .kv{font-size:13px;margin:2px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .pop .kv>span:first-child{color:var(--ink-dim);display:inline-block;
-    min-width:66px;margin-right:6px;vertical-align:top}
+    min-width:52px;margin-right:6px}
   .pop .sub{font-size:13px;color:var(--ink);line-height:1.45;margin-top:6px;
     max-height:120px;overflow:auto;overflow-wrap:anywhere}
-  .pop .lnk{margin-top:7px;font-size:13px;overflow-wrap:anywhere}
 
   /* ---------- toasts ---------- */
   #toast{position:absolute;top:calc(var(--topbar-h) + 10px);left:50%;transform:translateX(-50%);
@@ -829,11 +828,7 @@ defLayer({
       getJSON(q('Part_Time_National_Security_UAS_Flight_Restrictions','Facility,Floor,Ceiling'),{timeout:12000}).catch(()=>null),
       getJSON(q('Stadiums','NAME'),{timeout:12000}).catch(()=>null)]);
     const feats=[];
-    // stamp a representative lon/lat on each feature so its popup can link out to
-    // a sectional chart centred on the zone
-    const push=(geom,props)=>{ if(!geom) return;
-      const pt=polyPt({geometry:geom}); if(pt){ props.clon=+pt[0].toFixed(4); props.clat=+pt[1].toFixed(4); }
-      feats.push({type:'Feature',geometry:geom,properties:props}); };
+    const push=(geom,props)=>{ if(geom) feats.push({type:'Feature',geometry:geom,properties:props}); };
     // controlled airspace around airports (advisory, aeronautical blue/magenta)
     const CTRL={B:'#5b8def',C:'#c06ad0',D:'#5b8def'};
     ((cls&&cls.features)||[]).forEach(f=>{ const p=f.properties||{},cl=p.CLASS;
@@ -866,13 +861,12 @@ defLayer({
     const hard=p.sev==='hard';
     const key=p.cls==='D'&&p.sev==='ctrl'?'D2':p.cls;
     const hasAlt=(p.lo!=null&&p.lo!=='')||(p.hi!=null&&p.hi!=='');
-    const note=hard?'no-fly (drones prohibited)':p.cls==='STDM'?'active during major events'
-      :p.sev==='caution'?'may be active — verify NOTAMs':'controlled airspace';
+    const note=hard?'no-fly':p.cls==='STDM'?'event TFR'
+      :p.sev==='caution'?'verify NOTAMs':'controlled';
     return `<h4${hard?' style="color:var(--danger)"':''}>${T[key]||'▢ AIRSPACE'}</h4>`
       +`<div class="kv"><span>name</span>${escapeHtml(String(p.name||'—').slice(0,60))}</div>`
       +(hasAlt?`<div class="kv"><span>alt</span>${escapeHtml(String(p.lo||'sfc'))} – ${escapeHtml(String(p.hi||'—'))}</div>`:'')
-      +`<div class="kv"><span>src</span>FAA · ${note}</div>`
-      +(p.clat!=null?`<div class="lnk"><a target="_blank" rel="noopener" href="https://skyvector.com/?ll=${p.clat},${p.clon}&chart=301&zoom=2">view on sectional chart ↗</a></div>`:'');
+      +`<div class="kv"><span>note</span>${note}</div>`;
   }
 });
 
@@ -892,19 +886,18 @@ defLayer({
     const url='https://services1.arcgis.com/fBc8EJBxQRMcHlei/ArcGIS/rest/services/NPS_Land_Resources_Division_Boundary_and_Tract_Data_Service/FeatureServer/2/query'
       +`?geometry=${env}&geometryType=esriGeometryEnvelope&inSR=4326`
       +`&spatialRel=esriSpatialRelIntersects&returnGeometry=true&maxAllowableOffset=0.0015`
-      +'&outFields=UNIT_NAME,UNIT_TYPE,UNIT_CODE&f=geojson';
+      +'&outFields=UNIT_NAME,UNIT_TYPE&f=geojson';
     const j=await getJSON(url,{timeout:15000});
     const feats=[];
     (j.features||[]).forEach(f=>{ if(!f.geometry) return; const p=f.properties||{};
       feats.push({type:'Feature',geometry:f.geometry,properties:{_kind:'nps',
-        name:p.UNIT_NAME||'',utype:p.UNIT_TYPE||'',code:(p.UNIT_CODE||'').toLowerCase(),_col:'#3fa46a'}}); });
+        name:p.UNIT_NAME||'',utype:p.UNIT_TYPE||'',_col:'#3fa46a'}}); });
     return {type:'FeatureCollection',features:feats};
   },
   popup:p=>`<h4 style="color:#3fa46a">🌲 ${escapeHtml(String(p.name||'NPS LAND').toUpperCase())}</h4>
     <div class="kv"><span>type</span>${escapeHtml(String(p.utype||'NPS unit'))}</div>
-    <div class="kv"><span>drone</span>launch / land / operate prohibited</div>
-    <div class="kv"><span>src</span>National Park Service</div>`
-    +(p.code?`<div class="lnk"><a target="_blank" rel="noopener" href="https://www.nps.gov/${escapeHtml(p.code)}/">nps.gov page ↗</a></div>`:'')
+    <div class="kv"><span>drone</span>prohibited</div>
+    <div class="kv"><span>src</span>NPS</div>`
 });
 
 /* =====================================================================
@@ -1156,8 +1149,6 @@ async function openDossier(lngLat){
     }
     if(res.hos) html+=`<div class="kv"><span>head of st.</span>${escapeHtml(res.hos)}</div>`;
     if(res.wiki&&res.wiki.extract) html+=`<div class="sub">${escapeHtml(res.wiki.extract.slice(0,260))}</div>`;
-    if(res.wiki&&res.wiki.content_urls)
-      html+=`<div class="lnk"><a target="_blank" rel="noopener" href="${res.wiki.content_urls.desktop.page}">Wikipedia ↗</a></div>`;
     pop.setHTML('<div class="pop">'+html+'</div>');
   }catch(err){
     pop.setHTML(`<div class="pop"><h4>Dossier</h4>
