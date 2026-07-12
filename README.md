@@ -63,11 +63,12 @@ traffic — and distance-sorted within each tier (capped at 14, plus pinned and
 context cards):
 
 - 🛩️ **LOW AIRCRAFT** — when a plane is in range **and** under 1,000 ft AGL
-  (AGL = barometric altitude − ground elevation at the crosshair), that
-  plane's own card transforms into the red flashing LOW AIRCRAFT alert and
+  (AGL = QNH-corrected altitude − ground elevation under that plane; see below),
+  that plane's own card transforms into the red flashing LOW AIRCRAFT alert and
   sorts to the top; it reverts to the normal ✈️/🪖/🚨 card the moment it
-  climbs out or leaves. Always exactly one card per plane. The same deduped
-  collector feeds the chart's TRFC cells, so card, chart and map halo agree.
+  climbs out or leaves. The card shows the callsign and **ground speed** plus its
+  AGL and bearing. Always exactly one card per plane. The same deduped collector
+  feeds the chart's TRFC cells, so card, chart and map halo agree.
 - ⛔ **FAA NO-FLY / FAA CEILING** — surfaces the chart's own airspace gate: it
   reads the exact `aspCapFt` the flyability chart's FAA column computes (the
   FAA LAANC UASFM grid + defense TFRs swept over the range ring), so the card

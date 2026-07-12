@@ -753,7 +753,8 @@ defLayer({
           properties:{_kind:'sos',_rot:a.track!=null?a.track:0,
             flight:String(a.flight||a.r||a.hex||'?').trim(),hex:a.hex||'',
             code:codes[i],type:a.t||'?',desc:a.desc||'',alt:a.alt_baro??a.alt_geom??'?',
-            altBaro:(typeof a.alt_baro==='number'?a.alt_baro:null)}});
+            altBaro:(typeof a.alt_baro==='number'?a.alt_baro:null),
+            spd:a.gs!=null?Math.round(a.gs):'?'}});
       });
     });
     return {type:'FeatureCollection',features:feats};
@@ -1676,7 +1677,12 @@ function sitrepTick(){
     // it's no longer in breachInfo. One card per plane, never two.
     if(cfg.air && breachInfo.has(acKey(f.properties))){
       cls='danger'; flash=true; hazardOv=true; icOv='🛩️';
-      headOv='LOW AIRCRAFT'; subOv=cut(f.properties.flight||f.properties.hex||'aircraft',12);
+      // sub line: callsign + ground speed (kt) — how fast the low traffic is
+      // crossing your area. spd is ADS-B ground speed; omitted when unknown.
+      const spd=f.properties.spd;
+      const spdTxt=(spd!=null&&spd!=='?'&&spd!=='')?' · '+spd+U(' kt',true):'';
+      headOv='LOW AIRCRAFT';
+      subOv=cut(f.properties.flight||f.properties.hex||'aircraft',12)+spdTxt;
       det=breachInfo.get(acKey(f.properties));
     }
     // Controlled-airspace cards (Class B/C/D/E) are hazard:false, so their
