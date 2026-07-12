@@ -229,7 +229,7 @@
   #ctrlbar .cb-btn:active{background:#fff}
   #ctrlbar .cb-btn:active::before,#ctrlbar .cb-btn:active::after{background:#00140a}
   /* data-loading ring: TOP-LEFT corner of the map, fades in + spins while any
-     feed is fetching (initial load, the 30s pulse, a pan refetch), fades out when
+     feed is fetching (initial load, the refresh pulse, a pan refetch), fades out when
      idle. Sits below the safe-area inset so a notch never clips it. */
   #load-ring{position:absolute;z-index:16;left:calc(16px + var(--sa-l));top:calc(var(--sa-t) + 16px);
     width:22px;height:22px;border:2.5px solid #2a3a4d;border-top-color:var(--accent);
@@ -333,7 +333,7 @@
   <div id="sit-head">
     <span class="title" id="sit-title">◈ CANIFLY</span>
     <span id="sit-load" aria-hidden="true" title="loading data…"></span>
-    <span id="refresh-badge" role="button" tabindex="0" title="tap to refresh now"><b id="refresh-count">30</b>s to update</span>
+    <span id="refresh-badge" role="button" tabindex="0" title="tap to refresh now"><b id="refresh-count">15</b>s to update</span>
   </div>
   <!-- canifly drone-preflight chart — the flyability grid, driven by the
        map-centre crosshair on the same unified data-refresh pulse. -->
@@ -393,10 +393,11 @@ async function getJSON(url,opts={}){
 // All times shown in the user's LOCAL time — the timezone detected for their
 // location (USER.tz, from IP geolocation), falling back to the browser's zone.
 const tzOpt = () => USER.tz ? {timeZone:USER.tz} : {};
-// THE data-refresh cadence, seconds. Everything that says "every 30 s" reads
-// this one knob: the countdown clock + pulse, per-layer cadences (refresh/REFRESH_S
-// pulses), and the radar tile cache-bust window.
-const REFRESH_S=30;
+// THE data-refresh cadence, seconds. Everything live reads this one knob: the
+// countdown clock + pulse, the every-pulse feeds (refresh:REFRESH_S below), the
+// per-layer cadences (refresh/REFRESH_S pulses), and the radar tile cache-bust
+// window. Change this alone and the whole live board follows.
+const REFRESH_S=15;
 // persist a setting; storage can be blocked (private mode) and that's fine
 const store=(k,v)=>{ try{ localStorage.setItem(k,String(v)); }catch(e){} };
 // equirectangular °-offsets spanning `km` at a latitude — THE lat/lon↔km math,
@@ -440,7 +441,7 @@ async function adsb(path){
 // Aircraft near the MAP CENTRE — one single 250-nm point query, nothing fancy.
 // The readsb mirrors cap point queries at 250 nm; that one circle around the
 // centre is plenty and dead reliable. Refetched on every map move and every
-// 30 s pulse. adsb() throws if every mirror is unreachable, which the runtime
+// refresh pulse. adsb() throws if every mirror is unreachable, which the runtime
 // treats as an error (keeps the planes already on the map + retries) rather
 // than a "zero aircraft" wipe.
 async function adsbViewport(){
@@ -567,7 +568,7 @@ const escapeHtml =s => String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','
    1. MAP — CARTO dark basemap (keyless raster tiles)
    ===================================================================== */
 // NEXRAD base-reflectivity mosaic tiles (Iowa State Mesonet, keyless). The
-// ?bust pulls the latest mosaic on the 30 s refresh pulse (tracking the "Xs to
+// ?bust pulls the latest mosaic on each refresh pulse (tracking the "Xs to
 // update" clock); sharing ONE bust value between the map layer and the PCPN
 // sampler lets them share the browser cache instead of double-fetching tiles.
 const RADAR_URL='https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png';
@@ -575,7 +576,7 @@ const radarBust=()=>Math.floor(Date.now()/(REFRESH_S*1000));   // one window per
 let _radarBust=radarBust();
 const RADAR_TILE=RADAR_URL+'?'+_radarBust;
 function refreshRadar(){
-  const b=radarBust(); if(b===_radarBust) return;   // same 30 s window — nothing new
+  const b=radarBust(); if(b===_radarBust) return;   // same refresh window — nothing new
   _radarBust=b;
   const s=gl.getSource('radar'); if(s&&s.setTiles) s.setTiles([RADAR_URL+'?'+b]);
 }
@@ -590,7 +591,7 @@ const gl = new maplibregl.Map({
                'https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
                'https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png'] },
       // NEXRAD base-reflectivity mosaic (~1 km, latest) — Iowa State Mesonet,
-      // keyless. refreshRadar() rides the 30s pulse (new tiles once per mosaic
+      // keyless. refreshRadar() rides the refresh pulse (new tiles once per mosaic
       // minute — see radarBust above). Sits above the
       // basemap, below the aircraft/warning layers (added later). maxzoom caps
       // the TILE fetch at the mosaic's native detail (~z8); it does NOT cap the
@@ -770,24 +771,24 @@ const USER={lat:null,lon:null,src:null,tz:''};
 
 /* ---------------- Movement ---------------- */
 defLayer({
-  id:'nearair', label:'Aircraft (250 nm)', color:AC_COL.nearair, refresh:30,
+  id:'nearair', label:'Aircraft (250 nm)', color:AC_COL.nearair, refresh:REFRESH_S,
   viewport:true,   // data is scoped to the map area → refetch on every view change
   icon:acIconExpr('near'), rotate:true, iconSize:0.6,
   // every civil (non-military) aircraft in the current map area; refetched on
-  // pan/zoom (see moveend) and every 30 s pulse
+  // pan/zoom (see moveend) and every refresh pulse
   loader: async ()=>
     ({type:'FeatureCollection',
       features:acFeatures(await adsbViewport(),'nearair').filter(f=>!f.properties.mil)})
 });
 
 defLayer({
-  id:'mil', label:'Military aircraft', color:AC_COL.mil, refresh:30,
+  id:'mil', label:'Military aircraft', color:AC_COL.mil, refresh:REFRESH_S,
   icon:acIconExpr('mil'), rotate:true, iconSize:0.5,
   loader: async ()=> ({type:'FeatureCollection',features:acFeatures(await adsb('/mil'),'mil')})
 });
 
 defLayer({
-  id:'sos', label:'Emergency squawks', color:AC_COL.sos, refresh:30,
+  id:'sos', label:'Emergency squawks', color:AC_COL.sos, refresh:REFRESH_S,
   icon:acIconExpr('sos'), rotate:true, iconSize:0.6,
   loader: async ()=>{
     // 7700 = general emergency, 7600 = radio failure, 7500 = unlawful interference
@@ -796,7 +797,7 @@ defLayer({
     // ALL three queries down = a feed outage, not "zero emergencies" — throw so
     // the runtime keeps the last-good aircraft and retries (the loader contract).
     // A single failed code still returns the others: that plane's regular
-    // civil/mil card takes over until the next 30s pull.
+    // civil/mil card takes over until the next pulse.
     if(results.every(r=>r.status!=='fulfilled')) throw results[0].reason;
     const feats=[];
     results.forEach((r,i)=>{
@@ -819,7 +820,7 @@ defLayer({
   // or statements) — the US half of the worldwide warnings picture (GDACS below
   // is the global multi-hazard half). Keyless, CORS *. Polygons where present
   // (tornado / severe-thunderstorm / flash-flood / red-flag warnings carry them).
-  id:'nws', label:'NWS warnings (US)', color:'#ff4455', refresh:30,
+  id:'nws', label:'NWS warnings (US)', color:'#ff4455', refresh:REFRESH_S,
   // outline only — no fill (fillOpacity:0). The coloured polygon border shows
   // each warning; details surface on the SITREP card when it's in range.
   geom:'fill', colored:true, fillOpacity:0,
@@ -1135,7 +1136,7 @@ function ensureStaticRegion(){
   });
 }
 
-// ---- unified refresh: ONE pulse() drives every data kick. Scheduled (the 30s
+// ---- unified refresh: ONE pulse() drives every data kick. Scheduled (the
 //      countdown) and forced (tapping the badge) differ ONLY in which layers
 //      they pull — scheduled pulls the DUE dynamic layers on their cadence;
 //      forced pulls every started layer regardless. Both then kick the chart,
@@ -1159,7 +1160,7 @@ function pulse(force){
     runLayer(cfg);
   });
   // The canifly chart rides the SAME pulse: weather + the radar-echo sample every
-  // 30s cycle; Kp throttles itself to the 180s space-weather cadence and the FAA
+  // pulse; Kp throttles itself to the 180s space-weather cadence and the FAA
   // airspace to its location/range-keyed cache — all inside flyRefresh().
   // loadWeather self-throttles (~5 min / >2 km moves) unless forced.
   flyRefresh(); loadWeather(force); refreshRadar();
@@ -1866,9 +1867,9 @@ function refreshViewport(){
         const st=LAYER_STATE[cfg.id];
         if(st&&st.started) runLayer(cfg);
       });
-      // A center move just refreshed the live viewport data, so restart the 30s
+      // A center move just refreshed the live viewport data, so restart the refresh
       // countdown (and the pulse cycle) from now — the next full refresh is a
-      // fresh 30s away, not whatever was left on the clock.
+      // fresh cycle away, not whatever was left on the clock.
       refreshBase=Date.now();
     }
     // STATIC regional layers (airspace, NPS) re-pull ONLY when the crosshair has
@@ -1913,7 +1914,7 @@ gl.on('resize',refreshViewport);
    What's here: the flyability grid (altitudes 400→SFC × NOW/+1/+2/+3h) and
    the settings box with the max-wind and range steppers — no title,
    coordinates or refresh line. Location = the map-centre crosshair; data
-   rides the unified 30s refresh pulse (weather + radar sample every pulse,
+   rides the unified refresh pulse (weather + radar sample every pulse,
    Kp on the 180s space-weather cadence, FAA airspace via a location/range-
    keyed cache). Two-way integration with the SITREP:
      • the RANGE setting is also the LOW AIRCRAFT warning radius;
@@ -2106,9 +2107,10 @@ async function sampleRadarPrecip(lat,lon,rngMi){
   const cx=xf*256, cy=yf*256;                          // global pixel coords at z8
   const tx0=Math.floor((cx-rPx)/256), tx1=Math.floor((cx+rPx)/256);
   const ty0=Math.max(0,Math.floor((cy-rPx)/256)), ty1=Math.min(n-1,Math.floor((cy+rPx)/256));
-  // per-minute cache key — the mosaic itself only updates on that order, so two
-  // 30s pulses inside the same minute reuse the memoised verdict (and, since the
-  // map's radar layer shares the SAME bust value, the browser tile cache too)
+  // cache key = the current refresh window (radarBust) — the mosaic itself only
+  // updates on the order of minutes, so re-sampling within a window reuses the
+  // memoised verdict (and, since the map's radar layer shares the SAME bust
+  // value, the browser tile cache too)
   const bust=radarBust();
   const key=bust+'|'+lat.toFixed(3)+'|'+lon.toFixed(3)+'|'+rngMi;
   if(radarMemo&&radarMemo.key===key) return radarMemo.val;
@@ -2173,10 +2175,10 @@ function flyUnknown(){
   return Object.keys(FLY_ERR_LABEL).filter(k=>FLY.err[k]).map(k=>FLY_ERR_LABEL[k]);
 }
 // The LOUD signal — the DATA card. A feed only counts here after it's stayed
-// unverified past a grace window, so a single self-healing 30s blip (which the
+// unverified past a grace window, so a single self-healing one-cycle blip (which the
 // amber NOW header already flags quietly) doesn't pop a card. flyErrSince stamps
 // when each input started erroring; a key that recovers resets to 0.
-const DATA_ERR_GRACE_MS=35000;   // ~1 refresh cycle + a retry
+const DATA_ERR_GRACE_MS=35000;   // fixed ~35 s wall-clock grace: a self-healing blip (a pulse or two) won't pop the DATA card
 const flyErrSince={om:0,asp:0,kp:0,radar:0};
 function flyUnknownStable(){
   const now=Date.now(), out=[];
@@ -2418,7 +2420,7 @@ document.addEventListener('keydown',e=>{
   if(val){ e.preventDefault(); if(val.id==='mw-val') setMaxWind(MW_DEFAULT); else setRange(RNG_DEFAULT); }
 });
 
-// ---- refresh — called from the unified 30s pulse, on viewport moves, on range
+// ---- refresh — called from the unified refresh pulse, on viewport moves, on range
 // changes and at boot. Weather + the radar sample go every call; Kp re-fetches on
 // the 180s space-weather cadence; airspace via its cache. SINGLE-FLIGHT: while a
 // refresh is in the air new calls just flag a trailing re-run (which then reads
@@ -2501,7 +2503,7 @@ function flyOnMove(){
 }
 
 // Data-loading spinner — on while ANY map layer, the canifly chart or the weather
-// pull is mid-fetch (initial load, the 30s pulse, a pan refetch). Drives both the
+// pull is mid-fetch (initial load, the refresh pulse, a pan refetch). Drives both the
 // bottom-left map ring and the inline spinner after the SITREP title.
 function updateLoadRing(){
   const busy = flyBusy || wxBusy || LAYERS.some(cfg=>{ const st=LAYER_STATE[cfg.id]; return st&&st.loading; });
@@ -2652,7 +2654,7 @@ gl.on('load',()=>{
   // the region around YOU (with a fallback below if no fix ever lands).
   LAYERS.forEach(cfg=>{ LAYER_STATE[cfg.id].started=true; if(!cfg.static) runLayer(cfg); });
   setTimeout(ensureStaticRegion,3500);   // fallback: load the region even if location never resolves
-  refreshBase=Date.now(); setInterval(refreshTick,1000); refreshTick(); // 30s refresh + clock
+  refreshBase=Date.now(); setInterval(refreshTick,1000); refreshTick(); // refresh pulse + clock
   updateLoadRing(); setInterval(updateLoadRing,200);   // bottom-left data-loading ring
   loadXray(); setInterval(loadXray,180000); // space weather: GOES X-ray flare (SITREP card)
   loadWeather(true);   // weather forecast: the always-present bottom SITREP card

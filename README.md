@@ -170,17 +170,17 @@ gate input.
 
 | Layer | Source | Refresh |
 |---|---|---|
-| Aircraft (250 nm around centre, civil) | airplanes.live → adsb.fi fallback | on move · 30 s |
-| Military aircraft (worldwide) | ADS-B `/mil` | 30 s |
-| Emergency squawks (worldwide) | ADS-B `/squawk` | 30 s |
-| NWS warning polygons (US) | api.weather.gov | 30 s |
-| NEXRAD reflectivity mosaic | Iowa State Mesonet | 30 s |
+| Aircraft (250 nm around centre, civil) | airplanes.live → adsb.fi fallback | on move · 15 s |
+| Military aircraft (worldwide) | ADS-B `/mil` | 15 s |
+| Emergency squawks (worldwide) | ADS-B `/squawk` | 15 s |
+| NWS warning polygons (US) | api.weather.gov | 15 s |
+| NEXRAD reflectivity mosaic | Iowa State Mesonet | 15 s |
 | SPC Day-1 outlook (hidden; feeds cards) | NOAA SPC | 15 min |
 | FAA airspace + restrictions (regional cache) | FAA ArcGIS ×5 services | on travel |
 | NPS lands (regional cache) | NPS ArcGIS | on travel |
 
 **Two refresh classes.** *Dynamic* feeds (aircraft, radar, weather, Kp, NWS,
-SPC) ride the 30 s pulse and refetch on pan/zoom. *Static* feeds (FAA airspace,
+SPC) ride the 15 s pulse and refetch on pan/zoom. *Static* feeds (FAA airspace,
 NPS lands) barely change, and the full US is ~50 MB (times out) — so they're a
 **regional cache**: pulled once for a ~85-mile box around you, drawn at *every*
 zoom, and re-pulled only when you travel out of that region. That's why
