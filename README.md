@@ -105,14 +105,29 @@ context cards):
   the chart can't compute — the red case reddens the title so a total weather
   outage can't hide behind a green skeleton.
 - 🚨 emergency squawks (7700/7600/7500) · ⚠️ NWS **warnings** (not watches) ·
-  ⛔/⚠️ FAA restrictions (defense, prohibited, security, MOA, stadium…) ·
-  🏞️ NPS land · 🗼 controlled airspace (Class B/C/D/E) · ✈️ / 🪖 civil and
-  military traffic. Every airspace card is tinted to match its **map polygon**
-  colour — blue Class B/D, magenta Class C/E, red defense/prohibited, orange
-  restricted, gold MOA/warning/stadium — so a card reads at a glance as the
-  zone drawn on the map. (Controlled-airspace tints are context — authorization
-  required — and don't drive the title; the real ceiling severity stays on the
-  FAA card above.)
+  ✈️ / 🪖 civil and military traffic. Airspace cards follow a **solid three-way
+  model** — *authorization* (controlled airspace, needs a ceiling) is not the
+  same as a *restriction* (a stay-out zone), and neither is an *advisory*:
+  - ⛔ **hard restrictions** — defense, prohibited, security (NSUFR) — are red
+    and **ground** the chart: drones are prohibited outright.
+  - ⚠️ **conditional restrictions** — restricted areas and stadium TFRs — are
+    amber "no-fly if active" / "no-fly during events". They're only active on a
+    schedule the app can't read live, so per fail-safe posture they *warn* but
+    don't silently ground a flight that may be perfectly legal.
+  - ℹ️ **advisory** — MOAs, warning / alert / danger areas — carry no colour and
+    no title weight ("advisory only"): they concern manned military traffic, not
+    a Part-107 drone in the 400-ft band, so treating them as restrictions would
+    be a false alarm.
+  - 🗼 **controlled airspace** (Class B/C/D/E) reads "authorization (LAANC)" —
+    context that you need a ceiling here; the real ceiling severity stays on the
+    FAA card above, and the tint (blue Class B/D, magenta Class C/E) doesn't
+    drive the title.
+
+  Every zone whose **floor is above 400 ft** is dropped entirely — it can't
+  touch the drone band — so the cards only ever show airspace that actually
+  matters at flight altitude. Each card is still tinted to match its **map
+  polygon** colour (red defense/prohibited, orange restricted, gold advisory) so
+  it reads at a glance as the zone drawn on the map.
 - Context cards at the bottom: ☀️ M/X solar flares (an HF-blackout risk, but not
   a chart grounding gate), then 🌪️/⛈️ SPC Day-1 **outlooks** — *info only*, no
   colour and no title contribution (an outlook is "expected", not a warning) —

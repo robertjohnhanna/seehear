@@ -819,6 +819,19 @@ defLayer({
   }
 });
 
+// A special-use-airspace FLOOR (LOWER_VAL / Floor) in feet: 'SFC'/blank/0 →
+// surface (0); 'FL180' → 18000; a plain number → that many feet; anything
+// unparseable → surface (conservative — show it). Used to drop zones that begin
+// above the drone band, which can't touch a ≤400-ft flight.
+function floorFt(v){
+  if(v==null) return 0;
+  const s=String(v).trim().toUpperCase();
+  if(s===''||/^(SFC|SURF|GND|GROUND|0)$/.test(s)) return 0;
+  const fl=s.match(/FL\s*0*(\d+)/); if(fl) return +fl[1]*100;
+  const n=parseFloat(s.replace(/[, ]/g,''));
+  return isFinite(n)?n:0;
+}
+
 defLayer({
   // FAA AIRSPACE overlay — the zones that gate low drone flight, drawn LIGHTLY
   // as background context (faint fill + thin outline). Two feeds, both keyless
@@ -863,15 +876,22 @@ defLayer({
     // national-defense TFR zones — hard no-fly (red)
     ((def&&def.features)||[]).forEach(f=>push(f.geometry,{_kind:'airspace',sev:'hard',cls:'DEF',code:'DEF',
       name:(f.properties&&f.properties.NAME)||'',_col:'#ff5a3c'}));
-    // special-use airspace: Prohibited = hard (red); Restricted = orange; MOA /
-    // Warning / Alert / Danger = amber advisory (often active only by schedule/NOTAM)
+    // special-use airspace, right-sized to a drone at ≤400 ft:
+    //   • Prohibited (P)        → HARD no-fly (red)
+    //   • Restricted (R)        → CONDITIONAL no-fly (amber, only when active)
+    //   • MOA/Warning/Alert/Danger → ADVISORY (they don't restrict a Part-107
+    //     drone — military/hazard activity to be aware of, not a no-fly)
+    // Any zone whose FLOOR is above the drone band (400 ft) is dropped — it can't
+    // touch these altitudes, so drawing/carding it would be noise.
     const SUA={P:['hard','PROH','#ff5a3c'],R:['caution','RSTD','#ff8c42'],
-      MOA:['caution','MOA','#d9b44a'],W:['caution','WARN','#d9b44a'],A:['caution','ALRT','#d9b44a'],D:['caution','DNGR','#d9b44a']};
+      MOA:['advisory','MOA','#d9b44a'],W:['advisory','WARN','#d9b44a'],A:['advisory','ALRT','#d9b44a'],D:['advisory','DNGR','#d9b44a']};
     ((sua&&sua.features)||[]).forEach(f=>{ const p=f.properties||{},t=SUA[p.TYPE_CODE]; if(!t||!f.geometry) return;
+      if(floorFt(p.LOWER_VAL)>SPEC.regFt) return;   // starts above the drone band → irrelevant
       push(f.geometry,{_kind:'airspace',sev:t[0],cls:p.TYPE_CODE,code:t[1],
         name:p.NAME||'',lo:p.LOWER_VAL,hi:p.UPPER_VAL,_col:t[2]}); });
     // part-time national-security UAS zones — hard no-fly for drones (red)
     ((nsufr&&nsufr.features)||[]).forEach(f=>{ const p=f.properties||{};
+      if(floorFt(p.Floor)>SPEC.regFt) return;
       push(f.geometry,{_kind:'airspace',sev:'hard',cls:'NSUFR',code:'NSUF',
         name:p.Facility||'security zone',lo:p.Floor,hi:p.Ceiling,_col:'#ff5a3c'}); });
     // stadiums → 3 nm (5.556 km) rings (the 99.7 event TFR), amber advisory
@@ -1359,30 +1379,38 @@ const CATS=[
   {src:'mil', hazard:false, air:true, icon:'🪖', cls:()=>'alert', filter:notSos,
    head:f=>cut(f.properties.flight||f.properties.hex||'?',10),
    sub:acSub, detail:ALT},
-  // FAA airspace RESTRICTIONS — each in-view zone is a distance-sorted, tappable
-  // card (tap flies the map to it). Restrictions (defense / prohibited / MOA /
-  // stadium / …) are red/amber hazards; controlled airspace (Class B/C/D/E) is a
-  // separate NEUTRAL card below (authorization, not a no-fly).
-  {src:'airspace', hazard:true, filter:f=>f.properties.sev!=='ctrl',
+  // FAA airspace RESTRICTIONS that gate a drone — each in-view zone is a
+  // distance-sorted, tappable card (tap flies to it). HARD no-fly (red: defense,
+  // prohibited, security) or CONDITIONAL no-fly (amber: restricted / stadium,
+  // only when active — per the app's advisory posture these flag but don't
+  // ground the chart). hazard:true → drives the title.
+  {src:'airspace', hazard:true, filter:f=>f.properties.sev==='hard'||f.properties.sev==='caution',
    icon:f=>f.properties.sev==='hard'?'⛔':'⚠️',
    cls:f=>f.properties.sev==='hard'?'danger':'alert',
    head:f=>({DEF:'DEFENSE AIRSPACE',NSUFR:'SECURITY NO-FLY',P:'PROHIBITED AREA',R:'RESTRICTED AREA',
-     MOA:'MILITARY OPS AREA',W:'WARNING AREA',A:'ALERT AREA',D:'DANGER AREA',STDM:'STADIUM TFR'}[f.properties.cls]||'AIRSPACE'),
+     STDM:'STADIUM TFR'}[f.properties.cls]||'AIRSPACE'),
    sub:f=>cut(f.properties.name||'—',26),
-   detail:f=>f.properties.sev==='hard'?'drones prohibited':f.properties.cls==='STDM'?'during events':'verify NOTAMs'},
+   detail:f=>f.properties.sev==='hard'?'drones prohibited'
+     :f.properties.cls==='STDM'?'no-fly during events':'no-fly if active'},
+  // ADVISORY special-use airspace (MOA / Warning / Alert / Danger): does NOT
+  // restrict a Part-107 drone at ≤400 ft — military / hazard activity to be
+  // aware of, not a no-fly. Neutral info: hazard:false (no title contribution),
+  // tinted its map-polygon colour like the other airspace cards.
+  {src:'airspace', hazard:false, filter:f=>f.properties.sev==='advisory', icon:'ℹ️', cls:()=>'',
+   head:f=>({MOA:'MILITARY OPS AREA',W:'WARNING AREA',A:'ALERT AREA',D:'DANGER AREA'}[f.properties.cls]||'SPECIAL-USE AIRSPACE'),
+   sub:f=>cut(f.properties.name||'—',26), detail:()=>'advisory only'},
   // Controlled airspace (Class B/C/D + surface E) in range — coloured its map
-  // POLYGON colour (blue B/D, magenta C/E) so the card matches the drawn bubble;
-  // drones need LAANC / ATC authorization here. The class alone isn't a no-fly,
-  // so the actual drone-ceiling severity (the 0-ft / <400-ft no-fly) is still
-  // carried by the red/amber FAA CEILING card, driven by the LAANC grid the chart
-  // uses. hazard:false keeps it out of the title-severity roll-up — the chart's
-  // NOW column is the flyability verdict, not the mere presence of nearby
-  // controlled airspace. cls 'alert' is only a fallback tint if _col is missing.
-  // Deduped below so Class B's shelves collapse to one.
+  // POLYGON colour (blue B/D, magenta C/E) so the card matches the drawn bubble.
+  // This is the AUTHORIZATION case (not a restriction): drones fly here with
+  // LAANC up to the grid ceiling, so the actual drone-ceiling severity (the 0-ft
+  // / <400-ft no-fly) is carried by the red/amber FAA CEILING card, driven by
+  // the LAANC grid the chart uses. hazard:false keeps it out of the title
+  // roll-up. cls 'alert' is only a fallback tint if _col is missing. Deduped
+  // below so Class B's shelves collapse to one.
   {src:'airspace', hazard:false, ctrl:true, filter:f=>f.properties.sev==='ctrl', icon:'🗼', cls:()=>'alert',
    head:f=>({B:'CLASS B AIRSPACE',C:'CLASS C AIRSPACE',D:'CLASS D AIRSPACE',E:'CLASS E AIRSPACE'}[f.properties.cls]||'AIRSPACE'),
    sub:f=>cut(f.properties.name||'—',26),
-   detail:()=>'authorization'},
+   detail:()=>'authorization (LAANC)'},
   // National Park Service lands — a drone no-fly (can't launch / land / operate).
   {src:'nps', hazard:true, icon:'🏞️', cls:()=>'danger',
    head:f=>cut(f.properties.name||'NPS LAND',20),
