@@ -89,10 +89,14 @@
     display:flex;flex-direction:column;overflow:hidden}
   #sitrep{top:0;right:0;left:auto;width:320px;bottom:0;
     padding-right:var(--sa-r);border:1px solid var(--line)}
-  /* data-refresh countdown on the SITREP title line, right-justified */
+  /* data-refresh countdown on the SITREP title line, right-justified. Tapping it
+     forces an immediate refresh, so it reads as a control. */
   #refresh-badge{margin-left:auto;color:var(--ink-dim);font-weight:400;letter-spacing:.5px;
-    font-size:13px;white-space:nowrap;font-variant-numeric:tabular-nums;flex:0 0 auto}
+    font-size:13px;white-space:nowrap;font-variant-numeric:tabular-nums;flex:0 0 auto;
+    cursor:pointer;-webkit-user-select:none;user-select:none}
   #refresh-badge b{color:var(--ink)}
+  #refresh-badge:active{color:var(--accent)}
+  @media(hover:hover){#refresh-badge:hover{color:var(--ink)}}
   /* ---------- canifly — the static drone-preflight chart ----------
      Ported from the canifly repo (which stays standalone and untouched): just
      the flyability grid + the settings box, no title/coords/refresh line.
@@ -198,12 +202,21 @@
     border-top-color:var(--accent);border-radius:50%;animation:sp .7s linear infinite}
   @keyframes sp{to{transform:rotate(360deg)}}
   /* ---------- SITREP briefing panel (right side) ---------- */
-  #sit-title.warn{color:var(--danger)!important}
-  #sit-title.alert{color:var(--warn)!important}
   #sit-head{display:flex;align-items:center;gap:8px;padding:9px 12px;
     border-bottom:1px solid var(--line);flex:0 0 auto;min-height:48px}
   #sit-head .title{color:var(--accent);font-size:13px;letter-spacing:2px;font-weight:700;
     flex:0 0 auto}
+  /* title severity — defined AFTER .title so they win on colour without
+     !important (which would otherwise beat the acflash animation below) */
+  #sit-title.alert{color:var(--warn)}
+  #sit-title.warn{color:var(--danger)}
+  /* EXTRA ALERT — an aircraft breaching the range+altitude threshold flashes the
+     SITREP title, its card headline and its map halo between red and white. */
+  @keyframes acflash{0%,100%{color:var(--danger)}50%{color:#fff}}
+  #sit-title.acflash{animation:acflash .9s ease-in-out infinite}
+  .sit-row.acflash .s1{animation:acflash .9s ease-in-out infinite}
+  @media (prefers-reduced-motion:reduce){
+    #sit-title.acflash,.sit-row.acflash .s1{animation:none}}
   /* center-on-me: floating control at the bottom-right corner of the map
      (the open area sits just left of the 320px right panel) */
   #loc-btn{position:absolute;z-index:16;right:calc(334px + var(--sa-r));bottom:16px;
@@ -249,9 +262,14 @@
   .sit-row.alert .s1{color:var(--warn)}
   .sit-row.danger .s1{color:var(--danger)}
   .sit-empty{padding:14px 12px;font-size:13px;color:var(--ink-dim);line-height:1.5}
-  /* ---- minimalist: EVERYTHING is upper-case except unit tokens (.u) ---- */
+  /* ---- minimalist: EVERYTHING is upper-case, units included ----
+     Units (.u) inherit the all-caps by default (ft→FT, mi→MI, mph→MPH — all
+     correct upper-cased). ONLY a unit whose meaning depends on lower case
+     (SI symbols like km/kt, or a mixed-case index like Kp) is tagged .u.lc to
+     stay verbatim; there are none in the current UI, but the escape exists. */
   body{text-transform:uppercase}
-  .u{text-transform:none!important;letter-spacing:0;font-style:normal}
+  .u{letter-spacing:0;font-style:normal}
+  .u.lc{text-transform:none}
   .sit-row .tx .s1{letter-spacing:.3px}
 
   #user-dot{width:16px;height:16px;border-radius:50%;background:var(--accent);
@@ -316,7 +334,7 @@
   <div id="sit-head">
     <span class="title" id="sit-title">◈ SITREP</span>
     <span id="sit-load" aria-hidden="true" title="loading data…"></span>
-    <span id="refresh-badge" title="time to next data refresh"><b id="refresh-count">30</b>s to update</span>
+    <span id="refresh-badge" role="button" tabindex="0" title="tap to refresh now"><b id="refresh-count">30</b>s to update</span>
   </div>
   <!-- canifly drone-preflight chart — the flyability grid, driven by the
        map-centre crosshair on the same unified data-refresh pulse. -->
@@ -386,9 +404,10 @@ function bearing(lat1,lon1,lat2,lon2){
 }
 const COMPASS8=['N','NE','E','SE','S','SW','W','NW'];
 const compass=deg=>COMPASS8[Math.round(deg/45)%8];
-// Imperial units. U() wraps a unit token so it stays lowercase inside
-// ALL-CAPS chrome (see .u in CSS). Distances in mi/ft, temp °F, wind mph.
-const U = s => `<span class="u">${s}</span>`;
+// Imperial units. U() wraps a unit token; by default it follows the all-caps
+// chrome (ft→FT, mi→MI, mph→MPH — all correct). Pass lc:true only for a unit
+// that needs its case preserved to stay correct (see .u / .u.lc in CSS).
+const U = (s,lc) => `<span class="u${lc?' lc':''}">${s}</span>`;
 const fmtMi = km => { const mi=km*0.621371;
   return mi<0.5?Math.round(mi*5280)+U(' ft'):mi<100?mi.toFixed(1)+U(' mi'):Math.round(mi)+U(' mi'); };
 
@@ -1029,6 +1048,21 @@ function refreshTick(){
   if(elapsed>=REFRESH_S){ refreshBase=Date.now(); refreshDueLayers(); refreshRadar(); if(el) el.textContent=REFRESH_S; }
   else if(el) el.textContent=REFRESH_S-elapsed;
 }
+// Force an immediate refresh NOW (tapping the "Xs to update" badge). Pulls every
+// started layer regardless of its cadence, kicks the chart + weather + radar, and
+// restarts the 30s countdown from zero. Layers already mid-flight are skipped
+// (st.loading) and the FAA single-flight guard prevents stacked hits.
+function forceRefresh(){
+  LAYERS.forEach(cfg=>{ const st=LAYER_STATE[cfg.id]; if(st&&st.started&&!st.loading) runLayer(cfg); });
+  flyRefresh(); loadWeather(true); refreshRadar();
+  refreshBase=Date.now();
+  const el=$('#refresh-count'); if(el) el.textContent=REFRESH_S;
+}
+(function bindRefreshBadge(){
+  const b=$('#refresh-badge'); if(!b) return;
+  b.addEventListener('click',forceRefresh);
+  b.addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); forceRefresh(); } });
+})();
 
 // No layer selector: every layer's map source + style is created here and stays
 // on (SPC is defaultOff = hidden, loaded only to feed the SITREP outlook card).
@@ -1437,8 +1471,9 @@ function sitrepTick(){
   // action (fly-to / open) rides as data-* on the row, so tapping anywhere on a
   // plane card flies to the plane, an outlook card opens SPC, etc. A row with no
   // valid action gets no data-* and isn't clickable.
-  const row=(cls,ic,l1,l2,l3,act)=>rows.push(
-    `<div class="sit-row${cls?' '+cls:''}${act?' clickable':''}"${act?' '+act:''}><span class="ic">${ic}</span>`+
+  // flash: extra-alert headline (a breaching aircraft) → the .s1 flashes red/white
+  const row=(cls,ic,l1,l2,l3,act,flash)=>rows.push(
+    `<div class="sit-row${cls?' '+cls:''}${flash?' acflash':''}${act?' clickable':''}"${act?' '+act:''}><span class="ic">${ic}</span>`+
     `<span class="tx"><span class="s1">${l1||''}</span><span class="s2">${l2||''}</span><span class="s3">${l3||''}</span></span></div>`);
   const llBtn=(lo,la)=>isFinite(lo)&&isFinite(la)?`data-act="fly" data-ll="${lo+','+la}"`:'';
   const openBtn=url=>`data-act="open" data-url="${escapeHtml(url)}"`;
@@ -1460,19 +1495,25 @@ function sitrepTick(){
   //    these radii). Recomputed every SITREP tick for the planes currently in
   //    the radius. Ground aircraft report alt='ground'/'?' → skipped. --
   const inRing=planesNear(lat,lon,rangeKm);
+  let acFlash=false, haloFeats=[];   // breaching aircraft → title/card/map flash
   if(inRing.length){
     const ground=groundElevFt(lat,lon);          // ft AMSL, null until fetched
     const lowAc=inRing.map(a=>({...a,agl:ground==null?a.alt:a.alt-ground}))
                       .filter(a=>a.agl<WARN_AGL_FT);
     if(lowAc.length){
+      acFlash=true;
+      haloFeats=lowAc.map(a=>({type:'Feature',
+        geometry:{type:'Point',coordinates:a.pt},properties:{}}));
       lowAc.sort((a,z)=>a.km-z.km); const lo=lowAc[0], p=lo.f.properties;
       const aglTxt=Math.max(0,Math.round(lo.agl))+U(' ft')+(ground==null?'':' AGL');
       cards.push(['danger','🛩️','LOW AIRCRAFT',
         cut(p.flight||p.hex||'aircraft',12)+(lowAc.length>1?' +'+(lowAc.length-1):''),
         dirMi(lo.pt[1],lo.pt[0])+' · '+aglTxt,
-        llBtn(lo.pt[0],lo.pt[1]), true]);
+        llBtn(lo.pt[0],lo.pt[1]), true, /*flash*/true]);
     }
   }
+  // drive the pulsing map halo(s) at the breaching aircraft (empty = cleared)
+  setAcAlert(haloFeats);
 
   // -- GENERAL context cards (area-wide, not a single map point). Collected here
   //    but appended at the BOTTOM of the pile (after the distance-sorted items) —
@@ -1557,7 +1598,8 @@ function sitrepTick(){
   cards.forEach(cd=>{ if(cd[6]) titleSev=Math.max(titleSev,cd[0]==='danger'?2:cd[0]==='alert'?1:0); });
   const t=$('#sit-title'); t.classList.remove('warn','alert');
   if(titleSev>=2) t.classList.add('warn'); else if(titleSev>=1) t.classList.add('alert');
-  cards.forEach(cd=>row(cd[0],cd[1],cd[2],cd[3],cd[4],cd[5]));
+  t.classList.toggle('acflash',acFlash);   // breaching aircraft → flash the title red/white
+  cards.forEach(cd=>row(cd[0],cd[1],cd[2],cd[3],cd[4],cd[5],cd[7]));
 
   // the weather card is always appended, so there's always at least one row
   $('#sit-body').innerHTML=rows.join('');
@@ -2145,6 +2187,40 @@ function updateLoadRing(){
 }
 
 /* =====================================================================
+   9a. EXTRA-ALERT AIRCRAFT HALO — a pulsing red/white beacon under any aircraft
+   breaching the range+altitude threshold (the same LOW AIRCRAFT set that reds
+   the SITREP title and its card). setAcAlert() is called every SITREP tick with
+   the breaching positions; the halo pulses while any exist and clears when none.
+   Motion is suppressed under prefers-reduced-motion (a static red halo instead).
+   ===================================================================== */
+let acAlertN=0, acPulseRaf=0;
+const AC_PULSE_REDUCED=!!(window.matchMedia&&window.matchMedia('(prefers-reduced-motion:reduce)').matches);
+function setAcAlert(feats){
+  const s=gl.getSource('src-acalert'); if(!s) return;   // not added yet (pre-boot)
+  s.setData({type:'FeatureCollection',features:feats||[]});
+  acAlertN=(feats&&feats.length)||0;
+  if(acAlertN) startAcPulse();
+}
+function acPulseFrame(){
+  if(!acAlertN||!gl.getLayer('ly-acalert')){ acPulseRaf=0; return; }
+  const t=(Date.now()%1200)/1200, k=(1-Math.cos(t*2*Math.PI))/2;   // 0→1→0 each 1.2 s
+  gl.setPaintProperty('ly-acalert','circle-radius',10+13*k);
+  gl.setPaintProperty('ly-acalert','circle-opacity',0.12+0.5*(1-k));
+  gl.setPaintProperty('ly-acalert','circle-color',k>0.5?'#ffffff':'#ff4455');
+  acPulseRaf=requestAnimationFrame(acPulseFrame);
+}
+function startAcPulse(){
+  if(!gl.getLayer('ly-acalert')) return;
+  if(AC_PULSE_REDUCED){   // static red halo — no motion
+    gl.setPaintProperty('ly-acalert','circle-radius',15);
+    gl.setPaintProperty('ly-acalert','circle-opacity',0.5);
+    gl.setPaintProperty('ly-acalert','circle-color','#ff4455');
+    return;
+  }
+  if(!acPulseRaf) acPulseFrame();
+}
+
+/* =====================================================================
    9. RANGE RING — a dashed circle drawn on the map around the crosshair (the
    map centre) at the current canifly RANGE setting (RNG.mi). It tracks the
    crosshair as you pan and resizes the instant the range stepper changes,
@@ -2202,6 +2278,13 @@ gl.on('load',()=>{
   // FAA airspace + NPS lands are background context — sink their fills + outlines
   // beneath the aircraft icons so planes and warnings always read on top.
   ['ly-nps','lyl-nps','ly-airspace','lyl-airspace'].forEach(id=>{ if(gl.getLayer(id)&&gl.getLayer('ly-nearair')) gl.moveLayer(id,'ly-nearair'); });
+  // extra-alert halo — a pulsing beacon under any breaching aircraft, sat just
+  // below the plane icons so the icon stays crisp on top of its own halo.
+  gl.addSource('src-acalert',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
+  gl.addLayer({id:'ly-acalert',type:'circle',source:'src-acalert',
+    paint:{'circle-radius':14,'circle-color':'#ff4455','circle-opacity':0.4,
+      'circle-stroke-color':'#ffffff','circle-stroke-width':1.5,'circle-stroke-opacity':0.9}});
+  if(gl.getLayer('ly-nearair')) gl.moveLayer('ly-acalert','ly-nearair');
   // range ring — a dashed accent circle tracking the crosshair at RNG.mi, added
   // last so it sits on top of the map layers (under the HTML crosshair overlay)
   gl.addSource('src-ring',{type:'geojson',data:{type:'FeatureCollection',features:[]}});

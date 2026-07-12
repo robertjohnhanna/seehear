@@ -117,7 +117,12 @@ parameters to the public weather APIs.
 - US-centric hazard feeds: NWS, SPC, FAA, NEXRAD, and NPS cover the United
   States; aircraft, weather, and space-weather feeds are global.
 - Units are imperial (mi/ft, °F, mph); aircraft popups use aviation units
-  (ft, kt). The UI is all-caps except unit tokens.
+  (ft, kt). The UI is all-caps, units included — only a unit whose meaning
+  depends on its case (SI symbols, a mixed-case index) would stay verbatim.
+- An aircraft that breaches the range **and** the 1,000 ft AGL warning
+  altitude flashes red/white on the map (a pulsing halo), in the SITREP
+  title, and on its LOW AIRCRAFT card. Tapping the "Xs to update" badge
+  forces an immediate refresh.
 - AGL uses the ground elevation at the crosshair (cached per ~1 km cell) —
   a good approximation at ring radii; failed lookups are retried, never
   cached, so bad data can't suppress the traffic warnings.
