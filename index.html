@@ -1211,6 +1211,12 @@ function wxCard(wxState, wn){
       else { ic='☁️'; head='LOW CLOUD'; sub='base '+Math.round(wn.cloudCapFt+SPEC.clrFt)+U(' ft')+' · need 500 clr'; }
       return {pin:true, card:['danger',ic,head,sub,condLine(),'',true]};
     }
+    // PRECIP INBOUND: an echo in the grey ring (1–5 mi) but not yet grounding in the
+    // red ring — a storm approaching. Promote the card to amber ("land now") above a
+    // mere reduced ceiling; red precip overhead (above) already outranks it.
+    if(wn.precipInbound){
+      return {pin:true, card:['alert','🌧️','PRECIP INBOUND','radar echo within '+GREY_MI+U(' mi'),condLine(),'',true]};
+    }
     if(wxCap<SPEC.regFt){
       const wind=wn.windCeilFt<=wn.cloudCapFt;
       return {pin:true, card:['alert',wind?'💨':'☁️',(wind?'WIND':'CLOUD')+' CEILING '+wxCap+U(' ft'),
@@ -1839,7 +1845,13 @@ function sitrepTick(){
   // reduced-or-unverified / red grounded (same 0·1·2 the title colour uses).
   const sevCol=SEV_COL[titleSev]||SEV_COL[0];
   if(gl.getLayer('ly-ring')) gl.setPaintProperty('ly-ring','line-color',sevCol);
-  cards.forEach(cd=>row(cd[0],cd[1],cd[2],cd[3],cd[4],cd[5],cd[7],cd[8]));
+  // The red flashing LOW AIRCRAFT breach is the most immediate, out-of-nowhere threat
+  // (a manned aircraft low and in range), so it jumps to the very TOP of the pile —
+  // above even the pinned FAA / space-weather / data cards. cd[7] (the flash flag) is
+  // set ONLY for an in-range low aircraft; filter is stable so multiple breaches keep
+  // their distance order.
+  const ordered=[...cards.filter(cd=>cd[7]), ...cards.filter(cd=>!cd[7])];
+  ordered.forEach(cd=>row(cd[0],cd[1],cd[2],cd[3],cd[4],cd[5],cd[7],cd[8]));
 
   // the weather card is always appended, so there's always at least one row
   $('#sit-body').innerHTML=rows.join('');
@@ -2122,13 +2134,15 @@ function hydrateAsp(){
 }
 function persistAsp(){ store(ASP_CACHE_KEY,JSON.stringify(aspCache)); }
 
-// ---- PCPN: is there NEXRAD reflectivity within the RANGE setting? Samples the
+// ---- PCPN: is there NEXRAD reflectivity within `rngMi` of the point? Samples the
 // SAME Iowa Mesonet mosaic the map's radar layer draws, at its native z8, on an
-// offscreen canvas. Returns true/false, or null when the tiles can't be read
-// (load/CORS failure) — unknown fails OPEN (no gate) and ambers the NOW header
-// + the SITREP title via FLY.err. ----
+// offscreen canvas. Called twice per refresh — at the RED ring (1 mi, grounds NOW)
+// and the GREY ring (5 mi, the "precip inbound" amber heads-up). Returns true/false,
+// or null when the tiles can't be read (load/CORS failure) — unknown fails OPEN (no
+// gate) and ambers the NOW header + the SITREP title via FLY.err. ----
 const RADAR_Z=8, RADAR_ALPHA=80, RADAR_MIN_PX=2;
-let radarMemo=null;   // {key,val}: identical minute+point+range → reuse, skip the decode/scan
+const radarMemo=new Map();   // key → val: identical minute+point+range reuses the scan.
+const RADAR_MEMO_MAX=8;      // small LRU so the red + grey ring samples don't evict each other
 async function sampleRadarPrecip(lat,lon,rngMi){
   const n=1<<RADAR_Z, d=Math.PI/180;
   const xf=(lon+180)/360*n;
@@ -2145,7 +2159,7 @@ async function sampleRadarPrecip(lat,lon,rngMi){
   // value, the browser tile cache too)
   const bust=radarBust();
   const key=bust+'|'+lat.toFixed(3)+'|'+lon.toFixed(3)+'|'+rngMi;
-  if(radarMemo&&radarMemo.key===key) return radarMemo.val;
+  if(radarMemo.has(key)) return radarMemo.get(key);
   const tiles=[];
   for(let tx=tx0;tx<=tx1;tx++)for(let ty=ty0;ty<=ty1;ty++)
     tiles.push({x:((tx%n)+n)%n,y:ty,px:(tx-tx0)*256,py:(ty-ty0)*256});
@@ -2167,7 +2181,8 @@ async function sampleRadarPrecip(lat,lon,rngMi){
     const dx=x-ox, dy=y-oy; if(dx*dx+dy*dy>rPx*rPx) continue;
     if(px[(y*w+x)*4+3]>=RADAR_ALPHA && ++hits>=RADAR_MIN_PX){ found=true; break; }   // ≥2 px kills speckle
   }
-  radarMemo={key,val:found};
+  radarMemo.set(key,found);
+  if(radarMemo.size>RADAR_MEMO_MAX) radarMemo.delete(radarMemo.keys().next().value);   // evict oldest
   return found;
 }
 
@@ -2200,7 +2215,8 @@ function flyTrafficCeilFt(){
 const FLY={
   data:null,     // last good {lat,lon,aloft,kp,asp} — lat/lon = where it was fetched
   detail:null,   // computed render model (kept for tests/debug)
-  precip:null,   // radar echo within RNG.mi? true / false / null (unknown → fail open)
+  precip:null,   // radar echo within the RED ring (1 mi)? true/false/null → grounds NOW
+  precipInbound:null,   // radar echo in the GREY ring (1–5 mi) but NOT the red ring → amber "inbound"
   err:{om:false,kp:false,asp:false,radar:false},
 };
 // Gate inputs currently UNKNOWN (fetch failed / stale beyond fallback). Every
@@ -2300,7 +2316,7 @@ function flyComputeDetail(){
     // redundant "grounded now".
     if(n===0){
       let windPeak=0; for(const ft of ALTS){ const v=prof(ft); if(v!=null&&v>windPeak) windPeak=v; }
-      wxNow={gust:gGust,vis:gVis,precip:gPcpn,windCeilFt,cloudCapFt,
+      wxNow={gust:gGust,vis:gVis,precip:gPcpn,precipInbound:FLY.precipInbound===true,windCeilFt,cloudCapFt,
         gustMph:c.gustKt, visSM, windPeakMph:windPeak};
     }
     // manned traffic caps the NOW column only (it's a live snapshot, like radar)
@@ -2449,7 +2465,10 @@ async function flyRefresh(){
     const pAloft = retry(()=>getAloft(base.lat,base.lon),2).catch(()=>null);
     const pKp    = kpKeep?Promise.resolve(FLY.data.kp):retry(()=>getKp(),2).catch(()=>null);
     const pAsp   = fresh?Promise.resolve({ceilFt:cc.ceilFt}):getAirspace(base.lat,base.lon,rngMi).catch(()=>null);
-    const pPrecip= retry(()=>sampleRadarPrecip(base.lat,base.lon,rngMi),2).catch(()=>null);
+    // Two radar samples: the RED ring (1 mi) grounds NOW; the GREY ring (5 mi) is the
+    // "precip inbound" heads-up (echo out there but not yet in the red ring).
+    const pPrecip= retry(()=>sampleRadarPrecip(base.lat,base.lon,RED_MI),2).catch(()=>null);
+    const pPrecipGrey= retry(()=>sampleRadarPrecip(base.lat,base.lon,GREY_MI),2).catch(()=>null);
 
     const aloft=await pAloft;
     if(aloft){
@@ -2465,7 +2484,7 @@ async function flyRefresh(){
       FLY.err.om=true;   // weather pull failed — keep the stale grid; next pulse retries
     }
 
-    const [kpRaw,aspRaw,precip]=await Promise.all([pKp,pAsp,pPrecip]);
+    const [kpRaw,aspRaw,precip,precipGrey]=await Promise.all([pKp,pAsp,pPrecip,pPrecipGrey]);
     if(!kpKeep&&kpRaw!=null) flyKpAt=Date.now();   // a genuinely fresh Kp resets its clock
     // Kp fetch failed: fall back to the recent last-good value rather than losing
     // the gate to one blip; beyond KP_STALE_MS stay null and amber (unknown ≠ calm).
@@ -2477,6 +2496,8 @@ async function flyRefresh(){
     // beyond that stay null and amber (unknown ≠ clear)
     else if(matches&&age<ASP_HARD_TTL) asp={ceilFt:cc.ceilFt};
     FLY.precip=precip; FLY.err.radar=precip==null;
+    // inbound = echo in the grey ring but NOT already in the red ring (which grounds)
+    FLY.precipInbound = precipGrey===true && precip!==true;
     if(aloft){
       FLY.data={lat:base.lat,lon:base.lon,aloft,kp,asp};
       FLY.err.om=false; FLY.err.asp=asp==null;
