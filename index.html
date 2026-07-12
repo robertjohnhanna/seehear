@@ -190,9 +190,8 @@
      SITREP title, its card headline, its map halo AND the chart's TRFC cell(s)
      between red and white (a TRFC cell only appears while a plane breaches). */
   @keyframes acflash{0%,100%{color:var(--danger)}50%{color:#fff}}
-  #sit-title.acflash{animation:acflash .9s ease-in-out infinite}
-  .sit-row.acflash .s1{animation:acflash .9s ease-in-out infinite}
-  #fly-pane .gc.acflash{animation:acflash .9s ease-in-out infinite}
+  #sit-title.acflash,.sit-row.acflash .s1,#fly-pane .gc.acflash{
+    animation:acflash .9s ease-in-out infinite}
   @media (prefers-reduced-motion:reduce){
     #sit-title.acflash,.sit-row.acflash .s1,#fly-pane .gc.acflash{animation:none}}
   /* Combined control: range steppers + center-on-me, in one box styled like the
@@ -394,6 +393,17 @@ async function getJSON(url,opts={}){
 // All times shown in the user's LOCAL time — the timezone detected for their
 // location (USER.tz, from IP geolocation), falling back to the browser's zone.
 const tzOpt = () => USER.tz ? {timeZone:USER.tz} : {};
+// THE data-refresh cadence, seconds. Everything that says "every 30 s" reads
+// this one knob: the countdown clock + pulse, per-layer cadences (refresh/REFRESH_S
+// pulses), and the radar tile cache-bust window.
+const REFRESH_S=30;
+// persist a setting; storage can be blocked (private mode) and that's fine
+const store=(k,v)=>{ try{ localStorage.setItem(k,String(v)); }catch(e){} };
+// equirectangular °-offsets spanning `km` at a latitude — THE lat/lon↔km math,
+// shared by the view framing, the ring geometry and the ring zoom cap so they
+// can never disagree about how big a mile is on screen.
+const geoDeltas=(km,lat)=>({dLat:km/111.32,
+  dLon:km/(111.32*Math.max(0.2,Math.cos(lat*Math.PI/180)))});
 // great-circle distance, km
 function havKm(lat1,lon1,lat2,lon2){
   const R=6371,d=Math.PI/180;
@@ -442,20 +452,27 @@ async function adsbViewport(){
 // "Rotorcraft" class (the authoritative signal); fall back to the human-readable
 // description mentioning a helicopter/rotor when the category is absent.
 const isHeli=a=>a.category==='A7'||/helicopter|\brotor/i.test(a.desc||'');
+// ONE property builder for every ADS-B contact — the civil/mil viewport feeds
+// AND the emergency-squawk feed build their features from this, so the card /
+// chart / AGL fields can never drift apart between feeds.
+function acProps(a,kind){
+  return {_kind:kind, heli:isHeli(a)?1:0,
+    flight:String(a.flight||a.r||a.hex||'?').trim(),
+    type:a.t||'?',desc:a.desc||'',op:a.ownOp||'',
+    alt:a.alt_baro??a.alt_geom??'?',
+    // barometric (pressure-altitude) value kept separate so AGL can QNH-correct
+    // it; null when the plane only reports geometric altitude (already ~MSL)
+    altBaro:(typeof a.alt_baro==='number'?a.alt_baro:null),
+    spd:a.gs!=null?Math.round(a.gs):'?',
+    trk:a.track!=null?Math.round(a.track):null,
+    _rot:a.track!=null?a.track:(a.true_heading!=null?a.true_heading:0),
+    sq:a.squawk||'',hex:a.hex||'',mil:a.dbFlags&1?1:0};
+}
+const acFeature=(a,kind,extra)=>({type:'Feature',
+  geometry:{type:'Point',coordinates:[a.lon,a.lat]},
+  properties:extra?Object.assign(acProps(a,kind),extra):acProps(a,kind)});
 function acFeatures(j,kind){
-  return (j.ac||[]).filter(a=>a.lat!=null&&a.lon!=null).map(a=>({
-    type:'Feature',geometry:{type:'Point',coordinates:[a.lon,a.lat]},
-    properties:{_kind:kind, heli:isHeli(a)?1:0,
-      flight:String(a.flight||a.r||a.hex||'?').trim(),
-      type:a.t||'?',desc:a.desc||'',op:a.ownOp||'',
-      alt:a.alt_baro??a.alt_geom??'?',
-      // barometric (pressure-altitude) value kept separate so AGL can QNH-correct
-      // it; null when the plane only reports geometric altitude (already ~MSL)
-      altBaro:(typeof a.alt_baro==='number'?a.alt_baro:null),
-      spd:a.gs!=null?Math.round(a.gs):'?',
-      trk:a.track!=null?Math.round(a.track):null,
-      _rot:a.track!=null?a.track:(a.true_heading!=null?a.true_heading:0),
-      sq:a.squawk||'',hex:a.hex||'',mil:a.dbFlags&1?1:0}}));
+  return (j.ac||[]).filter(a=>a.lat!=null&&a.lon!=null).map(a=>acFeature(a,kind));
 }
 // Features last loaded for a layer id — read from our own LAYER_STATE, never
 // from MapLibre's private source internals (which can break on any upgrade).
@@ -554,7 +571,7 @@ const escapeHtml =s => String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','
 // update" clock); sharing ONE bust value between the map layer and the PCPN
 // sampler lets them share the browser cache instead of double-fetching tiles.
 const RADAR_URL='https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png';
-const radarBust=()=>Math.floor(Date.now()/30000);
+const radarBust=()=>Math.floor(Date.now()/(REFRESH_S*1000));   // one window per refresh pulse
 let _radarBust=radarBust();
 const RADAR_TILE=RADAR_URL+'?'+_radarBust;
 function refreshRadar(){
@@ -680,9 +697,18 @@ let cancelCenterZoom=()=>{};
    the type colour (green civil / yellow military / red emergency), drawn nose-up
    so icon-rotate = heading works. Rasterised to canvas, registered with addImage.
    ===================================================================== */
-function shapeIcon(color,pts,px){
+// ONE colour per aircraft feed — the map silhouettes, the layer definitions and
+// the SITREP tail-number tint (AC_COL[src] in the card builder) all read this,
+// so map and panel can never disagree about what green/yellow/red means.
+const AC_COL={nearair:'#2fe07a',mil:'#ffce4d',sos:'#ff4455'};
+// shared canvas setup for the silhouette rasterisers (centre-origin, u = 1/32 px)
+function iconCanvas(px){
   const s=px||40, c=document.createElement('canvas'); c.width=c.height=s;
-  const x=c.getContext('2d',{willReadFrequently:true}); x.translate(s/2,s/2); const u=s/32;
+  const x=c.getContext('2d',{willReadFrequently:true}); x.translate(s/2,s/2);
+  return {x,u:s/32,s};
+}
+function shapeIcon(color,pts,px){
+  const {x,u,s}=iconCanvas(px);
   x.fillStyle=color; x.strokeStyle='rgba(3,8,14,.75)'; x.lineWidth=u*1.4;
   x.lineJoin='round'; x.beginPath();
   pts.forEach((p,i)=>{const X=p[0]*u,Y=p[1]*u; i?x.lineTo(X,Y):x.moveTo(X,Y);});
@@ -697,9 +723,8 @@ const PLANE=[[0,-15],[-1.6,-6],[-13,3],[-13,6],[-1.6,3.5],[-1.6,11],[-5,14.5],[-
 // Drawn from parts (each a colour rod with a dark edge, plus a filled pod) rather
 // than one polygon, since a rotor disc can't be traced as a single outline.
 function heliShape(color,px){
-  const s=px||40, c=document.createElement('canvas'); c.width=c.height=s;
-  const x=c.getContext('2d',{willReadFrequently:true}); x.translate(s/2,s/2);
-  const u=s/32; x.lineJoin='round'; x.lineCap='round';
+  const {x,u,s}=iconCanvas(px);
+  x.lineJoin='round'; x.lineCap='round';
   const rod=(x1,y1,x2,y2,w)=>{           // colour bar with a dark outline
     x.strokeStyle='rgba(3,8,14,.8)'; x.lineWidth=u*(w+1.6);
     x.beginPath(); x.moveTo(x1*u,y1*u); x.lineTo(x2*u,y2*u); x.stroke();
@@ -715,15 +740,16 @@ function heliShape(color,px){
   return x.getImageData(0,0,s,s);
 }
 function addImg(name,data){ if(!gl.hasImage(name)) gl.addImage(name,data,{pixelRatio:2}); }
-const YEL='#ffce4d';
 function registerIcons(){
-  addImg('ac-near',  shapeIcon('#2fe07a',PLANE));   // civil plane = green
-  addImg('ac-mil',   shapeIcon(YEL,PLANE));         // military plane = yellow
-  addImg('ac-sos',   shapeIcon('#ff4455',PLANE,44));// emergency plane = red
-  addImg('heli-near',heliShape('#2fe07a'));         // civil helicopter = green
-  addImg('heli-mil', heliShape(YEL));               // military helicopter = yellow
-  addImg('heli-sos', heliShape('#ff4455',44));      // emergency helicopter = red
+  addImg('ac-near',  shapeIcon(AC_COL.nearair,PLANE));    // civil plane = green
+  addImg('ac-mil',   shapeIcon(AC_COL.mil,PLANE));        // military plane = yellow
+  addImg('ac-sos',   shapeIcon(AC_COL.sos,PLANE,44));     // emergency plane = red
+  addImg('heli-near',heliShape(AC_COL.nearair));          // civil helicopter = green
+  addImg('heli-mil', heliShape(AC_COL.mil));              // military helicopter = yellow
+  addImg('heli-sos', heliShape(AC_COL.sos,44));           // emergency helicopter = red
 }
+// per-contact map icon: the heli silhouette for rotorcraft, the plane otherwise
+const acIconExpr=k=>['case',['==',['get','heli'],1],'heli-'+k,'ac-'+k];
 
 /* =====================================================================
    3. LAYER DEFINITIONS
@@ -744,9 +770,9 @@ const USER={lat:null,lon:null,src:null,tz:''};
 
 /* ---------------- Movement ---------------- */
 defLayer({
-  id:'nearair', label:'Aircraft (250 nm)', color:'#2fe07a', refresh:30,
+  id:'nearair', label:'Aircraft (250 nm)', color:AC_COL.nearair, refresh:30,
   viewport:true,   // data is scoped to the map area → refetch on every view change
-  icon:['case',['==',['get','heli'],1],'heli-near','ac-near'], rotate:true, iconSize:0.6,
+  icon:acIconExpr('near'), rotate:true, iconSize:0.6,
   // every civil (non-military) aircraft in the current map area; refetched on
   // pan/zoom (see moveend) and every 30 s pulse
   loader: async ()=>
@@ -755,14 +781,14 @@ defLayer({
 });
 
 defLayer({
-  id:'mil', label:'Military aircraft', color:'#ffce4d', refresh:30,
-  icon:['case',['==',['get','heli'],1],'heli-mil','ac-mil'], rotate:true, iconSize:0.5,
+  id:'mil', label:'Military aircraft', color:AC_COL.mil, refresh:30,
+  icon:acIconExpr('mil'), rotate:true, iconSize:0.5,
   loader: async ()=> ({type:'FeatureCollection',features:acFeatures(await adsb('/mil'),'mil')})
 });
 
 defLayer({
-  id:'sos', label:'Emergency squawks', color:'#ff4455', refresh:30,
-  icon:['case',['==',['get','heli'],1],'heli-sos','ac-sos'], rotate:true, iconSize:0.6,
+  id:'sos', label:'Emergency squawks', color:AC_COL.sos, refresh:30,
+  icon:acIconExpr('sos'), rotate:true, iconSize:0.6,
   loader: async ()=>{
     // 7700 = general emergency, 7600 = radio failure, 7500 = unlawful interference
     const codes=['7700','7600','7500'];
@@ -777,12 +803,9 @@ defLayer({
       if(r.status!=='fulfilled') return;
       (r.value.ac||[]).forEach(a=>{
         if(a.lat==null||a.lon==null) return;
-        feats.push({type:'Feature',geometry:{type:'Point',coordinates:[a.lon,a.lat]},
-          properties:{_kind:'sos',_rot:a.track!=null?a.track:0, heli:isHeli(a)?1:0,
-            flight:String(a.flight||a.r||a.hex||'?').trim(),hex:a.hex||'',
-            code:codes[i],type:a.t||'?',desc:a.desc||'',op:a.ownOp||'',alt:a.alt_baro??a.alt_geom??'?',
-            altBaro:(typeof a.alt_baro==='number'?a.alt_baro:null),
-            spd:a.gs!=null?Math.round(a.gs):'?'}});
+        // extra: which emergency code hit; _rot keeps this feed's original
+        // plain-track rotation (no true_heading fallback) — behaviour unchanged
+        feats.push(acFeature(a,'sos',{code:codes[i],_rot:a.track!=null?a.track:0}));
       });
     });
     return {type:'FeatureCollection',features:feats};
@@ -1112,44 +1135,43 @@ function ensureStaticRegion(){
   });
 }
 
-// ---- unified refresh: a single 30s countdown drives the refresh of every DUE
-//      *dynamic* layer. STATIC layers (airspace, NPS) never ride the pulse —
-//      they're a regional cache refreshed only on travel (see refreshViewport).
-//      "Xs to update" reflects the primary live cadence. ----
-const REFRESH_S=30;
+// ---- unified refresh: ONE pulse() drives every data kick. Scheduled (the 30s
+//      countdown) and forced (tapping the badge) differ ONLY in which layers
+//      they pull — scheduled pulls the DUE dynamic layers on their cadence;
+//      forced pulls every started layer regardless. Both then kick the chart,
+//      weather and radar and restart the countdown from zero. STATIC layers
+//      (airspace, NPS) never ride the scheduled pulse — they're a regional
+//      cache refreshed on travel (see refreshViewport). Layers already
+//      mid-flight are skipped (st.loading). ----
 let refreshBase=Date.now(), pulseCount=0;
-function refreshDueLayers(){
-  pulseCount++;
+function pulse(force){
+  if(!force) pulseCount++;   // forced pulls don't shift the slow-layer cadence grid
   LAYERS.forEach(cfg=>{
     const st=LAYER_STATE[cfg.id];
-    if(!st||!st.started||cfg.static||!(cfg.refresh>0)||st.loading) return;
-    // refresh every N pulses (N=refresh/30), grid-aligned so a moveend that
-    // reset the countdown can't push a layer's refresh past a whole cycle
-    const everyN=Math.max(1,Math.round(cfg.refresh/REFRESH_S));
-    if(pulseCount%everyN===0) runLayer(cfg);
+    if(!st||!st.started||st.loading) return;
+    if(!force){
+      if(cfg.static||!(cfg.refresh>0)) return;
+      // refresh every N pulses (N=refresh/30), grid-aligned so a moveend that
+      // reset the countdown can't push a layer's refresh past a whole cycle
+      const everyN=Math.max(1,Math.round(cfg.refresh/REFRESH_S));
+      if(pulseCount%everyN!==0) return;
+    }
+    runLayer(cfg);
   });
   // The canifly chart rides the SAME pulse: weather + the radar-echo sample every
   // 30s cycle; Kp throttles itself to the 180s space-weather cadence and the FAA
   // airspace to its location/range-keyed cache — all inside flyRefresh().
-  flyRefresh();
-  loadWeather();   // SITREP weather card (self-throttled to ~5 min / >2 km moves)
-}
-// data-refresh countdown ("Xs to update") in the SITREP header
-function refreshTick(){
-  const el=$('#refresh-count');
-  const elapsed=Math.floor((Date.now()-refreshBase)/1000);
-  if(elapsed>=REFRESH_S){ refreshBase=Date.now(); refreshDueLayers(); refreshRadar(); if(el) el.textContent=REFRESH_S; }
-  else if(el) el.textContent=REFRESH_S-elapsed;
-}
-// Force an immediate refresh NOW (tapping the "Xs to update" badge). Pulls every
-// started layer regardless of its cadence, kicks the chart + weather + radar, and
-// restarts the 30s countdown from zero. Layers already mid-flight are skipped
-// (st.loading) and the FAA single-flight guard prevents stacked hits.
-function forceRefresh(){
-  LAYERS.forEach(cfg=>{ const st=LAYER_STATE[cfg.id]; if(st&&st.started&&!st.loading) runLayer(cfg); });
-  flyRefresh(); loadWeather(true); refreshRadar();
+  // loadWeather self-throttles (~5 min / >2 km moves) unless forced.
+  flyRefresh(); loadWeather(force); refreshRadar();
   refreshBase=Date.now();
   const el=$('#refresh-count'); if(el) el.textContent=REFRESH_S;
+}
+function forceRefresh(){ pulse(true); }   // tapping the "Xs to update" badge / DATA card
+// data-refresh countdown ("Xs to update") in the SITREP header
+function refreshTick(){
+  const elapsed=Math.floor((Date.now()-refreshBase)/1000);
+  if(elapsed>=REFRESH_S) pulse();
+  else { const el=$('#refresh-count'); if(el) el.textContent=REFRESH_S-elapsed; }
 }
 (function bindRefreshBadge(){
   const b=$('#refresh-badge'); if(!b) return;
@@ -1290,15 +1312,9 @@ let userMarker=null, sitrepTimer=null;
 // grey dotted ring). Change this and all of them move together.
 const RING_VIEW_MULT=3;
 const ringViewMi=()=>RING_VIEW_MULT*RNG.mi;   // statute miles — the 3× radius
-// The view radius applied once a location fix lands: 3× the range-ring radius
-// (RNG.mi), so the range ring sits in the middle third of the view with drone-
-// relevant context around it. Scales with the user's range setting.
-const fixViewMi=()=>ringViewMi();   // statute miles
 function flyToRadiusMi(lat,lon,miles,opts){
   cancelCenterZoom();
-  const km=miles*MI_TO_KM;
-  const dLat=km/111.32;
-  const dLon=km/(111.32*Math.max(0.2,Math.cos(lat*Math.PI/180)));
+  const {dLat,dLon}=geoDeltas(miles*MI_TO_KM,lat);
   try{
     gl.fitBounds([[lon-dLon,lat-dLat],[lon+dLon,lat+dLat]],
       Object.assign({duration:1200,maxZoom:15},opts||{}));
@@ -1383,13 +1399,13 @@ function setUserFix(lat,lon,src,meta){
   // us far — so the load isn't a stutter of two back-to-back zoom animations.
   if(first){
     // first fix: one clean animation to the 3×-range-ring view
-    flyToRadiusMi(lat,lon,fixViewMi());
+    flyToRadiusMi(lat,lon,ringViewMi());
   } else if(src==='gps'&&pLat!=null&&havKm(pLat,pLon,lat,lon)>8){
     // GPS refined the IP guess by a lot (>8 km): re-frame at the precise spot.
     // Re-framing (not easeTo) so the final ZOOM is always the right one — easeTo
     // mid-fitBounds was leaving the zoom half-finished ("hung"). For small
     // corrections we leave the camera and just move the marker.
-    flyToRadiusMi(lat,lon,fixViewMi());
+    flyToRadiusMi(lat,lon,ringViewMi());
   }
   sitrepTick();
 }
@@ -1418,19 +1434,22 @@ const acSub=f=>{const p=f.properties, type=p.type&&p.type!=='?'?p.type:'';
   return escapeHtml(p.desc||type||p.op||'?');};
 // Aircraft card icon — just two glyphs for EVERY aircraft (civil, military,
 // emergency, low-aircraft): ✈️ plane / 🚁 helicopter. Military vs civil vs
-// emergency is carried by COLOUR instead — the tail-number (headline) string is
-// tinted to match the plane/heli icon drawn on the map (green civil / yellow
-// military / red emergency), via AC_COL below.
+// emergency is carried by COLOUR instead — the tail-number string is tinted to
+// match the plane/heli icon drawn on the map (green civil / yellow military /
+// red emergency), via AC_COL (defined with the map icons, ONE colour source).
 const acIcon=f=>f.properties.heli?'🚁':'✈️';
-const AC_COL={nearair:'#2fe07a',mil:'#ffce4d',sos:'#ff4455'};
+// tail-number label (callsign, falling back to the hex, then `fb`), clipped
+const acTail=(f,n,fb)=>cut(f.properties.flight||f.properties.hex||fb||'?',n);
+// stable identity for a contact — dedupe across feeds, breach bookkeeping
+const acKey=p=>p.hex||p.flight||'';
 // hexes currently squawking an emergency — the same airframe also appears in
-// the civil/military feeds, so those cards filter against this set (the 🚨
+// the civil/military feeds, so those cards filter against this set (the sos
 // card is the one card for that aircraft). Rebuilt at the top of sitrepTick.
 let SOS_HEX=new Set();
 const notSos=f=>!f.properties.hex||!SOS_HEX.has(f.properties.hex);
 const CATS=[
   {src:'sos', hazard:true, air:true, icon:acIcon, cls:()=>'danger',
-   head:f=>cut(f.properties.flight||f.properties.hex||'?',12),
+   head:f=>acTail(f,12),
    sub:acSub,
    detail:f=>'sq '+(f.properties.code||'7700')},
   {src:'nws', hazard:true, icon:'⚠️',
@@ -1442,10 +1461,10 @@ const CATS=[
    detail:f=>{const e=f.properties.ends,d=e&&new Date(e);
      return d&&!isNaN(d)?'til '+d.toLocaleTimeString([],Object.assign({hour:'numeric',minute:'2-digit'},tzOpt())):'';}},
   {src:'nearair', hazard:false, air:true, icon:acIcon, cls:()=>'', filter:notSos,
-   head:f=>cut(f.properties.flight||f.properties.hex||'?',12),
+   head:f=>acTail(f,12),
    sub:acSub, detail:ALT},
   {src:'mil', hazard:false, air:true, icon:acIcon, cls:()=>'alert', filter:notSos,
-   head:f=>cut(f.properties.flight||f.properties.hex||'?',10),
+   head:f=>acTail(f,10),
    sub:acSub, detail:ALT},
   // FAA airspace RESTRICTIONS that gate a drone — each in-view zone is a
   // distance-sorted, tappable card (tap flies to it). HARD no-fly (red: defense,
@@ -1514,7 +1533,7 @@ function planesNear(lat,lon,rKm){
     const alt=+p.alt; if(!isFinite(alt)) return;   // 'ground'/'?' → not airborne data
     const g=f.geometry&&f.geometry.coordinates; if(!g) return;
     const km=havKm(lat,lon,g[1],g[0]); if(km>rKm) return;
-    const hx=p.hex||p.flight||'';
+    const hx=acKey(p);
     if(hx){ if(seen.has(hx)) return; seen.add(hx); }
     out.push({f,km,alt,pt:g});
   }));
@@ -1601,8 +1620,7 @@ function sitrepTick(){
   const breachers=near
     .map(a=>{ const {ground,agl}=planeAglFt(a,acGround); return {...a,ground,agl}; })
     .filter(a=>a.agl<WARN_AGL_FT);
-  const acKey=p=>p.hex||p.flight||'';
-  const breachInfo=new Map();   // key → AGL label ('254 ft AGL' / '254 ft' if ground unknown)
+  const breachInfo=new Map();   // acKey → AGL label ('254 ft AGL' / '254 ft' if ground unknown)
   breachers.forEach(a=>breachInfo.set(acKey(a.f.properties),
     Math.max(0,Math.round(a.agl))+U(' ft')+(a.ground==null?'':' AGL')));
   const acFlash=breachers.length>0;
@@ -1728,7 +1746,7 @@ function sitrepTick(){
       // via `col` (which here colours the flashing headline, not the tail number).
       // The ground speed rides l3 after the AGL, the same as every plane card.
       headOv='LOW AIRCRAFT';
-      subOv='<span style="color:'+AC_COL[cfg.src]+'">'+cut(f.properties.flight||f.properties.hex||'aircraft',12)+'</span>';
+      subOv='<span style="color:'+AC_COL[cfg.src]+'">'+acTail(f,12,'aircraft')+'</span>';
       det=breachInfo.get(acKey(f.properties));
     }
     // Controlled-airspace cards (Class B/C/D/E) are hazard:false, so their
@@ -2069,7 +2087,7 @@ function hydrateAsp(){
        &&Number.isFinite(s.ceilFt)&&s.ceilFt>=0&&s.ceilFt<=SPEC.regFt
        &&Number.isFinite(s.ts)&&(Date.now()-s.ts)<ASP_HARD_TTL){ aspCache=s; } }catch(e){}
 }
-function persistAsp(){ try{ localStorage.setItem(ASP_CACHE_KEY,JSON.stringify(aspCache)); }catch(e){} }
+function persistAsp(){ store(ASP_CACHE_KEY,JSON.stringify(aspCache)); }
 
 // ---- PCPN: is there NEXRAD reflectivity within the RANGE setting? Samples the
 // SAME Iowa Mesonet mosaic the map's radar layer draws, at its native z8, on an
@@ -2362,7 +2380,7 @@ function setMaxWind(w){
   w=Math.max(1,Math.min(99,Math.round(w)));
   if(!Number.isFinite(w)||w===LIM.wind) return;
   LIM.wind=w;
-  try{ localStorage.setItem(MW_KEY,String(w)); }catch(e){}
+  store(MW_KEY,w);
   flyRenderSettings();   // update the displayed value in the settings box
   flyPaint();            // recompute the grid (wind gate) + repaint now…
   scheduleSitrep();      // …and re-tick the SITREP (the title reads the NOW column)
@@ -2375,7 +2393,7 @@ function setRange(mi){
   mi=Math.max(0.5,Math.min(15,Math.round(mi*2)/2));
   if(!Number.isFinite(mi)||mi===RNG.mi) return;
   RNG.mi=mi;
-  try{ localStorage.setItem(RNG_KEY,String(RNG.mi)); }catch(e){}
+  store(RNG_KEY,RNG.mi);
   flyRenderRange();      // update the displayed value in the floating range pill
   updateRing();          // resize the on-map range ring to match
   enforceRingZoom();     // re-cap zoom so the resized ring still fits in 1/3 of the view
@@ -2511,7 +2529,7 @@ function acPulseFrame(){
   const t=(Date.now()%1200)/1200, k=(1-Math.cos(t*2*Math.PI))/2;   // 0→1→0 each 1.2 s
   gl.setPaintProperty('ly-acalert','circle-radius',10+13*k);
   gl.setPaintProperty('ly-acalert','circle-opacity',0.12+0.5*(1-k));
-  gl.setPaintProperty('ly-acalert','circle-color',k>0.5?'#ffffff':'#ff4455');
+  gl.setPaintProperty('ly-acalert','circle-color',k>0.5?'#ffffff':SEV_COL[2]);
   acPulseRaf=requestAnimationFrame(acPulseFrame);
 }
 function startAcPulse(){
@@ -2519,7 +2537,7 @@ function startAcPulse(){
   if(AC_PULSE_REDUCED){   // static red halo — no motion
     gl.setPaintProperty('ly-acalert','circle-radius',15);
     gl.setPaintProperty('ly-acalert','circle-opacity',0.5);
-    gl.setPaintProperty('ly-acalert','circle-color','#ff4455');
+    gl.setPaintProperty('ly-acalert','circle-color',SEV_COL[2]);
     return;
   }
   if(!acPulseRaf) acPulseFrame();
@@ -2541,7 +2559,7 @@ const RING_N=96;   // vertices — a smooth circle at any zoom
 // 3 nm stadium rings). Shared by the range ring and the airspace stadium buffers.
 function circleRing(lat,lon,km,n){
   n=n||RING_N;
-  const dLat=km/111.32, dLon=km/(111.32*Math.max(0.2,Math.cos(lat*Math.PI/180))), ring=[];
+  const {dLat,dLon}=geoDeltas(km,lat), ring=[];
   for(let i=0;i<=n;i++){ const t=i/n*2*Math.PI;
     ring.push([lon+dLon*Math.cos(t), lat+dLat*Math.sin(t)]); }
   return ring;
@@ -2580,8 +2598,8 @@ function enforceRingZoom(){
     +(_pad?[_pad.top,_pad.left,_pad.right,_pad.bottom].join(','):'0');
   if(key===_ringZoomKey) return;
   _ringZoomKey=key;
-  const km=ringViewMi()*MI_TO_KM;   // the shared 3× radius (see RING_VIEW_MULT)
-  const dLat=km/111.32, dLon=km/(111.32*Math.max(0.2,Math.cos(c.lat*Math.PI/180)));
+  // the shared 3× radius (see RING_VIEW_MULT) and the shared °↔km math
+  const {dLat,dLon}=geoDeltas(ringViewMi()*MI_TO_KM,c.lat);
   // cameraForBounds CLAMPS its result to the current maxZoom, so from a locked-in
   // (zoomed-to-the-cap) state it could only ever ratchet the cap DOWN and never
   // back up when the ring is made smaller. Lift the cap to the hard ceiling first
@@ -2611,7 +2629,7 @@ gl.on('load',()=>{
   // below the plane icons so the icon stays crisp on top of its own halo.
   gl.addSource('src-acalert',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
   gl.addLayer({id:'ly-acalert',type:'circle',source:'src-acalert',
-    paint:{'circle-radius':14,'circle-color':'#ff4455','circle-opacity':0.4,
+    paint:{'circle-radius':14,'circle-color':SEV_COL[2],'circle-opacity':0.4,
       'circle-stroke-color':'#ffffff','circle-stroke-width':1.5,'circle-stroke-opacity':0.9}});
   if(gl.getLayer('ly-nearair')) gl.moveLayer('ly-acalert','ly-nearair');
   // LOW-AIRCRAFT warning ring — a light-grey DOTTED circle at the 3× radius
@@ -2625,7 +2643,7 @@ gl.on('load',()=>{
   // last so it sits on top of the map layers (under the HTML crosshair overlay)
   gl.addSource('src-ring',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
   gl.addLayer({id:'ly-ring',type:'line',source:'src-ring',
-    paint:{'line-color':'#2fe07a','line-width':1.5,'line-opacity':0.72,'line-dasharray':[2,2]}});
+    paint:{'line-color':SEV_COL[0],'line-width':1.5,'line-opacity':0.72,'line-dasharray':[2,2]}});
   updateRing();
   enforceRingZoom();   // establish the initial ring-≤-1/3 max-zoom cap
   // Pull every DYNAMIC layer once on load (SPC feeds the SITREP outlook card
