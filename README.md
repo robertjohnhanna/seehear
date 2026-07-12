@@ -246,32 +246,31 @@ one-glance go/no-go as the rings and the CANIFLY tag.
 
 ## Location & privacy
 
-On load: instant IP fix (ipwho.is), refined by browser GPS if you allow the
-prompt (denial is silently tolerated), then one clean camera move framing the
-10 mi view. A continuous geolocation **watch** keeps the green **you-are-here
-dot live** as you move. The ⌖ button lives in the map's **bottom-right corner**
-and **starts locked**. **Locked = a frozen map**: both **pan and zoom are disabled**,
-so the view is held at the 10 mi framing on your location and nothing moves it (the
-icon is a 🔒 padlock; the you-are-here dot still tracks you). The **first tap
-unlocks** (pan + zoom free again, icon back to the crosshair); the **next tap
-centers you and resets the zoom** to the 10 mi view, then re-locks — and the
-two-state toggle repeats (unlock → reset + lock → unlock → …). **Want to zoom out?
-Unlock.** While locked the frame is kept **on your real position**: location resolves
-in stages (IP guess → cold jumpy GPS → settled GPS), and if the crosshair has drifted
-off the fix past ~120 m, one throttled re-frame converges onto it — checked against
-the *latest* fix so a jumpy cold start lands in a single clean move, never mid-way
-through a framing animation (a zoom-reset always lands at the full 10 mi view). On
-target, the map holds dead still. And data loads are **positionally gated** while
-locked: nothing fetches unless the view is actually on your fix, so a stray gesture's
-momentary drag (before the snap-back) can never load data for the wrong spot. As a belt-and-braces
-guard for touch platforms where disabling the handlers isn't enough, any stray
-gesture that nudges the frozen map snaps it right back to the held view. GPS jitter
-is tamed regardless: fixes reported worse than ~100 m are dropped and the position is
-EMA-smoothed so the dot glides. And while you're **locked**, map moves **don't pull
-fresh data** — aircraft/etc. refresh on the 15 s pulse around you; only a manual pan
-while **unlocked** refetches for the new area. Position is resolved client-side and
-never leaves the browser except as anonymous lat/lon query parameters to the public
-weather APIs.
+**The fix pipeline is dead simple.** The GPS watch starts at load; pings are
+**collected for 3 seconds** from the first one, keeping the most accurate — nothing
+recenters, zooms or loads location data until that settled fix **commits**. There is
+**no absolute accuracy cut-off**: a phone with precise location off (every ping ~2 km
+accuracy) still commits its best ping — a couple of km beats an IP centroid hundreds
+of miles away. The IP lookup (ipwho.is) is **fallback only**, used solely if GPS
+delivers nothing (denied/unavailable) within ~6 s; if GPS shows up later anyway, the
+map heals onto the real spot. After the commit the watch keeps the green
+**you-are-here dot live**, EMA-smoothed so it glides; a ping is dropped only if it's
+junk *relative* to the best accuracy the device has shown.
+
+The ⌖ button lives in the map's **bottom-right corner** and **starts locked**.
+**Locked = the map moves only when your location moves.** Every user camera input is
+dead — pan, wheel, double-tap, pinch, the custom touch navigation, all of it — and the
+zoom is held at the 10 mi framing. The map **follows you**: inside a ~25 m jitter
+deadband it holds still; walk past it and the centre glides onto the fix (zoom
+untouched); a huge correction (a late GPS grant fixing an IP fallback) re-frames
+outright. The **first tap unlocks** (pan + zoom free again, icon back to the
+crosshair); the **next tap centers you and resets the zoom** to the 10 mi view, then
+re-locks — the two-state toggle repeats. **Want to zoom out? Unlock.** Data loads are
+**positionally gated** while locked: nothing fetches unless the view is actually on
+your fix, so nothing can ever load data for a spot you aren't at — and as
+belt-and-braces, any stray gesture that somehow nudges the map snaps straight back
+onto the fix. Position is resolved client-side and never leaves the browser except as
+anonymous lat/lon query parameters to the public weather APIs.
 
 ## Design notes & honest caveats
 

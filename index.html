@@ -98,11 +98,12 @@
     padding:0;cursor:pointer;color:var(--ink-dim);-webkit-user-select:none;user-select:none}
   /* the countdown fill tracks the CANIFLY verdict (--sev, set by sitrepTick): green
      clear / amber reduced-or-unverified / red grounded — falling back to accent green
-     before the first tick. */
+     before the first tick. A THICK arc (9px) on a compact dial with a small dark
+     centre, so the colour wheel is the dominant feature. */
   .rdial .rdial-prog{position:absolute;inset:0;border-radius:50%;
     background:conic-gradient(var(--sev,var(--accent)) var(--rp,0deg), #2a3a4d 0deg);
-    -webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 3px),#000 calc(100% - 3px));
-            mask:radial-gradient(farthest-side,transparent calc(100% - 3px),#000 calc(100% - 3px))}
+    -webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 9px),#000 calc(100% - 9px));
+            mask:radial-gradient(farthest-side,transparent calc(100% - 9px),#000 calc(100% - 9px))}
   .rdial.busy .rdial-prog{background:conic-gradient(var(--sev,var(--accent)) 90deg,#2a3a4d 0deg);animation:sp .8s linear infinite}
   /* the map-page dial is shown in EVERY layout (the panel header is dropped) — a solid
      BLACK disc + black outline so the countdown reads over any map. It sits at the map's
@@ -110,7 +111,7 @@
      panel itself sits flush at right:0; adding it double-counted and left a gap). In
      portrait the panel is an overlay sheet, so it moves to the true screen right edge. */
   #map-refresh{position:absolute;z-index:16;top:calc(var(--sa-t) + 12px);right:376px;
-    width:46px;height:46px;   /* a little bigger than the 42px lock button */
+    width:34px;height:34px;   /* compact dial — the 9px arc dominates, small dark centre */
     display:block;background:#000;border-radius:50%;box-shadow:0 0 0 2px #000}
   @media (max-width:1000px) and (orientation:portrait){ #map-refresh{right:calc(14px + var(--sa-r))} }
   /* ---------- canifly — the static drone-preflight chart ----------
@@ -176,7 +177,8 @@
      (hidden) header title, which sitrepTick keeps it in sync with. A black glyph outline
      (text-stroke, painted BEHIND the fill) keeps it legible over any map. Its colour
      rules sit here, BEFORE the acflash rule, so the flash animation still wins. */
-  #map-title{position:absolute;z-index:16;left:calc(14px + var(--sa-l));
+  #map-title{position:absolute;z-index:16;left:14px;   /* flush top-left — the landscape
+    notch inset (--sa-l) is NOT added; it pushed the tag ~60px inward, leaving a gap */
     top:calc(var(--sa-t) + 14px);display:block;pointer-events:none;
     color:var(--accent);font-size:22px;letter-spacing:2px;font-weight:700;   /* a little bigger than the lock button */
     -webkit-text-stroke:3px #000;paint-order:stroke fill;filter:drop-shadow(0 0 2px #000)}
@@ -614,8 +616,15 @@ let cancelCenterZoom=()=>{};
   }
   function kick(){ if(!running){ running=true; requestAnimationFrame(frame); } }
   cancelCenterZoom=()=>{ running=false; target=gl.getZoom(); };
+  // THE LOCK GUARD. This block is the app's real camera input (on touch devices
+  // MapLibre's own handlers are permanently disabled and everything routes through
+  // here), so the location lock MUST be enforced here: while locked, every user
+  // wheel / double-click / drag / pinch is swallowed. The map only moves when the
+  // location moves (via the programmatic frame), never from input.
+  const camLocked=()=>locMode===2;
   cvs.addEventListener('wheel',e=>{
     e.preventDefault();
+    if(camLocked()) return;
     const now=e.timeStamp;
     if(now-last>200) target=gl.getZoom();   // idle gap: resync to the live zoom
     last=now;
@@ -626,6 +635,7 @@ let cancelCenterZoom=()=>{};
   },{passive:false});
   cvs.addEventListener('dblclick',e=>{
     e.preventDefault();
+    if(camLocked()) return;
     target=clamp((running?target:gl.getZoom())+(e.shiftKey?-1:1));
     kick();
   });
@@ -649,6 +659,7 @@ let cancelCenterZoom=()=>{};
     cvs.addEventListener('pointermove',e=>{
       const p=pts.get(e.pointerId); if(!p) return;
       const dx=e.clientX-p.x, dy=e.clientY-p.y; p.x=e.clientX; p.y=e.clientY;
+      if(camLocked()){ e.preventDefault(); return; }   // LOCKED: no pan, no pinch — period
       if(pts.size>=2){
         const d=two(); if(pinchD>0&&d>0){ target=clamp(pinchZ+Math.log2(d/pinchD)); kick(); }   // zoom around centre
       }else if(pts.size===1&&(dx||dy)){
@@ -1290,37 +1301,59 @@ function flyToRadiusMi(lat,lon,miles,opts){
   }catch(e){ gl.flyTo({center:[lon,lat],zoom:11}); }
 }
 
-async function locate(){
-  try{
-    const j=await getJSON('https://ipwho.is/',{timeout:9000});
-    if(j&&j.success!==false&&j.latitude!=null)
-      setUserFix(j.latitude,j.longitude,'ip',
-        {place:j.city,region:j.region,rc:j.region_code,cc:j.country_code,
-         tz:(j.timezone&&j.timezone.id)||''});
-  }catch(e){ console.warn('[ip-locate]',e.message); }
-  startGeoWatch();
-}
-// LIVE DOT — one continuous geolocation watch keeps USER (and the green map dot)
-// tracking the real position; watchPosition's first callback is the initial GPS
-// fix, so it replaces the old one-shot getCurrentPosition. Started once; ignored
-// on repeat calls or when geolocation is unavailable/denied.
-// Raw GPS jitters even when you're standing still, so every fix passes through
-// onGeoFix first: an ACCURACY GATE drops obvious garbage, and the position is
-// EMA-SMOOTHED so the dot glides instead of twitching. A fix far from the smoothed
-// point is a real move → snap (no lag). The locked-map on-target check lives with
-// the lock code (LOCK_ONTARGET_KM).
-const GEO_ACC_MAX_M=100;   // drop GPS fixes reported worse than this (m) — kills spikes
+// ---- FIX PIPELINE — dead simple. The GPS watch starts at load; pings are COLLECTED
+// for GEO_SETTLE_MS (3 s) from the first one, keeping the most accurate — nothing
+// frames, zooms or loads location data until that settled fix COMMITS. The IP guess is
+// only a fallback if GPS delivers NOTHING (denied / unavailable) by GEO_IP_FALLBACK_MS;
+// if GPS shows up later anyway, the commit path runs and the locked map re-frames onto
+// the real spot. There is NO absolute accuracy cut-off: an imprecise phone (precise
+// location off ⇒ every ping ~2 km accuracy) still commits its best ping — being a
+// couple of km off beats being locked onto an IP centroid 300 miles away. After the
+// commit, pings keep updating the fix (EMA-smoothed); a ping is dropped only if it's
+// junk RELATIVE to the best accuracy this device has demonstrated.
+const GEO_SETTLE_MS=3000, GEO_IP_FALLBACK_MS=6000;
 const GEO_EMA=0.25;        // dot low-pass factor (0 = frozen, 1 = raw/no smoothing)
 const GEO_JUMP_KM=0.05;    // a fix >50 m from the smoothed point = real move → snap, no lag
+let _geoBest=null, _geoBestAcc=Infinity, _geoDone=false, _ipFix=null;
 let _emaLat=null,_emaLon=null;
+function commitGeo(){
+  if(_geoDone||!_geoBest) return;
+  _geoDone=true;
+  _emaLat=_geoBest.lat; _emaLon=_geoBest.lon;
+  setUserFix(_geoBest.lat,_geoBest.lon,'gps',null);
+}
 function onGeoFix(lat,lon,acc){
-  if(acc!=null && acc>GEO_ACC_MAX_M) return;                       // (4) accuracy gate
-  if(_emaLat==null || havKm(_emaLat,_emaLon,lat,lon)>GEO_JUMP_KM){ // bootstrap / real move → snap
+  const a=acc==null?9999:acc;
+  if(a<_geoBestAcc) _geoBestAcc=a;
+  if(!_geoDone){
+    // SETTLE WINDOW: first ping arms the 3 s commit; every ping competes on accuracy
+    if(!_geoBest) setTimeout(commitGeo,GEO_SETTLE_MS);
+    if(!_geoBest || a<=_geoBest.acc) _geoBest={lat,lon,acc:a};
+    return;
+  }
+  if(a>Math.max(150,_geoBestAcc*3)) return;   // junk vs what this device can do → drop
+  if(_emaLat==null || havKm(_emaLat,_emaLon,lat,lon)>GEO_JUMP_KM){ // real move → snap
     _emaLat=lat; _emaLon=lon;
   } else {                                                          // stationary jitter → smooth
     _emaLat+=GEO_EMA*(lat-_emaLat); _emaLon+=GEO_EMA*(lon-_emaLon);
   }
   setUserFix(_emaLat,_emaLon,'gps',null);
+}
+async function locate(){
+  startGeoWatch();   // pings start now; the settled fix commits 3 s after the first
+  // The IP lookup runs in parallel but is FALLBACK ONLY — it never frames the map
+  // while GPS is alive (no more locking onto a centroid hundreds of miles off).
+  setTimeout(()=>{ if(!_geoDone && USER.lat==null && _ipFix)
+    setUserFix(_ipFix.lat,_ipFix.lon,'ip',_ipFix.meta); },GEO_IP_FALLBACK_MS);
+  try{
+    const j=await getJSON('https://ipwho.is/',{timeout:9000});
+    if(j&&j.success!==false&&j.latitude!=null){
+      _ipFix={lat:j.latitude,lon:j.longitude,
+        meta:{place:j.city,region:j.region,rc:j.region_code,cc:j.country_code,
+          tz:(j.timezone&&j.timezone.id)||''}};
+      if(_ipFix.meta.tz&&!USER.tz) USER.tz=_ipFix.meta.tz;   // tz is safe to take early
+    }
+  }catch(e){ console.warn('[ip-locate]',e.message); }
 }
 let geoWatchId=null;
 function startGeoWatch(){
@@ -1359,34 +1392,34 @@ function setPanLock(on){
   ['dragPan','scrollZoom','boxZoom','doubleClickZoom','touchZoomRotate','dragRotate','touchPitch','keyboard']
     .forEach(k=>{ try{ on?gl[k].disable():gl[k].enable(); }catch(e){} });
 }
-// ---- FRAMING + LOCK-ON-TARGET -----------------------------------------------
+// ---- FRAMING + LOCKED FOLLOW --------------------------------------------------
 // frameNow() is the ONE authoritative camera move: it centers on a point AND resets
 // the zoom to the 10 mi VIEW radius. _framing blocks anything from interrupting that
 // ~1.2s animation, so a zoom reset always lands fully.
 //
-// While LOCKED the frame must sit ON YOUR REAL POSITION. Location resolves in stages
-// (IP guess → cold jumpy GPS → settled GPS), so instead of freezing on whatever came
-// first, every fix re-checks: is the crosshair still on the fix? If it has drifted
-// past LOCK_ONTARGET_KM, ONE re-frame is scheduled ~1s out and re-checked against the
-// LATEST fix when it fires — a jumpy cold start converges in a single clean move and
-// then the map holds dead still (GPS jitter stays far inside the threshold).
-const LOCK_ONTARGET_KM=0.12;   // crosshair within this of the fix = "on you", hold still
-let _framing=false, _frameT=null, _lockReframeT=null;
+// While LOCKED the map FOLLOWS YOUR LOCATION — it moves when (and only when) the fix
+// moves, since every user camera input is dead. Each committed fix runs lockFollow():
+//  • within LOCK_FOLLOW_KM (~25 m, under the EMA-smoothed jitter floor) → hold still;
+//  • walking (past the deadband) → ease the centre onto the fix, zoom untouched;
+//  • a HUGE correction (> LOCK_REFRAME_KM — a late GPS grant fixing an IP fallback,
+//    a teleport) → full re-frame, restoring the 10 mi view on the real spot.
+const LOCK_FOLLOW_KM=0.025;    // follow deadband — the fix must really move ~25 m
+const LOCK_REFRAME_KM=3;       // beyond this it's not walking — re-frame outright
+const LOCK_ONTARGET_KM=0.12;   // "view is on the fix" for the fetch gate + snap-back
+let _framing=false, _frameT=null;
 function frameNow(lat,lon){
   _framing=true; clearTimeout(_frameT);
   flyToRadiusMi(lat,lon,VIEW_MI);
   _frameT=setTimeout(()=>{ _framing=false; },1300);   // fitBounds is 1200ms + a small buffer
 }
-function lockOffTarget(){
-  if(USER.lat==null) return false;
+function lockFollow(){
+  if(locMode!==2||_framing||USER.lat==null) return;
   const c=gl.getCenter();
-  return havKm(c.lat,c.lng,USER.lat,USER.lon)>LOCK_ONTARGET_KM;
-}
-function scheduleLockReframe(){
-  if(_framing||_lockReframeT||!lockOffTarget()) return;
-  _lockReframeT=setTimeout(()=>{ _lockReframeT=null;
-    if(locMode===2 && !_framing && lockOffTarget()) frameNow(USER.lat,USER.lon);
-  },900);
+  const off=havKm(c.lat,c.lng,USER.lat,USER.lon);
+  if(off<=LOCK_FOLLOW_KM) return;                       // jitter floor — hold
+  if(off>LOCK_REFRAME_KM){ frameNow(USER.lat,USER.lon); return; }
+  cancelCenterZoom();
+  gl.easeTo({center:[USER.lon,USER.lat],duration:600}); // walking — glide onto the fix
 }
 function centerOnMe(){
   if(USER.lat==null){ toast('LOCATING…'); locate(); return; }
@@ -1463,10 +1496,8 @@ function setUserFix(lat,lon,src,meta){
     // first fix: one clean, guarded animation to the 10 mi VIEW framing
     frameNow(lat,lon);
   } else if(locMode===2){
-    // LOCKED: hold the frame ON the (settling) fix — if the crosshair has drifted off
-    // your real position (IP→GPS refine, cold-GPS jump, you moved), one throttled
-    // re-frame converges onto it; on target, the map holds dead still.
-    scheduleLockReframe();
+    // LOCKED: the map follows the fix — moves when your location moves, and only then.
+    lockFollow();
   } else if(src==='gps'&&pLat!=null&&havKm(pLat,pLon,lat,lon)>8){
     // UNLOCKED and GPS refined the IP guess by a lot (>8 km): re-frame at the precise
     // spot (guarded, so the zoom always lands right).
@@ -2745,19 +2776,20 @@ gl.on('load',()=>{
   //    thrown away the moment the fix lands.
   // The first location fix's moveend loads BOTH around YOU (fallback below if none lands).
   LAYERS.forEach(cfg=>{ LAYER_STATE[cfg.id].started=true; if(!cfg.static && !cfg.viewport) runLayer(cfg); });
-  // Normally the first location fix's moveend loads BOTH the region cache (airspace/NPS)
-  // and the aircraft feed around YOU. This is the ONLY-if-no-fix fallback: if location
-  // never resolves, pull them around the default centre so the map isn't empty. Gated on
-  // USER==null so a still-settling fix never triggers a wasted pull over the US interior.
+  // Normally the settled fix's frame moveend loads EVERYTHING around YOU — the region
+  // cache (airspace/NPS), the aircraft feed, the chart data and the weather card. This
+  // is the ONLY-if-no-fix fallback: if location never resolves (GPS denied + IP dead),
+  // pull around the default centre so the app isn't empty. Timed past the 3 s GPS
+  // settle AND the 6 s IP fallback so it can't race a fix that's still resolving.
   setTimeout(()=>{ if(USER.lat==null){ ensureStaticRegion();
-    LAYERS.forEach(cfg=>{ if(cfg.viewport) runLayer(cfg); }); } },3500);
+    LAYERS.forEach(cfg=>{ if(cfg.viewport) runLayer(cfg); });
+    flyRefresh(); loadWeather(true); } },GEO_IP_FALLBACK_MS+2500);
   refreshBase=Date.now(); setInterval(refreshTick,1000); refreshTick(); // refresh pulse + clock
-  updateLoadRing(); setInterval(updateLoadRing,200);   // bottom-left data-loading ring
+  updateLoadRing(); setInterval(updateLoadRing,200);   // map-corner refresh dial
   loadXray(); setInterval(loadXray,180000); // space weather: GOES X-ray flare (SITREP card)
-  loadWeather(true);   // weather forecast: the always-present bottom SITREP card
   setMapPadding();
   enforceRingZoom();   // recompute the cap now that desktop panel padding is applied
-  flyRender(); flyRefresh();   // chart skeleton now, first data pull immediately
+  flyRender();   // chart skeleton now; the first DATA pull happens on the fix's frame
   locate();
   sitrepTick(); // SITREP works off the map area, even before a location fix
   if(!sitrepTimer) sitrepTimer=setInterval(sitrepTick,90000);
