@@ -222,7 +222,10 @@
      is written concise enough to fit the width. */
   .sit-row{display:flex;align-items:center;gap:9px;padding:8px 12px;font-size:13px;min-height:62px;
     border-bottom:1px solid #10171f}
-  .sit-row .ic{flex:0 0 18px;text-align:center;align-self:flex-start;padding-top:1px}
+  /* card icon: clearly visible but not oversized, vertically centred next to the
+     three text lines. .u keeps the emoji from being forced upper-case. */
+  .sit-row .ic{flex:0 0 30px;text-align:center;align-self:center;
+    font-size:23px;line-height:1;text-transform:none}
   .sit-row .tx{flex:1;min-width:0;line-height:1.34;display:flex;flex-direction:column;justify-content:center}
   .sit-row .tx s1,.sit-row .tx s2,.sit-row .tx s3{display:block;white-space:nowrap;
     overflow:hidden;text-overflow:clip}
@@ -1166,13 +1169,13 @@ async function loadXray(){
 //      refreshed when it moves >2 km or the reading ages past ~5 min. WMO weather
 //      codes map to an emoji + a plain-english condition. ----
 let WX=null, wxLat=null, wxLon=null, wxAt=0, wxBusy=false;
-const WMO={0:['☀','clear'],1:['🌤','mostly clear'],2:['⛅','partly cloudy'],3:['☁','overcast'],
-  45:['🌫','fog'],48:['🌫','icy fog'],
-  51:['🌦','light drizzle'],53:['🌦','drizzle'],55:['🌧','heavy drizzle'],56:['🌧','freezing drizzle'],57:['🌧','freezing drizzle'],
-  61:['🌧','light rain'],63:['🌧','rain'],65:['🌧','heavy rain'],66:['🌧','freezing rain'],67:['🌧','freezing rain'],
-  71:['🌨','light snow'],73:['🌨','snow'],75:['🌨','heavy snow'],77:['🌨','snow grains'],
-  80:['🌦','light showers'],81:['🌧','showers'],82:['⛈','heavy showers'],85:['🌨','snow showers'],86:['🌨','snow showers'],
-  95:['⛈','thunderstorm'],96:['⛈','storm, hail'],99:['⛈','storm, hail']};
+const WMO={0:['☀️','clear'],1:['🌤️','mostly clear'],2:['⛅','partly cloudy'],3:['☁️','overcast'],
+  45:['🌫️','fog'],48:['🌫️','icy fog'],
+  51:['🌦️','light drizzle'],53:['🌦️','drizzle'],55:['🌧️','heavy drizzle'],56:['🌧️','freezing drizzle'],57:['🌧️','freezing drizzle'],
+  61:['🌧️','light rain'],63:['🌧️','rain'],65:['🌧️','heavy rain'],66:['🌧️','freezing rain'],67:['🌧️','freezing rain'],
+  71:['🌨️','light snow'],73:['🌨️','snow'],75:['🌨️','heavy snow'],77:['🌨️','snow grains'],
+  80:['🌦️','light showers'],81:['🌧️','showers'],82:['⛈️','heavy showers'],85:['🌨️','snow showers'],86:['🌨️','snow showers'],
+  95:['⛈️','thunderstorm'],96:['⛈️','storm, hail'],99:['⛈️','storm, hail']};
 async function loadWeather(force){
   if(wxBusy) return;
   const c=gl.getCenter();
@@ -1340,7 +1343,7 @@ const CATS=[
    head:f=>cut(f.properties.flight||f.properties.hex||'?',12),
    sub:f=>escapeHtml(f.properties.desc||f.properties.type||'aircraft'),
    detail:f=>'sq '+(f.properties.code||'7700')},
-  {src:'src-nws', hazard:true, icon:'⚠',
+  {src:'src-nws', hazard:true, icon:'⚠️',
    cls:f=>/Extreme|Severe/i.test(f.properties.severity)?'danger':'alert',
    head:f=>cut((f.properties.event||'warning').replace(/\s*warning$/i,'').toUpperCase(),22),
    sub:f=>cut(f.properties.area,26),
@@ -1348,10 +1351,10 @@ const CATS=[
    // + the card colour, so repeating it here is noise). '' if no end time known.
    detail:f=>{const e=f.properties.ends,d=e&&new Date(e);
      return d&&!isNaN(d)?'til '+d.toLocaleTimeString([],Object.assign({hour:'numeric',minute:'2-digit'},tzOpt())):'';}},
-  {src:'src-nearair', hazard:false, icon:'✈', cls:()=>'',
+  {src:'src-nearair', hazard:false, icon:'✈️', cls:()=>'',
    head:f=>cut(f.properties.flight||f.properties.hex||'?',12),
    sub:f=>escapeHtml(f.properties.desc||f.properties.type||'aircraft'), detail:ALT},
-  {src:'src-mil', hazard:false, icon:'🎖', mil:true, cls:()=>'alert',
+  {src:'src-mil', hazard:false, icon:'🪖', mil:true, cls:()=>'alert',
    head:f=>cut(f.properties.flight||f.properties.hex||'?',10),
    sub:f=>escapeHtml(f.properties.desc||f.properties.type||'military'), detail:ALT},
   // FAA airspace RESTRICTIONS — each in-view zone is a distance-sorted, tappable
@@ -1359,7 +1362,7 @@ const CATS=[
   // stadium / …) are red/amber hazards; controlled airspace (Class B/C/D/E) is a
   // separate NEUTRAL card below (authorization, not a no-fly).
   {src:'src-airspace', hazard:true, filter:f=>f.properties.sev!=='ctrl',
-   icon:f=>f.properties.sev==='hard'?'⛔':'⚠',
+   icon:f=>f.properties.sev==='hard'?'⛔':'⚠️',
    cls:f=>f.properties.sev==='hard'?'danger':'alert',
    head:f=>({DEF:'DEFENSE AIRSPACE',NSUFR:'SECURITY NO-FLY',P:'PROHIBITED AREA',R:'RESTRICTED AREA',
      MOA:'MILITARY OPS AREA',W:'WARNING AREA',A:'ALERT AREA',D:'DANGER AREA',STDM:'STADIUM TFR'}[f.properties.cls]||'AIRSPACE'),
@@ -1374,7 +1377,7 @@ const CATS=[
    sub:f=>cut(f.properties.name||'—',26),
    detail:()=>'authorization required'},
   // National Park Service lands — a drone no-fly (can't launch / land / operate).
-  {src:'src-nps', hazard:true, icon:'🌲', cls:()=>'danger',
+  {src:'src-nps', hazard:true, icon:'🏞️', cls:()=>'danger',
    head:f=>cut(f.properties.name||'NPS LAND',20),
    sub:()=>'drones prohibited', detail:f=>cut(f.properties.utype||'NPS unit',18)},
 ];
@@ -1462,13 +1465,13 @@ async function sitrepTick(){
     if(tornHit){ const tp=parseFloat(tornHit.properties.code)||0; const red=tornHit.properties.sig||tp>=0.10;
       general.push([red?'danger':'alert','🌪️','TORNADO OUTLOOK',cut(tornHit.properties.label,16)+' today',
         tornHit.properties.sig?'significant EF2+ risk':'SPC Day 1 outlook',openBtn(SPCU,'SPC'),true]); }
-    if(catHit) general.push([catHit.properties.rank>=4?'danger':'alert','⛈','SEVERE WX OUTLOOK',cut(catHit.properties.label,16)+' today',
+    if(catHit) general.push([catHit.properties.rank>=4?'danger':'alert','⛈️','SEVERE WX OUTLOOK',cut(catHit.properties.label,16)+' today',
       'tornado / hail / wind risk',openBtn(SPCU,'SPC'),true]);
   }
   // space weather (global scalars): geomagnetic storm + solar flare
   if(KP!=null&&KP>=5) general.push(['alert','🧲','GEOMAGNETIC STORM','Kp '+KP+' · K-index',
     'HF / GPS / grid impact',openBtn(SWPC,'SWPC'),true]);
-  if(XRAY&&/^[MX]/.test(XRAY)) general.push([/^X/.test(XRAY)?'danger':'alert','☀','SOLAR FLARE '+XRAY,'GOES X-ray · '+(/^X/.test(XRAY)?'major':'moderate'),
+  if(XRAY&&/^[MX]/.test(XRAY)) general.push([/^X/.test(XRAY)?'danger':'alert','☀️','SOLAR FLARE '+XRAY,'GOES X-ray · '+(/^X/.test(XRAY)?'major':'moderate'),
     'HF radio blackout risk',openBtn(SWPC,'SWPC'),true]);
 
   // -- INDIVIDUAL item cards: one per in-view feature (planes, warnings,
