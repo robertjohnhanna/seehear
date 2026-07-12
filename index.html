@@ -100,12 +100,14 @@
             mask:radial-gradient(farthest-side,transparent calc(100% - 3px),#000 calc(100% - 3px))}
   .rdial.busy .rdial-prog{background:conic-gradient(var(--accent) 90deg,#2a3a4d 0deg);animation:sp .8s linear infinite}
   #refresh-badge{margin-left:auto}
-  /* the map-page dial gets a solid BLACK disc (fills the ring's transparent centre)
-     and a BLACK outline (box-shadow) so the countdown reads over any map; the header
-     dial (#refresh-badge, on the dark panel) keeps its bare-ring look. */
-  #map-refresh{position:absolute;z-index:16;top:calc(var(--sa-t) + 12px);right:calc(14px + var(--sa-r));
-    display:none;background:#000;border-radius:50%;box-shadow:0 0 0 2px #000}
-  @media (max-width:1000px) and (orientation:portrait){ #map-refresh{display:block} }
+  /* the map-page dial is shown in EVERY layout (the panel header is dropped) — a solid
+     BLACK disc + black outline so the countdown reads over any map. It sits at the map's
+     TOP-RIGHT, clearing the docked 360px panel (right:376 — NO safe-area add, since the
+     panel itself sits flush at right:0; adding it double-counted and left a gap). In
+     portrait the panel is an overlay sheet, so it moves to the true screen right edge. */
+  #map-refresh{position:absolute;z-index:16;top:calc(var(--sa-t) + 12px);right:376px;
+    display:block;background:#000;border-radius:50%;box-shadow:0 0 0 2px #000}
+  @media (max-width:1000px) and (orientation:portrait){ #map-refresh{right:calc(14px + var(--sa-r))} }
   /* ---------- canifly — the static drone-preflight chart ----------
      Ported from the canifly repo (which stays standalone and untouched): just
      the flyability grid + the settings box, no title/coords/refresh line.
@@ -161,43 +163,38 @@
     padding:8px 11px;border-radius:8px;font-size:13px;color:var(--ink);animation:sl .25s ease}
   @keyframes sl{from{transform:translateY(8px);opacity:0}to{transform:none;opacity:1}}
   @keyframes sp{to{transform:rotate(360deg)}}
-  /* ---------- SITREP briefing panel (right side) ---------- */
-  #sit-head{display:flex;align-items:center;gap:8px;padding:9px 12px;
-    border-bottom:1px solid var(--line);flex:0 0 auto;min-height:48px}
-  #sit-head .title{color:var(--accent);font-size:15px;letter-spacing:2px;font-weight:700;
-    flex:0 0 auto}
-  /* title severity — defined AFTER .title so they win on colour without
-     !important (which would otherwise beat the acflash animation below). */
-  #sit-head .title.alert{color:var(--warn)}
-  #sit-head .title.warn{color:var(--danger)}
-  /* CANIFLY verdict tag mirrored at the map's TOP-left (iPhone portrait's map page,
-     and landscape where the header is dropped) — same green/amber/red + breach-flash
-     as the header title. A black glyph outline (text-stroke, painted BEHIND the fill)
-     keeps it legible over any map. Its colour rules sit here, BEFORE the acflash rule,
-     so the flash animation still wins during a breach; sitrepTick stamps the same
-     classes on it and #sit-title together. */
+  /* ---------- SITREP briefing panel (right side) ----------
+     The panel HEADER is dropped in EVERY layout — the CANIFLY verdict and the refresh
+     dial live on the map instead — so the panel is just the chart + cards. #sit-head is
+     hidden (not removed): #sit-title stays in the DOM, updated by sitrepTick as the
+     canonical verdict that the on-map #map-title mirrors. */
+  #sit-head{display:none}
+  /* CANIFLY verdict tag at the map's TOP-left — the single visible title now the panel
+     header is gone, shown in EVERY layout. Same green/amber/red + breach-flash as the
+     (hidden) header title, which sitrepTick keeps it in sync with. A black glyph outline
+     (text-stroke, painted BEHIND the fill) keeps it legible over any map. Its colour
+     rules sit here, BEFORE the acflash rule, so the flash animation still wins. */
   #map-title{position:absolute;z-index:16;left:calc(14px + var(--sa-l));
-    top:calc(var(--sa-t) + 14px);display:none;pointer-events:none;
+    top:calc(var(--sa-t) + 14px);display:block;pointer-events:none;
     color:var(--accent);font-size:15px;letter-spacing:2px;font-weight:700;
     -webkit-text-stroke:3px #000;paint-order:stroke fill;filter:drop-shadow(0 0 2px #000)}
   #map-title.alert{color:var(--warn)}
   #map-title.warn{color:var(--danger)}
-  @media (max-width:1000px) and (orientation:portrait){ #map-title{display:block} }
   /* EXTRA ALERT — an aircraft breaching the range+altitude threshold flashes the
-     SITREP title, its card headline, its map halo AND the chart's TRFC cell(s)
+     CANIFLY tag, its card headline, its map halo AND the chart's TRFC cell(s)
      between red and white (a TRFC cell only appears while a plane breaches). */
   @keyframes acflash{0%,100%{color:var(--danger)}50%{color:#fff}}
-  #sit-head .title.acflash,#map-title.acflash,.sit-row.acflash .s1,#fly-pane .gc.acflash{
+  #map-title.acflash,.sit-row.acflash .s1,#fly-pane .gc.acflash{
     animation:acflash .9s ease-in-out infinite}
   @media (prefers-reduced-motion:reduce){
-    #sit-head .title.acflash,#map-title.acflash,.sit-row.acflash .s1,#fly-pane .gc.acflash{animation:none}}
+    #map-title.acflash,.sit-row.acflash .s1,#fly-pane .gc.acflash{animation:none}}
   /* center-on-me / lock button — a single WHITE box in the map's bottom-right
      corner (inside the map area, clear of the docked 360px panel on desktop; on
      mobile the panel is an overlay sheet so it sits at the true bottom-right).
      White border + glyph on a dark blurred bg; inverts to a white fill with a dark
      glyph on press. The icon swaps to a padlock while follow-locked. */
-  #loc-btn{position:absolute;z-index:16;bottom:16px;
-    right:calc(376px + var(--sa-r));width:42px;height:42px;padding:0;
+  #loc-btn{position:absolute;z-index:16;bottom:calc(var(--sa-b) + 14px);
+    right:376px;width:42px;height:42px;padding:0;
     border:1px solid #fff;border-radius:9px;background:var(--panel);color:#fff;
     cursor:pointer;display:flex;align-items:center;justify-content:center;
     backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
@@ -263,7 +260,6 @@
       transform:translateY(calc(100vh + 40px));
       transition:transform .26s cubic-bezier(.22,.61,.36,1);visibility:visible}
     body.panel-open .panel{transform:translateY(0)}
-    #sit-head{padding-top:calc(var(--sa-t) + 11px)}
     #sit-body{padding-bottom:calc(var(--sa-b) + 6px)}
     #fly-board{cursor:pointer}          /* tap the chart to drop back to the map */
     /* the panel is an overlay sheet on mobile, so the center-on-me button sits at
@@ -271,16 +267,9 @@
     #loc-btn{right:calc(14px + var(--sa-r));bottom:calc(var(--sa-b) + 14px)}
     #map-attrib{right:0;bottom:calc(var(--sa-b) + 2px)}
   }
-  /* ---------- iPhone LANDSCAPE: keep the docked-right panel (chart + cards) but drop
-     its HEADER — the CANIFLY verdict, refresh dial and lock control move onto the
-     map's corners to reclaim the short landscape height. The max-height gate targets
-     phones (≤ ~430px tall in landscape), not tablets/desktops (far taller). */
-  @media (orientation:landscape) and (max-height:500px){
-    #sit-head{display:none}                                       /* header gone */
-    #map-title{display:block}                                     /* CANIFLY → map bottom-left */
-    #map-refresh{display:block;right:calc(376px + var(--sa-r))}   /* refresh dial → map top-right (clear the panel) */
-    #loc-btn{bottom:calc(var(--sa-b) + 14px)}                     /* lock → map bottom-right, above the home bar */
-  }
+  /* Landscape (phone/tablet/desktop) needs no special block: the header is dropped and
+     the map overlays are on in every layout by default, positioned to clear the docked
+     panel. Only iPhone PORTRAIT (above) differs, where the panel is an overlay sheet. */
 </style>
 </head>
 <body>
@@ -1967,12 +1956,13 @@ gl.on('resize',refreshViewport);
   // a genuine tap on the map canvas (MapLibre fires 'click' only on a tap, never
   // a drag/pinch) brings the panel up; steppers/buttons are separate DOM overlays
   gl.on('click',open);
-  // one big "back to the map" target: the whole panel (title bar, chart, any empty
-  // space) closes on tap. A tap on a card falls through to its own handler, and the
-  // refresh dial keeps refreshing — neither dismisses the panel.
+  // one big "back to the map" target: the whole panel (the chart, any empty space)
+  // closes on tap; only a tap on a card is exempt, falling through to its own fly-to /
+  // open action. (The refresh dial now lives on the map, outside the panel, so it
+  // needs no exemption.)
   $('#sitrep').addEventListener('click',e=>{
     if(!MQ_MOBILE.matches) return;                    // desktop: docked panel, no toggle
-    if(e.target.closest('.sit-row,#refresh-badge')) return;
+    if(e.target.closest('.sit-row')) return;
     close();
   });
   // rotating to a desktop width clears the toggle so the docked panel shows

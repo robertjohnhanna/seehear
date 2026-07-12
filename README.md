@@ -214,29 +214,30 @@ The map has **no click popups** — everything inside the range ring is describe
 by the SITREP cards, so the map stays a clean picture and the panel carries the
 detail.
 
-**Mobile:** the map and the CANIFLY panel are two full-screen pages. **Tap the
-map** to bring the panel up; **tap anywhere on the panel** — the title bar, the
-flyability chart, any empty space — to drop back to the map. The only exceptions
-are the **SITREP cards** (which run their own fly-to / open action) and the
-**refresh dial** (which refreshes without dismissing). No drag, no snap points —
-one tap flips the page, and each page gets the whole screen. The panel uses the
-dynamic viewport height so it never spills below Safari's address bar. This
-two-page toggle is **portrait-only**. A phone in **landscape** keeps the
-docked-right panel (chart + cards) but **drops its header** to reclaim the short
-landscape height: the CANIFLY verdict, refresh dial and lock control move onto the
-**map's corners** instead (top-left / top-right / bottom-right). A tablet or desktop
-in landscape is far taller, so it keeps the full docked layout with the header.
-Because the panel's **refresh dial** (see below) is hidden while you're on the map
-page (portrait) or in the header (dropped in landscape), a duplicate sits at the
-map's **top-right** — a black disc with a black outline so the countdown reads over
-any map — and the **CANIFLY verdict** is mirrored at the map's **top-left** (a
-black-outlined tag), carrying the same green/amber/red colour and breach-flash as
-the header title, so the one-glance go/no-go always reaches you.
+**The panel has no header in any layout.** The CANIFLY verdict, the refresh dial and
+the lock control live on the **map's corners** instead — **top-left**, **top-right**,
+**bottom-right** — so the panel is just the flyability chart + the SITREP cards. The
+map-corner controls carry a **black outline** (a black glyph outline on the CANIFLY
+tag; a black disc + outline on the dial) so they read over any map. The CANIFLY tag
+mirrors the same green/amber/red verdict + breach-flash the panel drives, so the
+one-glance go/no-go is always on the map. On a **docked** layout (desktop / iPad
+landscape / iPhone landscape) the corner controls sit just inside the map, clearing
+the 360px panel — positioned off the panel edge, **not** the safe-area inset (the
+panel sits flush at the screen edge, so adding the inset would leave a gap).
+
+**Mobile portrait** (iPhone, and any ≤1000px-wide portrait screen) is a **two-page
+toggle**: the map and the panel are separate full-screen pages. **Tap the map** to
+bring the panel up; **tap anywhere on the panel** — the chart, any empty space — to
+drop back to the map. The only exception is a **SITREP card**, which runs its own
+fly-to / open action. No drag, no snap points — one tap flips the page, and each gets
+the whole screen (the panel uses the dynamic viewport height so it never spills below
+Safari's address bar). The map-corner controls move to the true screen edges there,
+since the panel is an overlay sheet rather than docked.
 
 A **refresh dial** — a circular sweep that fills over the 15 s cycle (a
-numberless countdown ring) — sits at the top-right of the panel header; it
-**spins** while a feed is fetching (it replaces the old corner load spinner) and a
-tap forces an immediate refresh.
+numberless countdown ring) — sits at the map's top-right corner; it **spins** while
+a feed is fetching (it replaces the old corner load spinner) and a tap forces an
+immediate refresh.
 
 ## Location & privacy
 
