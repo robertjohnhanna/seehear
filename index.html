@@ -245,7 +245,10 @@
   #ctrlbar .cb-btn:active::before,#ctrlbar .cb-btn:active::after{background:#00140a}
   /* data-loading ring: bottom-left of the map, fades in + spins while any feed is
      fetching (initial load, the 30s pulse, a pan refetch), fades out when idle */
-  #load-ring{position:absolute;z-index:16;left:calc(16px + var(--sa-l));bottom:16px;
+  /* bottom:26px vertically centres the 22px ring within the 42px #ctrlbar band
+     (16 + (42−22)/2), so the loading ring and the range/center-on-me box sit on
+     the same line across the bottom of the map */
+  #load-ring{position:absolute;z-index:16;left:calc(16px + var(--sa-l));bottom:26px;
     width:22px;height:22px;border:2.5px solid #2a3a4d;border-top-color:var(--accent);
     border-radius:50%;opacity:0;transition:opacity .3s;pointer-events:none;
     filter:drop-shadow(0 0 3px #000)}
@@ -325,7 +328,7 @@
     .panel.open{transform:translateY(0);visibility:visible}
     /* map is full-width on mobile; keep the controls above the bottom nav */
     #ctrlbar{right:calc(14px + var(--sa-r));bottom:calc(var(--navh) + var(--sa-b) + 14px)}
-    #load-ring{left:calc(14px + var(--sa-l));bottom:calc(var(--navh) + var(--sa-b) + 16px)}
+    #load-ring{left:calc(14px + var(--sa-l));bottom:calc(var(--navh) + var(--sa-b) + 24px)}
     /* full map width, sat just above the bottom nav */
     #map-attrib{right:0;bottom:calc(var(--navh) + var(--sa-b) + 3px)}
   }
@@ -1775,6 +1778,9 @@ function sitrepTick(){
   const t=$('#sit-title'); t.classList.remove('warn','alert');
   if(titleSev>=2) t.classList.add('warn'); else if(titleSev>=1) t.classList.add('alert');
   t.classList.toggle('acflash',acFlash);   // breaching aircraft → flash the title red/white
+  // the map range ring tracks the SITREP title severity: green clear / amber
+  // reduced-or-unverified / red grounded (same 0·1·2 the title colour uses)
+  if(gl.getLayer('ly-ring')) gl.setPaintProperty('ly-ring','line-color',SEV_COL[titleSev]||SEV_COL[0]);
   cards.forEach(cd=>row(cd[0],cd[1],cd[2],cd[3],cd[4],cd[5],cd[7],cd[8]));
 
   // the weather card is always appended, so there's always at least one row
@@ -2431,8 +2437,12 @@ function startAcPulse(){
    9. RANGE RING — a dashed circle drawn on the map around the crosshair (the
    map centre) at the current canifly RANGE setting (RNG.mi). It tracks the
    crosshair as you pan and resizes the instant the range stepper changes,
-   so the map shows exactly the radius the flyability check sweeps.
+   so the map shows exactly the radius the flyability check sweeps. Its colour
+   tracks the SITREP title severity (see sitrepTick): green clear, amber reduced
+   / unverified, red grounded.
    ===================================================================== */
+// ring colour by title severity 0·1·2 — matches --accent / --warn / --danger
+const SEV_COL=['#2fe07a','#ffb454','#ff4455'];
 const RING_N=96;   // vertices — a smooth circle at any zoom
 // A closed ring of [lon,lat] points approximating a circle of `km` radius around
 // (lat,lon). Equirectangular — exact enough for the small radii here (range ring,
