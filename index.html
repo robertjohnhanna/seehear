@@ -279,41 +279,28 @@
     border:2.5px solid #fff;box-shadow:0 0 0 0 rgba(47,224,122,.6);animation:pulse 2.2s infinite}
   @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(47,224,122,.6)}70%{box-shadow:0 0 0 16px rgba(47,224,122,0)}100%{box-shadow:0 0 0 0 rgba(47,224,122,0)}}
 
-  /* ---------- mobile bottom sheet ---------- */
-  #sheet-handle{display:none}
-  /* one-time add-to-home-screen hint (shown via JS on iOS Safari) */
-  #a2hs{position:absolute;z-index:40;top:calc(var(--sa-t) + 10px);left:50%;
-    transform:translateX(-50%);max-width:min(340px,90vw);display:flex;align-items:center;gap:8px;
-    background:var(--panel);border:1px solid var(--line);border-radius:9px;
-    padding:8px 10px;font-size:12px;color:var(--ink);line-height:1.35;
-    backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);box-shadow:0 8px 24px #000a}
-  #a2hs b{color:var(--accent);font-weight:700}
-  #a2hs-x{flex:0 0 auto;background:none;border:none;color:var(--ink-dim);font-size:15px;
-    padding:0 2px;line-height:1;cursor:pointer}
-  #a2hs[hidden]{display:none}
+  /* ---------- mobile: two full-screen pages, map ⇄ panel ---------- */
   @media (max-width:1000px){
-    /* map is full height; the sheet floats over it */
     #map{bottom:0}
-    /* the CANIFLY panel becomes a drag-up bottom sheet. Height is set by JS to fit
-       the snap positions; transform (the snap) is set by JS too. */
-    .panel{left:0!important;right:0!important;top:0!important;bottom:auto!important;
-      width:auto!important;height:100vh;z-index:20;padding:0!important;
+    /* The CANIFLY panel is a full-screen page that slides up over the map.
+       Hidden by default (the map is page one); body.panel-open slides it in.
+       100dvh (dynamic viewport) tracks the shrinking address bar so the panel
+       never spills below Safari's chrome. */
+    .panel{left:0!important;right:0!important;top:0!important;bottom:0!important;
+      width:auto!important;height:100dvh;z-index:30;padding:0!important;
       background:var(--panel);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
-      border:none;border-radius:16px 16px 0 0;box-shadow:0 -14px 40px #000b;
-      transform:translateY(100%);   /* JS replaces this with the snap position */
-      transition:transform .28s cubic-bezier(.22,.61,.36,1);visibility:visible}
-    .panel.dragging{transition:none}   /* live-follow the finger, no lag */
-    /* grab handle at the very top of the sheet (also the primary drag surface) */
-    #sheet-handle{display:block;flex:0 0 auto;padding:9px 0 5px;touch-action:none;cursor:grab}
-    #sheet-handle::before{content:"";display:block;width:38px;height:5px;margin:0 auto;
-      border-radius:3px;background:var(--ink-dim);opacity:.6}
-    #sit-head{touch-action:none}       /* the title bar is a drag surface too */
+      border:none;border-radius:0;box-shadow:none;
+      transform:translateY(100%);
+      transition:transform .26s cubic-bezier(.22,.61,.36,1);visibility:visible}
+    body.panel-open .panel{transform:translateY(0)}
+    #sit-head{padding-top:calc(var(--sa-t) + 11px)}
     #sit-body{padding-bottom:calc(var(--sa-b) + 6px)}
-    /* floating map controls sit just above the collapsed peek (--peek set by JS) */
+    #fly-board{cursor:pointer}          /* tap the chart to drop back to the map */
+    /* floating map controls sit above the safe-area bottom */
     #ctrl-wrap{left:calc(14px + var(--sa-l));right:calc(14px + var(--sa-r));
-      bottom:calc(var(--peek,84px) + var(--sa-b) + 12px)}
+      bottom:calc(var(--sa-b) + 14px)}
     #load-ring{left:calc(14px + var(--sa-l));top:calc(var(--sa-t) + 12px)}
-    #map-attrib{right:0;bottom:calc(var(--peek,84px) + var(--sa-b) + 2px)}
+    #map-attrib{right:0;bottom:calc(var(--sa-b) + 2px)}
   }
 </style>
 </head>
@@ -335,7 +322,6 @@
      the map (grab handle on top). Top to bottom: title + refresh timer, the
      flyability chart + settings, then the SITREP cards (scroll). -->
 <div id="sitrep" class="panel">
-  <div id="sheet-handle" title="drag to resize" aria-hidden="true"></div>
   <div id="sit-head">
     <span class="title" id="sit-title">◈ CANIFLY</span>
     <span id="sit-load" aria-hidden="true" title="loading data…"></span>
@@ -367,12 +353,6 @@
   <span class="cb-val" id="rng-val" role="button" tabindex="0" title="Tap to reset range">1.0 mi</span>
   <button type="button" class="cb-btn cb-plus" id="rng-plus" aria-label="Increase range half a mile"></button>
 </div></div>
-
-<!-- one-time "add to home screen" hint (iOS Safari, not standalone) -->
-<div id="a2hs" hidden>
-  <span>Add to Home Screen for full-screen — <b>Share</b> ▸ <b>Add to Home Screen</b>.</span>
-  <button id="a2hs-x" type="button" aria-label="dismiss">✕</button>
-</div>
 
 <div id="toast"></div>
 
@@ -1560,13 +1540,27 @@ function sitrepTick(){
   if(wn){
     const wxCap=Math.min(wn.windCeilFt,wn.cloudCapFt);   // weather-only ceiling (ft)
     if(wn.gust||wn.vis||wn.precip||wxCap<0){
-      const [ic,head,sub]=
-        wn.precip ? ['⛈️','PRECIPITATION','radar echo in range']
-        : wn.gust ? ['💨','HIGH WIND','surface gusts over max']
-        : wn.windCeilFt<0 ? ['💨','HIGH WIND','winds aloft over max']
-        : wn.vis ? ['🌫️','LOW VISIBILITY','under 3 SM']
-        : ['☁️','LOW CLOUD','cloud base too low'];
-      cards.push(['danger',ic,head,sub,'grounded now','',true]);
+      // line 3 carries the MEASURED value behind whichever gate is grounding —
+      // real telemetry, not a restatement of the red "grounded" state.
+      let ic,head,sub,l3;
+      if(wn.precip){
+        ic='⛈️'; head='PRECIPITATION'; sub='radar echo in range';
+        const cond=(WX&&WMO[WX.code])?WMO[WX.code][1]:null;   // what's actually falling
+        l3=cond?cond.toUpperCase():'nexrad reflectivity';
+      }else if(wn.gust){
+        ic='💨'; head='HIGH WIND'; sub='surface gusts over max';
+        l3='gust '+Math.round(wn.gustMph)+U(' mph')+' · max '+LIM.wind;
+      }else if(wn.windCeilFt<0){
+        ic='💨'; head='HIGH WIND'; sub='winds aloft over max';
+        l3=Math.round(wn.windPeakMph)+U(' mph')+' aloft · max '+LIM.wind;
+      }else if(wn.vis){
+        ic='🌫️'; head='LOW VISIBILITY'; sub='under 3 SM';
+        l3=(wn.visSM!=null?wn.visSM.toFixed(1):'—')+U(' SM')+' reported';
+      }else{
+        ic='☁️'; head='LOW CLOUD'; sub='cloud base too low';
+        l3='base '+Math.round(wn.cloudCapFt+SPEC.clrFt)+U(' ft')+' · need 500 clr';
+      }
+      cards.push(['danger',ic,head,sub,l3,'',true]);
     }else if(wxCap<SPEC.regFt){
       const wind=wn.windCeilFt<=wn.cloudCapFt;
       cards.push(['alert',wind?'💨':'☁️',wind?'WIND CEILING':'CLOUD CEILING',
@@ -1743,7 +1737,7 @@ function handleAct(btn){
     // zoom IN to at least 9 but never zoom the user OUT of a closer view
     if(isFinite(lo)&&isFinite(la)){ cancelCenterZoom();
       gl.flyTo({center:[lo,la],zoom:Math.max(gl.getZoom(),9)}); }
-    if(MQ_MOBILE.matches&&window.sheetSnap) window.sheetSnap('collapsed');   // drop the sheet to reveal the map
+    if(MQ_MOBILE.matches&&window.panelClose) window.panelClose();   // show the map so the fly-to is visible
   } else if(act==='open'&&btn.dataset.url){ window.open(btn.dataset.url,'_blank','noopener'); }
   else if(act==='refresh'){ forceRefresh(); }   // DATA card → force a full refresh
 }
@@ -1792,73 +1786,23 @@ gl.on('moveend',refreshViewport);
 // container resize doesn't reliably fire moveend, so refetch here too
 gl.on('resize',refreshViewport);
 
-// ---- MOBILE BOTTOM SHEET — the CANIFLY panel drags up from the bottom over the
-//      map, snapping between COLLAPSED (a title strip, map dominant), MID (the
-//      flyability chart), and FULL (chart + all cards, scrolling). The grab
-//      handle and the title bar are the drag surfaces; the card list scrolls on
-//      its own. Desktop keeps the docked-right panel untouched (guarded by MQ). --
-(function sheetCtl(){
-  const sheet=$('#sitrep'), handle=$('#sheet-handle'), head=$('#sit-head'), flyPane=$('#fly-pane');
-  const ORDER=['collapsed','mid','full'];
-  const FULL_INSET=40;                 // px of map left showing at the top when FULL
-  let snap={collapsed:0,mid:0,full:FULL_INSET}, cur='collapsed';
-  function measure(){
-    const H=window.innerHeight, SH=Math.max(160,H-FULL_INSET);
-    sheet.style.height=SH+'px';
-    const peek=handle.offsetHeight+head.offsetHeight;         // COLLAPSED shows this
-    const chart=peek+flyPane.offsetHeight;                    // MID shows chart too
-    snap={ full:FULL_INSET, mid:Math.max(FULL_INSET,H-chart), collapsed:Math.max(FULL_INSET,H-peek) };
-    document.documentElement.style.setProperty('--peek',peek+'px');
-  }
-  function applySnap(name,animate){
-    cur=name;
-    if(animate){ sheet.classList.remove('dragging'); }
-    else { sheet.classList.add('dragging');
-      requestAnimationFrame(()=>requestAnimationFrame(()=>sheet.classList.remove('dragging'))); }
-    sheet.style.transform='translateY('+snap[name]+'px)';
-  }
-  function setSnap(name){ if(!MQ_MOBILE.matches) return; measure(); applySnap(name,true); }
-  window.sheetSnap=setSnap;   // used by handleAct (fly-to → collapse)
-  // ---- drag ----
-  let y0=0, t0=0, base=0, live=0, dragging=false, moved=false, when=0;
-  function begin(y){ measure(); dragging=true; moved=false; y0=y; base=snap[cur]; live=base;
-    when=Date.now(); sheet.classList.add('dragging'); }
-  function move(y){ if(!dragging) return; const dy=y-y0; if(Math.abs(dy)>4) moved=true;
-    live=Math.max(snap.full,Math.min(snap.collapsed,base+dy)); sheet.style.transform='translateY('+live+'px)'; }
-  function end(y){ if(!dragging) return; dragging=false;
-    if(!moved){ applySnap(ORDER[(ORDER.indexOf(cur)+1)%ORDER.length],true); return; }   // tap = cycle up
-    const v=(y-y0)/Math.max(1,Date.now()-when);      // px/ms (+ = downward flick)
-    const target=live+v*130;                          // project the flick a little
-    const best=ORDER.map(n=>[n,snap[n]]).sort((a,b)=>Math.abs(a[1]-target)-Math.abs(b[1]-target))[0][0];
-    applySnap(best,true);
-  }
-  const drag=el=>{
-    el.addEventListener('pointerdown',e=>{ if(!MQ_MOBILE.matches) return;
-      if(e.target.closest('#refresh-badge')) return;   // keep the refresh badge tappable
-      begin(e.clientY); try{el.setPointerCapture(e.pointerId);}catch(_){}; });
-    el.addEventListener('pointermove',e=>move(e.clientY));
-    el.addEventListener('pointerup',e=>end(e.clientY));
-    el.addEventListener('pointercancel',e=>end(e.clientY));
-  };
-  drag(handle); drag(head);
-  window.addEventListener('resize',()=>{
-    if(MQ_MOBILE.matches){ measure(); applySnap(cur,false); }
-    else { sheet.style.transform=''; sheet.style.height=''; sheet.classList.remove('dragging'); }
-  });
-  if(MQ_MOBILE.matches) requestAnimationFrame(()=>setSnap('collapsed'));   // start map-dominant
-})();
-
-// ---- one-time "Add to Home Screen" hint (iOS Safari tab only). Installed
-//      (standalone) the app owns the whole screen — no Safari chrome — so the
-//      hint reclaims that space. Dismiss persists per device. --
-(function a2hs(){
-  const el=$('#a2hs'); if(!el) return;
-  const iOS=/iP(hone|od|ad)/.test(navigator.platform)||(/Mac/.test(navigator.platform)&&navigator.maxTouchPoints>1);
-  const standalone=navigator.standalone===true||matchMedia('(display-mode:standalone)').matches;
-  let dismissed=false; try{ dismissed=localStorage.getItem('canifly.a2hs')==='1'; }catch(e){}
-  if(iOS&&!standalone&&!dismissed&&MQ_MOBILE.matches) el.hidden=false;
-  $('#a2hs-x').addEventListener('click',()=>{ el.hidden=true;
-    try{ localStorage.setItem('canifly.a2hs','1'); }catch(e){} });
+// ---- MOBILE TWO-PAGE TOGGLE — the map and the CANIFLY panel are two full-screen
+//      pages. Tap the map to bring the panel up; tap the flyability chart (or any
+//      card) to drop back to the map. No drag, no peek, no snap points — one tap
+//      flips the page. Desktop keeps the docked-right panel (guarded by MQ). --
+(function panelToggle(){
+  const body=document.body;
+  const open =()=>{ if(MQ_MOBILE.matches) body.classList.add('panel-open'); };
+  const close=()=>body.classList.remove('panel-open');
+  window.panelClose=close;   // used by handleAct (fly-to → show the map)
+  // a genuine tap on the map canvas (MapLibre fires 'click' only on a tap, never
+  // a drag/pinch) brings the panel up; steppers/buttons are separate DOM overlays
+  gl.on('click',open);
+  // tapping the chart grid returns to the map. The settings box (wind stepper)
+  // and refresh badge live OUTSIDE #fly-board, so they stay interactive.
+  $('#fly-board').addEventListener('click',close);
+  // rotating to a desktop width clears the toggle so the docked panel shows
+  MQ_MOBILE.addEventListener('change',e=>{ if(!e.matches) close(); });
 })();
 
 /* =====================================================================
@@ -2149,9 +2093,10 @@ window.__sitrep.fly={FLY,SPEC,LIM,RNG,paint:flyPaint,refresh:flyRefresh,unknownS
 // those. The layer is a static regional cache (pulled once for a box around the
 // crosshair, kept at every zoom, re-pulled only on travel) so a grounding zone
 // under the crosshair can't silently vanish when the view widens; the
-// authoritative canifly point-query still runs regardless. Advisory zones
-// (Restricted/MOA/Warning/Alert/stadium) never ground the chart — they may be
-// schedule-only, so they stay on the map + SITREP with a "verify" note.
+// authoritative canifly point-query still runs regardless. Conditional/advisory
+// zones (Restricted/stadium = amber "no-fly if active"; MOA/Warning/Alert/Danger
+// = neutral "advisory only") never ground the chart — they're schedule-only or
+// concern manned traffic, so they stay on the map + SITREP without grounding.
 function flyRestriction(){
   const c=gl.getCenter(); let hit=null;
   featsIn('airspace').forEach(f=>{
@@ -2207,8 +2152,15 @@ function flyComputeDetail(){
     let hitFt=null; for(const ft of ALTS_UP){ if(atLim(prof(ft))){ hitFt=ft; break; } }
     const windCeilFt=hitFt==null?SPEC.regFt:hitFt-50;
     // capture NOW's weather gates for the SITREP WX WARNING card (which picks the
-    // most severe of precip / wind / gust / visibility / cloud to show)
-    if(n===0) wxNow={gust:gGust,vis:gVis,precip:gPcpn,windCeilFt,cloudCapFt};
+    // most severe of precip / wind / gust / visibility / cloud to show). Carries
+    // the raw measured values too, so the card's third line reads real telemetry
+    // (gust mph, wind aloft peak, visibility SM, cloud base) rather than a
+    // redundant "grounded now".
+    if(n===0){
+      let windPeak=0; for(const ft of ALTS){ const v=prof(ft); if(v!=null&&v>windPeak) windPeak=v; }
+      wxNow={gust:gGust,vis:gVis,precip:gPcpn,windCeilFt,cloudCapFt,
+        gustMph:c.gustKt, visSM, windPeakMph:windPeak};
+    }
     const capFt=Math.min(SPEC.regFt, cloudCapFt, windCeilFt, aspCapFt);
     const grounded=globalGrounded||capFt<0;
     let maxFly=-1;
