@@ -437,7 +437,11 @@ function acFeatures(j,kind){
     properties:{_kind:kind,
       flight:String(a.flight||a.r||a.hex||'?').trim(),
       type:a.t||'?',desc:a.desc||'',op:a.ownOp||'',
-      alt:a.alt_baro??a.alt_geom??'?',spd:a.gs!=null?Math.round(a.gs):'?',
+      alt:a.alt_baro??a.alt_geom??'?',
+      // barometric (pressure-altitude) value kept separate so AGL can QNH-correct
+      // it; null when the plane only reports geometric altitude (already ~MSL)
+      altBaro:(typeof a.alt_baro==='number'?a.alt_baro:null),
+      spd:a.gs!=null?Math.round(a.gs):'?',
       trk:a.track!=null?Math.round(a.track):null,
       _rot:a.track!=null?a.track:(a.true_heading!=null?a.true_heading:0),
       sq:a.squawk||'',hex:a.hex||'',mil:a.dbFlags&1?1:0}}));
@@ -748,7 +752,8 @@ defLayer({
         feats.push({type:'Feature',geometry:{type:'Point',coordinates:[a.lon,a.lat]},
           properties:{_kind:'sos',_rot:a.track!=null?a.track:0,
             flight:String(a.flight||a.r||a.hex||'?').trim(),hex:a.hex||'',
-            code:codes[i],type:a.t||'?',desc:a.desc||'',alt:a.alt_baro??a.alt_geom??'?'}});
+            code:codes[i],type:a.t||'?',desc:a.desc||'',alt:a.alt_baro??a.alt_geom??'?',
+            altBaro:(typeof a.alt_baro==='number'?a.alt_baro:null)}});
       });
     });
     return {type:'FeatureCollection',features:feats};
@@ -942,30 +947,50 @@ function scheduleSitrep(){ clearTimeout(sitrepRefreshT); sitrepRefreshT=setTimeo
   try{if(FLY.data)flyPaint();}catch(e){console.warn('[fly-paint]',e);}
   try{sitrepTick();}catch(e){console.warn('[sitrep]',e);} },300); }
 
-// Ground elevation (ft AMSL) at a point, for AGL = baro-alt − ground. Keyless
-// Open-Meteo lookup, cached by ~0.01° cell (≈1 km, so every plane inside the
-// 1-mile warning radius shares the crosshair's cell). Returns the cached value
-// synchronously (null until known) and kicks off a fetch on a miss, re-running
-// the SITREP when it lands so the AGL card fills in on the next tick.
-// A FAILED lookup is NEVER cached — a poisoned 0 would silently disable the
-// AGL correction (and with it the low-traffic warnings) in high terrain for
-// the whole session. It just backs off briefly and retries on a later tick.
+// Ground elevation (ft AMSL) for AGL = alt − ground, cached by ~0.01° cell
+// (≈1 km). groundElevFt() is a pure SYNCHRONOUS read (null until known);
+// ensureGroundElev() kicks the fetch. Sampling the terrain UNDER EACH PLANE
+// (not just the crosshair) keeps AGL right when the range is wide or the ground
+// rolls — a plane 15 mi away over a ridge no longer inherits the valley floor's
+// elevation. Misses are pulled in ONE batched Open-Meteo request (the elevation
+// API takes many lat/lon at once), so per-plane terrain costs a single call.
+// A FAILED lookup is NEVER cached — a poisoned 0 would silently disable the AGL
+// correction (and the low-traffic warnings) in high terrain for the session; it
+// just backs off briefly and retries on a later tick.
 const _elevCache={}; let _elevBusy=false, _elevFailAt=0;
 const ELEV_RETRY_MS=15000;
+const elevKey=(la,lo)=>la.toFixed(2)+','+lo.toFixed(2);
 function groundElevFt(la,lo){
-  const key=la.toFixed(2)+','+lo.toFixed(2);
-  if(key in _elevCache) return _elevCache[key];
-  if(!_elevBusy && Date.now()-_elevFailAt>ELEV_RETRY_MS){
-    _elevBusy=true;
-    getJSON(`https://api.open-meteo.com/v1/elevation?latitude=${la.toFixed(4)}&longitude=${lo.toFixed(4)}`,{timeout:8000})
-      .then(d=>{ const m=d&&Array.isArray(d.elevation)?d.elevation[0]:null;
-        if(typeof m==='number'&&isFinite(m)) _elevCache[key]=m*M_TO_FT;
-        else _elevFailAt=Date.now(); })
-      .catch(()=>{ _elevFailAt=Date.now(); })
-      .finally(()=>{ _elevBusy=false; scheduleSitrep(); });
-  }
-  return null;
+  const v=_elevCache[elevKey(la,lo)];
+  return v==null?null:v;
 }
+// Pull elevation for any of these [lat,lon] cells not already cached, in one
+// batched request. Deduped by cell and capped so the URL stays sane. Re-runs the
+// SITREP + chart when it lands so AGL fills in on the next tick.
+function ensureGroundElev(pts){
+  if(_elevBusy || Date.now()-_elevFailAt<=ELEV_RETRY_MS) return;
+  const need=[], seen=new Set();
+  for(const p of pts){ if(!p||!isFinite(p[0])||!isFinite(p[1])) continue;
+    const k=elevKey(p[0],p[1]); if((k in _elevCache)||seen.has(k)) continue;
+    seen.add(k); need.push([p[0],p[1],k]); }
+  if(!need.length) return;
+  const batch=need.slice(0,90);
+  _elevBusy=true;
+  const lats=batch.map(n=>n[0].toFixed(4)).join(',');
+  const lons=batch.map(n=>n[1].toFixed(4)).join(',');
+  getJSON(`https://api.open-meteo.com/v1/elevation?latitude=${lats}&longitude=${lons}`,{timeout:9000})
+    .then(d=>{ const arr=d&&Array.isArray(d.elevation)?d.elevation:null;
+      if(arr&&arr.length===batch.length){
+        batch.forEach((n,idx)=>{ const m=arr[idx];
+          if(typeof m==='number'&&isFinite(m)) _elevCache[n[2]]=m*M_TO_FT; }); }
+      else _elevFailAt=Date.now(); })
+    .catch(()=>{ _elevFailAt=Date.now(); })
+    .finally(()=>{ _elevBusy=false; scheduleSitrep(); });
+}
+// Local sea-level pressure [hPa] (≈ QNH / altimeter setting) from the winds-aloft
+// weather pull — used to convert ADS-B pressure altitude to true MSL. null until
+// the first weather fetch lands (then AGL uses the raw 29.92" value).
+let QNH_HPA=null;
 
 function ensureMapLayer(cfg){
   const sid='src-'+cfg.id;
@@ -1455,15 +1480,15 @@ const CATS=[
      MOA:'MILITARY OPS AREA',W:'WARNING AREA',A:'ALERT AREA',D:'DANGER AREA',STDM:'STADIUM TFR'}[f.properties.cls]||'AIRSPACE'),
    sub:f=>cut(f.properties.name||'—',26),
    detail:f=>f.properties.sev==='hard'?'drones prohibited':f.properties.cls==='STDM'?'during events':'verify NOTAMs'},
-  // Controlled airspace (Class B/C/D + surface E) in range — an AMBER caution:
-  // drones need LAANC / ATC authorization here, so it's coloured like other
-  // in-range airspace (not routine white), but the class alone isn't a no-fly,
-  // so it stays amber rather than red. The actual drone-ceiling severity (the
-  // 0-ft / <400-ft no-fly) is still carried by the red/amber FAA CEILING card,
-  // driven by the LAANC grid the chart uses. hazard:false keeps it out of the
-  // title-severity roll-up — the chart's NOW column is the flyability verdict,
-  // not the mere presence of nearby controlled airspace. Deduped below so Class
-  // B's shelves collapse to one.
+  // Controlled airspace (Class B/C/D + surface E) in range — coloured its map
+  // POLYGON colour (blue B/D, magenta C/E) so the card matches the drawn bubble;
+  // drones need LAANC / ATC authorization here. The class alone isn't a no-fly,
+  // so the actual drone-ceiling severity (the 0-ft / <400-ft no-fly) is still
+  // carried by the red/amber FAA CEILING card, driven by the LAANC grid the chart
+  // uses. hazard:false keeps it out of the title-severity roll-up — the chart's
+  // NOW column is the flyability verdict, not the mere presence of nearby
+  // controlled airspace. cls 'alert' is only a fallback tint if _col is missing.
+  // Deduped below so Class B's shelves collapse to one.
   {src:'airspace', hazard:false, ctrl:true, filter:f=>f.properties.sev==='ctrl', icon:'🗼', cls:()=>'alert',
    head:f=>({B:'CLASS B AIRSPACE',C:'CLASS C AIRSPACE',D:'CLASS D AIRSPACE',E:'CLASS E AIRSPACE'}[f.properties.cls]||'AIRSPACE'),
    sub:f=>cut(f.properties.name||'—',26),
@@ -1506,6 +1531,33 @@ function planesNear(lat,lon,rKm){
   }));
   return out;
 }
+// Best-estimate MSL altitude [ft] for a plane: ADS-B barometric altitude is
+// PRESSURE altitude (29.92"/1013.25 hPa reference), so on a non-standard-pressure
+// day it's off true MSL by ~27.3 ft per hPa. When the local sea-level pressure is
+// known we correct it; otherwise (or when the plane only reports geometric
+// altitude, which is already ~MSL) we use the raw value.
+const FT_PER_HPA=27.3, ISA_MSL_HPA=1013.25;
+function planeMslFt(a){
+  const baro=a.f.properties.altBaro;
+  if(baro!=null && QNH_HPA!=null) return baro+(QNH_HPA-ISA_MSL_HPA)*FT_PER_HPA;
+  return a.alt;
+}
+// Ground elevation to use for a plane's AGL: the terrain under the PLANE, falling
+// back to the crosshair cell (usually already cached), then null (unknown).
+function planeGroundFt(a,crossGround){
+  const g=groundElevFt(a.pt[1],a.pt[0]);
+  return g!=null?g:crossGround;
+}
+// {ground, agl} for a plane. ground null → AGL is the raw MSL (fails toward NOT
+// flagging over unknown high terrain; retried once the elevation lands).
+function planeAglFt(a,crossGround){
+  const ground=planeGroundFt(a,crossGround);
+  return {ground, agl: ground==null?planeMslFt(a):planeMslFt(a)-ground};
+}
+// Only planes plausibly LOW need their own terrain lookup — a cruiser at FL350
+// can't breach 1,000 ft AGL over any US terrain, so skip its elevation cell.
+// (WARN_AGL_FT + the highest US terrain, generous margin.)
+const AGL_CAND_MAX_FT=16000;
 
 function sitrepTick(){
   // SITREP reflects what's inside the RANGE RING (RNG.mi around the crosshair),
@@ -1520,9 +1572,12 @@ function sitrepTick(){
   // plane card flies to the plane, an outlook card opens SPC, etc. A row with no
   // valid action gets no data-* and isn't clickable.
   // flash: extra-alert headline (a breaching aircraft) → the .s1 flashes red/white
-  const row=(cls,ic,l1,l2,l3,act,flash)=>rows.push(
+  // col: an explicit headline colour (airspace cards use their polygon colour) —
+  // an inline style so it wins over the cls (alert/danger) colour; sanitised to a
+  // bare hex so it can't break out of the attribute.
+  const row=(cls,ic,l1,l2,l3,act,flash,col)=>rows.push(
     `<div class="sit-row${cls?' '+cls:''}${flash?' acflash':''}${act?' clickable':''}"${act?' '+act:''}><span class="ic">${ic}</span>`+
-    `<span class="tx"><span class="s1">${l1||''}</span><span class="s2">${l2||''}</span><span class="s3">${l3||''}</span></span></div>`);
+    `<span class="tx"><span class="s1"${col?` style="color:${col}"`:''}>${l1||''}</span><span class="s2">${l2||''}</span><span class="s3">${l3||''}</span></span></div>`);
   const llBtn=(lo,la)=>isFinite(lo)&&isFinite(la)?`data-act="fly" data-ll="${lo+','+la}"`:'';
   const openBtn=url=>`data-act="open" data-url="${escapeHtml(url)}"`;
   // Distance + direction are measured from the CROSSHAIR (map centre) — the
@@ -1539,19 +1594,22 @@ function sitrepTick(){
   //    the red flashing LOW AIRCRAFT alert while it breaches, and reverts to the
   //    normal plane card when it climbs out / leaves — always exactly ONE card
   //    per plane. planesNear() is the SAME deduped collector that drives the
-  //    chart's TRFC cells, so card, chart and halo always agree. Reported
-  //    altitude is barometric (MSL): ground elevation at the crosshair (cached,
-  //    keyless Open-Meteo) is subtracted for AGL (crosshair ground ≈ plane
-  //    ground at these radii). breachInfo maps a plane's hex/callsign → its AGL
-  //    label; the item loop reads it. Ground aircraft (alt='ground'/'?') skip. --
+  //    chart's TRFC cells, so card, chart and halo always agree. AGL = QNH-
+  //    corrected MSL altitude (planeMslFt) − ground elevation UNDER THE PLANE
+  //    (planeAglFt; cached, keyless Open-Meteo, crosshair cell as fallback).
+  //    breachInfo maps a plane's hex/callsign → its AGL label; the item loop
+  //    reads it. Ground aircraft (alt='ground'/'?') skip. --
   const acGround=groundElevFt(lat,lon);          // ft AMSL at crosshair, null until fetched
-  const breachers=planesNear(lat,lon,rangeKm)
-    .map(a=>({...a,agl:acGround==null?a.alt:a.alt-acGround}))
+  const near=planesNear(lat,lon,rangeKm);
+  // pull terrain under the crosshair + every plausibly-low plane in one batch
+  ensureGroundElev([[lat,lon],...near.filter(a=>a.alt<AGL_CAND_MAX_FT).map(a=>[a.pt[1],a.pt[0]])]);
+  const breachers=near
+    .map(a=>{ const {ground,agl}=planeAglFt(a,acGround); return {...a,ground,agl}; })
     .filter(a=>a.agl<WARN_AGL_FT);
   const acKey=p=>p.hex||p.flight||'';
   const breachInfo=new Map();   // key → AGL label ('254 ft AGL' / '254 ft' if ground unknown)
   breachers.forEach(a=>breachInfo.set(acKey(a.f.properties),
-    Math.max(0,Math.round(a.agl))+U(' ft')+(acGround==null?'':' AGL')));
+    Math.max(0,Math.round(a.agl))+U(' ft')+(a.ground==null?'':' AGL')));
   const acFlash=breachers.length>0;
   // pulsing map halo(s) at the breaching aircraft (empty = cleared)
   setAcAlert(breachers.map(a=>({type:'Feature',
@@ -1621,12 +1679,12 @@ function sitrepTick(){
       headOv='LOW AIRCRAFT'; subOv=cut(f.properties.flight||f.properties.hex||'aircraft',12);
       det=breachInfo.get(acKey(f.properties));
     }
-    // Controlled-airspace cards (Class B/C/D/E) are amber "authorization"
-    // cautions but hazard:false, so they colour the card without driving the
-    // title or the hazard tier: the LAANC-ceiling severity is carried by the
-    // dedicated FAA CEILING card above (same getAirspace result the chart uses),
-    // so the two can't disagree. colour drives tier so a breaching plane sorts
-    // up with the hazards; everything else keeps its hazard/neutral tier.
+    // Controlled-airspace cards (Class B/C/D/E) are hazard:false, so their
+    // polygon colour (applied at render) tints the card without driving the title
+    // or the hazard tier: the LAANC-ceiling severity is carried by the dedicated
+    // FAA CEILING card above (same getAirspace result the chart uses), so the two
+    // can't disagree. cls drives tier so a breaching plane sorts up with the
+    // hazards; everything else keeps its hazard/neutral tier.
     const tier=flash?0:(cfg.hazard?(cls==='danger'?0:1):2);
     let pt, km;
     if(g.type==='Point'){ pt=g.coordinates; km=havKm(lat,lon,pt[1],pt[0]); }
@@ -1655,9 +1713,16 @@ function sitrepTick(){
     const ic=icOv!=null?icOv:(typeof cfg.icon==='function'?cfg.icon(f):cfg.icon);
     const head=headOv!=null?headOv:cfg.head(f);
     const sub=subOv!=null?subOv:((cfg.sub?cfg.sub(f):'')||'—');
+    // Airspace cards (restrictions + controlled) take their MAP POLYGON colour so
+    // the card matches what's drawn: blue B/D, magenta C/E, red defense/prohibited,
+    // orange restricted, gold MOA/warning/stadium. A breaching-aircraft override
+    // keeps the flashing red (no polygon colour). Only a bare hex is allowed
+    // through, so the feed can't inject into the style attribute.
+    const rawCol=cfg.src==='airspace'&&!flash?f.properties._col:null;
+    const col=/^#[0-9a-fA-F]{3,8}$/.test(rawCol||'')?rawCol:undefined;
     cards.push([cls, ic, head, sub,
       (inside?'overhead':dirMi(pt[1],pt[0]))+(detTxt?' · '+detTxt:''),
-      llBtn(flyPt[0],flyPt[1]), hazardOv!=null?hazardOv:cfg.hazard, flash?true:undefined]);
+      llBtn(flyPt[0],flyPt[1]), hazardOv!=null?hazardOv:cfg.hazard, flash?true:undefined, col]);
   });
   general.forEach(c=>cards.push(c));   // area-wide context cards sink to the bottom
   cards.push(wxCard());                // weather forecast — always the bottom card
@@ -1676,7 +1741,7 @@ function sitrepTick(){
   const t=$('#sit-title'); t.classList.remove('warn','alert');
   if(titleSev>=2) t.classList.add('warn'); else if(titleSev>=1) t.classList.add('alert');
   t.classList.toggle('acflash',acFlash);   // breaching aircraft → flash the title red/white
-  cards.forEach(cd=>row(cd[0],cd[1],cd[2],cd[3],cd[4],cd[5],cd[7]));
+  cards.forEach(cd=>row(cd[0],cd[1],cd[2],cd[3],cd[4],cd[5],cd[7],cd[8]));
 
   // the weather card is always appended, so there's always at least one row
   $('#sit-body').innerHTML=rows.join('');
@@ -1809,7 +1874,7 @@ function aloftUrl(lat,lon){
     .concat(PRES_LEVELS.map(p=>`geopotential_height_${p}hPa`))
     .concat(PRES_LEVELS.map(p=>`cloud_cover_${p}hPa`));
   const cur=['wind_speed_10m','wind_gusts_10m','cloud_cover_low',
-    'visibility','temperature_2m','dew_point_2m']
+    'visibility','temperature_2m','dew_point_2m','pressure_msl']
     .concat(PRES_LEVELS.map(p=>`cloud_cover_${p}hPa`));
   return `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(3)}&longitude=${lon.toFixed(3)}`
     +`&current=${cur.join(',')}`
@@ -1835,6 +1900,8 @@ async function getAloft(lat,lon){
   const H=d.hourly||{}, elev=d.elevation??0;
   const gh=H.wind_gusts_10m||[];
   const cur=d.current||{};
+  // stash local sea-level pressure (≈ QNH) for the aircraft-AGL baro correction
+  if(typeof cur.pressure_msl==='number'&&isFinite(cur.pressure_msl)) QNH_HPA=cur.pressure_msl;
   const cloudBaseAt=n=>{
     const idx=i+n, C=k=>n===0?(cur[k]??H[k]?.[idx]):H[k]?.[idx];
     let deckFt=null;
@@ -1977,9 +2044,11 @@ async function sampleRadarPrecip(lat,lon,rngMi){
 // collector as the SITREP's LOW AIRCRAFT card, so card and chart always agree.
 function flyTrafficRows(){
   const c=gl.getCenter(), rows=new Set();
-  const ground=groundElevFt(c.lat,c.lng);   // ft AMSL, null until the cached fetch lands
-  planesNear(c.lat,c.lng,RNG.mi*MI_TO_KM).forEach(a=>{
-    const agl=ground==null?a.alt:a.alt-ground;
+  const cross=groundElevFt(c.lat,c.lng);   // ft AMSL at crosshair, fallback ground
+  const near=planesNear(c.lat,c.lng,RNG.mi*MI_TO_KM);
+  ensureGroundElev([[c.lat,c.lng],...near.filter(a=>a.alt<AGL_CAND_MAX_FT).map(a=>[a.pt[1],a.pt[0]])]);
+  near.forEach(a=>{
+    const {agl}=planeAglFt(a,cross);   // per-plane terrain, QNH-corrected MSL
     if(agl>=WARN_AGL_FT) return;
     rows.add(Math.max(0,Math.min(SPEC.regFt,Math.round(agl/50)*50)));
   });

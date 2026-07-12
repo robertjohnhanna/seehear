@@ -78,9 +78,13 @@ context cards):
   bubbles).
 - 🚨 emergency squawks (7700/7600/7500) · ⚠️ NWS **warnings** (not watches) ·
   ⛔/⚠️ FAA restrictions (defense, prohibited, security, MOA, stadium…) ·
-  🏞️ NPS land · 🗼 controlled airspace (Class B/C/D/E — amber "authorization
-  required" caution; the actual ceiling severity is carried by the FAA card
-  above, and it doesn't drive the title) · ✈️ / 🪖 civil and military traffic
+  🏞️ NPS land · 🗼 controlled airspace (Class B/C/D/E) · ✈️ / 🪖 civil and
+  military traffic. Every airspace card is tinted to match its **map polygon**
+  colour — blue Class B/D, magenta Class C/E, red defense/prohibited, orange
+  restricted, gold MOA/warning/stadium — so a card reads at a glance as the
+  zone drawn on the map. (Controlled-airspace tints are context — authorization
+  required — and don't drive the title; the real ceiling severity stays on the
+  FAA card above.)
 - Context cards at the bottom: 🌪️/⛈️ SPC Day-1 outlooks, 🧲 geomagnetic
   storms (Kp ≥ 5), ☀️ M/X solar flares, and the 🌡️ local forecast (always
   present).
@@ -138,8 +142,12 @@ parameters to the public weather APIs.
   altitude flashes red/white on the map (a pulsing halo), in the SITREP
   title, and on its LOW AIRCRAFT card. Tapping the "Xs to update" badge
   forces an immediate refresh.
-- AGL uses the ground elevation at the crosshair (cached per ~1 km cell) —
-  a good approximation at ring radii; failed lookups are retried, never
-  cached, so bad data can't suppress the traffic warnings.
+- AGL is computed per plane: **QNH-corrected** barometric altitude (ADS-B
+  reports pressure altitude off 29.92″; the local sea-level pressure from the
+  weather feed corrects it, ~27 ft/hPa) minus the **ground elevation under that
+  plane** (Open-Meteo, cached per ~1 km cell, batched into one request, with the
+  crosshair cell as fallback). Failed elevation lookups are retried, never
+  cached, so bad data can't suppress the traffic warnings. Geometric-only
+  altitudes (no baro) are used as-is (already ≈ MSL).
 - Every feed is keyless with `ACAO:*`; anything requiring a key is excluded
   by the keyless rule. One dead feed never breaks the board.
