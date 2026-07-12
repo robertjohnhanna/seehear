@@ -217,36 +217,36 @@
   @media (prefers-reduced-motion:reduce){
     #sit-title.acflash,.sit-row.acflash .s1{animation:none}}
   /* Combined control: range steppers + center-on-me, in one box styled like the
-     original center-on-me button (accent border, dark blurred bg, 42px tall).
-     Layout: (−) RANGE ⌖ n.n MI (+). Centred at the bottom of the visible map:
-     the wrap spans the map area (left of the 320px panel on desktop; full width
-     on mobile) and centres the box, with pointer-events passing through the wrap
-     so only the box itself is interactive. */
+     original center-on-me button but WHITE, not accent green (white border, text,
+     glyphs; dark blurred bg; 42px tall). Layout: (−) RANGE ⌖ n.n MI (+). Centred
+     at the bottom of the visible map: the wrap spans the map area (left of the
+     320px panel on desktop; full width on mobile) and centres the box, with
+     pointer-events passing through the wrap so only the box is interactive. */
   #ctrl-wrap{position:absolute;z-index:16;left:calc(16px + var(--sa-l));
     right:calc(336px + var(--sa-r));bottom:16px;display:flex;justify-content:center;
     pointer-events:none}
   #ctrlbar{pointer-events:auto;height:42px;display:flex;align-items:center;gap:7px;padding:0 9px;
-    background:var(--panel);border:1px solid var(--accent);border-radius:9px;
-    color:var(--accent);font-family:var(--mono);font-size:13px;font-weight:700;
+    background:var(--panel);border:1px solid #fff;border-radius:9px;
+    color:#fff;font-family:var(--mono);font-size:13px;font-weight:700;
     backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
   #ctrlbar .cb-label{letter-spacing:1px;font-weight:800}
   #ctrlbar .cb-val{min-width:52px;text-align:center;font-variant-numeric:tabular-nums;
     white-space:nowrap;cursor:pointer;-webkit-user-select:none;user-select:none}
   #ctrlbar .cb-val:active{opacity:.55}
-  /* center-on-me icon button, now living inside the bar (keeps its accent look;
-     inverts on press like the original box did) */
+  /* center-on-me icon button, now living inside the bar (white; inverts to a
+     white fill with dark glyph on press, like the original box did) */
   #loc-btn{width:32px;height:32px;padding:0;border:none;border-radius:7px;
-    background:none;color:var(--accent);cursor:pointer;flex:0 0 auto;
+    background:none;color:#fff;cursor:pointer;flex:0 0 auto;
     display:flex;align-items:center;justify-content:center}
-  #loc-btn:active{background:var(--accent);color:#00140a}
-  /* range ± — DRAWN glyphs (centred bars), accent to match the box */
-  #ctrlbar .cb-btn{width:26px;height:26px;border-radius:50%;border:1px solid var(--accent);
+  #loc-btn:active{background:#fff;color:#00140a}
+  /* range ± — DRAWN glyphs (centred bars), white to match the box */
+  #ctrlbar .cb-btn{width:26px;height:26px;border-radius:50%;border:1px solid #fff;
     background:none;cursor:pointer;padding:0;flex:0 0 auto;position:relative}
   #ctrlbar .cb-btn::before,#ctrlbar .cb-btn.cb-plus::after{content:"";position:absolute;
-    top:50%;left:50%;transform:translate(-50%,-50%);background:var(--accent);border-radius:1px}
+    top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border-radius:1px}
   #ctrlbar .cb-btn::before{width:11px;height:2px}
   #ctrlbar .cb-btn.cb-plus::after{width:2px;height:11px}
-  #ctrlbar .cb-btn:active{background:var(--accent)}
+  #ctrlbar .cb-btn:active{background:#fff}
   #ctrlbar .cb-btn:active::before,#ctrlbar .cb-btn:active::after{background:#00140a}
   /* data-loading ring: TOP-LEFT corner of the map, fades in + spins while any
      feed is fetching (initial load, the 30s pulse, a pan refetch), fades out when
