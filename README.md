@@ -258,12 +258,18 @@ resets the zoom** to the 10 mi view, then re-locks + follows — and the two-sta
 toggle repeats (unlock → reset + lock → unlock → …). As a belt-and-braces guard
 for touch platforms where disabling the pan handler isn't enough, any stray
 gesture that nudges the map while locked snaps the crosshair straight back onto
-you. GPS jitter is tamed
-so a locked map doesn't fidget: fixes reported worse than ~100 m are dropped, the
-position is EMA-smoothed so the dot glides, and the follow only recenters once
-you've actually moved ~18 m (a big jump snaps instantly, no lag). Position is
-resolved client-side and never leaves the browser except as anonymous lat/lon
-query parameters to the public weather APIs.
+you. GPS jitter is tamed so a locked map doesn't fidget: fixes reported worse than
+~100 m are dropped, the position is EMA-smoothed so the dot glides, and the follow
+only recenters once you've moved past an ~18 m deadband. Cold-start GPS reports a
+few jumpy positions before it locks, so the recenter is **settle-debounced** —
+instead of hopping the map through each early fix, it waits for the position to
+settle (and never interrupts a zoom-reset animation, so the reset always lands at
+the full 10 mi view). And while you're **locked**, follow-moves **don't pull fresh
+data** — the map trailing your GPS isn't you exploring a new area, so aircraft/etc.
+refresh on the 15 s pulse around you rather than on every nudge; only a manual pan
+while **unlocked** refetches for the new area. Position is resolved client-side and
+never leaves the browser except as anonymous lat/lon query parameters to the public
+weather APIs.
 
 ## Design notes & honest caveats
 

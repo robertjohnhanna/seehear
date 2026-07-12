@@ -108,6 +108,7 @@
      panel itself sits flush at right:0; adding it double-counted and left a gap). In
      portrait the panel is an overlay sheet, so it moves to the true screen right edge. */
   #map-refresh{position:absolute;z-index:16;top:calc(var(--sa-t) + 12px);right:376px;
+    width:46px;height:46px;   /* a little bigger than the 42px lock button */
     display:block;background:#000;border-radius:50%;box-shadow:0 0 0 2px #000}
   @media (max-width:1000px) and (orientation:portrait){ #map-refresh{right:calc(14px + var(--sa-r))} }
   /* ---------- canifly — the static drone-preflight chart ----------
@@ -176,7 +177,7 @@
      rules sit here, BEFORE the acflash rule, so the flash animation still wins. */
   #map-title{position:absolute;z-index:16;left:calc(14px + var(--sa-l));
     top:calc(var(--sa-t) + 14px);display:block;pointer-events:none;
-    color:var(--accent);font-size:15px;letter-spacing:2px;font-weight:700;
+    color:var(--accent);font-size:22px;letter-spacing:2px;font-weight:700;   /* a little bigger than the lock button */
     -webkit-text-stroke:3px #000;paint-order:stroke fill;filter:drop-shadow(0 0 2px #000)}
   #map-title.alert{color:var(--warn)}
   #map-title.warn{color:var(--danger)}
@@ -1348,12 +1349,44 @@ function setLocIcon(locked){
 // fix; the first tap UNLOCKS, the next RESETS + re-locks, and so on.
 let locMode=2;
 function setPanLock(on){ try{ on?gl.dragPan.disable():gl.dragPan.enable(); }catch(e){} }
+// ---- FRAMING GUARD + FOLLOW SETTLE ------------------------------------------
+// While FOLLOW-locked the map trails your GPS. Two things keep that calm:
+//  • FRAMING GUARD (_framing): a click-to-lock zoom RESET (and the first-fix framing)
+//    is a ~1.2s animation — a GPS follow must NOT interrupt it or the zoom lands
+//    half-way (the "doesn't zoom all the way back" bug). _framing blocks the follow
+//    until the animation finishes.
+//  • SETTLE DEBOUNCE: cold-start GPS reports a few jumpy positions before it locks, so
+//    rather than chase each one we debounce the recenter — it fires once the fix stops
+//    jumping (SETTLE_MS), or at worst every MAX_MS while you're genuinely moving — so
+//    the map settles on you instead of hopping through a few spots.
+const FOLLOW_SETTLE_MS=1300, FOLLOW_MAX_MS=2000;
+let _framing=false, _frameT=null, _followT=null, _followSince=0, _followTo=null;
+let _didInitialLoad=false;   // has the first around-you data pull happened? (see refreshViewport)
+function frameNow(lat,lon){
+  _framing=true; clearTimeout(_frameT); clearTimeout(_followT); _followT=null; _followSince=0;
+  flyToRadiusMi(lat,lon,VIEW_MI);
+  _frameT=setTimeout(()=>{ _framing=false; },1300);   // fitBounds is 1200ms + a small buffer
+}
+function scheduleFollow(lon,lat){
+  _followTo=[lon,lat];
+  const now=Date.now(); if(!_followSince) _followSince=now;
+  clearTimeout(_followT);
+  _followT=setTimeout(runFollow, now-_followSince>=FOLLOW_MAX_MS?0:FOLLOW_SETTLE_MS);
+}
+function runFollow(){
+  _followT=null; _followSince=0;
+  if(locMode!==2||_framing||!_followTo) return;
+  const c=gl.getCenter();
+  if(havKm(c.lat,c.lng,_followTo[1],_followTo[0])>GEO_FOLLOW_DEADBAND_KM){
+    cancelCenterZoom(); gl.easeTo({center:_followTo,duration:450});
+  }
+}
 function centerOnMe(){
   if(USER.lat==null){ toast('LOCATING…'); locate(); return; }
   if(locMode===2){                 // LOCKED → unlock (release the map, keep the view)
     locMode=0; setLocIcon(false); setPanLock(false);
   } else {                         // UNLOCKED → center + reset zoom to the 10 mi VIEW, re-lock
-    flyToRadiusMi(USER.lat,USER.lon,VIEW_MI);
+    frameNow(USER.lat,USER.lon);   // guarded frame → the zoom reset can't be cut short
     locMode=2; setLocIcon(true); setPanLock(true);
   }
 }
@@ -1419,24 +1452,22 @@ function setUserFix(lat,lon,src,meta){
   // GPS refinement of the IP guess only gently recenters, and only if it moved
   // us far — so the load isn't a stutter of two back-to-back zoom animations.
   if(first){
-    // first fix: one clean animation to the 10 mi VIEW framing
-    flyToRadiusMi(lat,lon,VIEW_MI);
+    // first fix: one clean, guarded animation to the 10 mi VIEW framing
+    frameNow(lat,lon);
   } else if(locMode===2){
-    // FOLLOW-LOCKED: keep the crosshair on the live position at the current zoom
-    // (so the whole SITREP/chart tracks where you actually are) — but only recenter
-    // once you've moved beyond a DEADBAND (1), so residual GPS jitter can't fidget
-    // the map. Inside the deadband the map holds; the dot still updates.
+    // FOLLOW-LOCKED: keep the crosshair on the live position (so the whole SITREP/chart
+    // tracks where you actually are) — but only past a DEADBAND, and through the SETTLE
+    // debounce so a burst of jumpy cold-GPS fixes doesn't hop the map through a few
+    // spots. Never during a framing animation (so a zoom reset lands cleanly). Inside
+    // the deadband the map holds; the dot still updates.
     const ctr=gl.getCenter();
-    if(havKm(ctr.lat,ctr.lng,lat,lon)>GEO_FOLLOW_DEADBAND_KM){
-      cancelCenterZoom();
-      gl.easeTo({center:[lon,lat],duration:500});
+    if(!_framing && havKm(ctr.lat,ctr.lng,lat,lon)>GEO_FOLLOW_DEADBAND_KM){
+      scheduleFollow(lon,lat);
     }
   } else if(src==='gps'&&pLat!=null&&havKm(pLat,pLon,lat,lon)>8){
-    // GPS refined the IP guess by a lot (>8 km): re-frame at the precise spot.
-    // Re-framing (not easeTo) so the final ZOOM is always the right one — easeTo
-    // mid-fitBounds was leaving the zoom half-finished ("hung"). For small
-    // corrections we leave the camera and just move the marker.
-    flyToRadiusMi(lat,lon,VIEW_MI);
+    // GPS refined the IP guess by a lot (>8 km): re-frame at the precise spot (guarded,
+    // so the zoom always lands right).
+    frameNow(lat,lon);
   }
   sitrepTick();
 }
@@ -1917,36 +1948,33 @@ let moveDebounce=null, lastViewKey=null;
 function refreshViewport(){
   clearTimeout(moveDebounce);
   moveDebounce=setTimeout(()=>{
-    // Only refetch the viewport feeds when the visible area actually changed.
-    // Rounding to ~1km + 0.1 zoom collapses jitter (a resize with the same
-    // bounds, a tiny GPS ease) so we don't fire redundant ADS-B requests that
-    // just invite rate-limiting. SITREP still recomputes every time.
+    // The SITREP + chart ALWAYS recompute for the current crosshair (cheap, no network)
+    // so the panel tracks wherever the map points — scheduleSitrep repaints the chart
+    // then ticks the SITREP.
+    scheduleSitrep();
+    // But a FOLLOW-LOCKED move is the map trailing your GPS, not you exploring a new
+    // area — so it does NOT pull fresh data (the 15 s refresh pulse keeps aircraft etc.
+    // current around you). Only a manual pan while UNLOCKED refetches for the new area.
+    // The very first pull is allowed through so data appears right after the fix lands.
+    if(locMode===2 && _didInitialLoad) return;
+    _didInitialLoad=true;
+    // Only refetch the viewport feeds when the visible area actually changed. Rounding
+    // to ~1km + 0.1 zoom collapses jitter so we don't fire redundant ADS-B requests.
     const b=gl.getBounds(),z=gl.getZoom();
     const key=[b.getWest(),b.getSouth(),b.getEast(),b.getNorth()].map(n=>n.toFixed(2)).join(',')+'@'+z.toFixed(1);
     if(key!==lastViewKey){
       lastViewKey=key;
-      // DYNAMIC viewport feeds (aircraft) refetch for the new area on every view
-      // change so their data tracks the view.
       LAYERS.filter(l=>l.viewport).forEach(cfg=>{
         const st=LAYER_STATE[cfg.id];
         if(st&&st.started) runLayer(cfg);
       });
-      // A center move just refreshed the live viewport data, so restart the refresh
-      // countdown (and the pulse cycle) from now — the next full refresh is a
-      // fresh cycle away, not whatever was left on the clock.
+      // just refreshed the live viewport data → restart the refresh countdown from now
       refreshBase=Date.now();
     }
-    // STATIC regional layers (airspace, NPS) re-pull ONLY when the crosshair has
-    // travelled past the cached region's overlap — never on zoom (the cached
-    // region already covers every zoom) and never on the pulse. This is what
-    // keeps airspace painted when you zoom out.
+    // STATIC regional layers (airspace, NPS) re-pull only when the crosshair has
+    // travelled past the cached region's overlap.
     ensureStaticRegion();
-    // The canifly chart tracks the crosshair like the SITREP: refetch when the
-    // centre really moved (flyOnMove's own threshold). scheduleSitrep repaints
-    // the chart FIRST and then ticks the SITREP, so the title always reads the
-    // NOW column computed for the NEW crosshair — never the previous one.
-    flyOnMove();
-    scheduleSitrep();
+    flyOnMove();   // chart DATA refetch (its own threshold) — rides the unlocked-pan gate
   },250);   // snappy: refetch the new area's data promptly after a pan/zoom settles
 }
 gl.on('moveend',refreshViewport);
