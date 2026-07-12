@@ -100,8 +100,11 @@
             mask:radial-gradient(farthest-side,transparent calc(100% - 3px),#000 calc(100% - 3px))}
   .rdial.busy .rdial-prog{background:conic-gradient(var(--accent) 90deg,#2a3a4d 0deg);animation:sp .8s linear infinite}
   #refresh-badge{margin-left:auto}
+  /* the map-page dial gets a solid BLACK disc (fills the ring's transparent centre)
+     and a BLACK outline (box-shadow) so the countdown reads over any map; the header
+     dial (#refresh-badge, on the dark panel) keeps its bare-ring look. */
   #map-refresh{position:absolute;z-index:16;top:calc(var(--sa-t) + 12px);right:calc(14px + var(--sa-r));
-    display:none;filter:drop-shadow(0 0 4px #000)}
+    display:none;background:#000;border-radius:50%;box-shadow:0 0 0 2px #000}
   @media (max-width:1000px) and (orientation:portrait){ #map-refresh{display:block} }
   /* ---------- canifly — the static drone-preflight chart ----------
      Ported from the canifly repo (which stays standalone and untouched): just
@@ -167,15 +170,16 @@
      !important (which would otherwise beat the acflash animation below). */
   #sit-head .title.alert{color:var(--warn)}
   #sit-head .title.warn{color:var(--danger)}
-  /* CANIFLY verdict tag mirrored at the map's bottom-left (iPhone portrait's map
-     page, and landscape where the header is dropped) — same green/amber/red +
-     breach-flash as the header title. Its colour rules sit here, BEFORE the acflash
-     rule, so the flash animation still wins during a breach. sitrepTick stamps the
-     same classes on it and #sit-title together. */
+  /* CANIFLY verdict tag mirrored at the map's TOP-left (iPhone portrait's map page,
+     and landscape where the header is dropped) — same green/amber/red + breach-flash
+     as the header title. A black glyph outline (text-stroke, painted BEHIND the fill)
+     keeps it legible over any map. Its colour rules sit here, BEFORE the acflash rule,
+     so the flash animation still wins during a breach; sitrepTick stamps the same
+     classes on it and #sit-title together. */
   #map-title{position:absolute;z-index:16;left:calc(14px + var(--sa-l));
-    bottom:calc(var(--sa-b) + 14px);display:none;pointer-events:none;
+    top:calc(var(--sa-t) + 14px);display:none;pointer-events:none;
     color:var(--accent);font-size:15px;letter-spacing:2px;font-weight:700;
-    filter:drop-shadow(0 0 4px #000)}
+    -webkit-text-stroke:3px #000;paint-order:stroke fill;filter:drop-shadow(0 0 2px #000)}
   #map-title.alert{color:var(--warn)}
   #map-title.warn{color:var(--danger)}
   @media (max-width:1000px) and (orientation:portrait){ #map-title{display:block} }
