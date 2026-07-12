@@ -1450,7 +1450,10 @@ const CATS=[
   // only when active — per the app's advisory posture these flag but don't
   // ground the chart). hazard:true → drives the title.
   {src:'airspace', hazard:true, filter:f=>f.properties.sev==='hard'||f.properties.sev==='caution',
-   icon:f=>f.properties.sev==='hard'?'⛔':'⚠️',
+   // class-specific glyph: 🛡️ defense · 🔒 security · ⛔ prohibited · 🏟️ stadium ·
+   // ⚠️ restricted — falls back to a generic no-entry / warning by severity.
+   icon:f=>({DEF:'🛡️',NSUFR:'🔒',P:'⛔',STDM:'🏟️',R:'⚠️'}[f.properties.cls]
+     ||(f.properties.sev==='hard'?'⛔':'⚠️')),
    cls:f=>f.properties.sev==='hard'?'danger':'alert',
    head:f=>({DEF:'DEFENSE AIRSPACE',NSUFR:'SECURITY NO-FLY',P:'PROHIBITED AREA',R:'RESTRICTED AREA',
      STDM:'STADIUM TFR'}[f.properties.cls]||'AIRSPACE'),
@@ -1461,7 +1464,7 @@ const CATS=[
   // restrict a Part-107 drone at ≤400 ft — military / hazard activity to be
   // aware of, not a no-fly. Neutral info: hazard:false (no title contribution),
   // tinted its map-polygon colour like the other airspace cards.
-  {src:'airspace', hazard:false, filter:f=>f.properties.sev==='advisory', icon:'ℹ️', cls:()=>'',
+  {src:'airspace', hazard:false, filter:f=>f.properties.sev==='advisory', icon:'🎯', cls:()=>'',
    head:f=>({MOA:'MILITARY OPS AREA',W:'WARNING AREA',A:'ALERT AREA',D:'DANGER AREA'}[f.properties.cls]||'SPECIAL-USE AIRSPACE'),
    sub:f=>cut(f.properties.name||'—',26), detail:()=>'advisory only'},
   // Controlled airspace (Class B/C/D + surface E) in range — coloured its map
@@ -2543,14 +2546,32 @@ gl.on('move',scheduleRing);
 // zoom clamp reads getMaxZoom), and widening the range or panning north auto-eases
 // the camera back out. Recomputed on latitude change / resize / range change since
 // the mile↔zoom relationship depends on cos(lat) and the pixel viewport.
+const RING_ZOOM_HARD=16;   // the absolute max-zoom ceiling (matches map init)
+let _ringZoomKey=null;
 function enforceRingZoom(){
-  const c=gl.getCenter(), km=3*RNG.mi*MI_TO_KM;
+  const c=gl.getCenter();
+  // Only recompute when an INPUT to the cap actually changed (range, latitude
+  // band via cos(lat), the pixel viewport, or the map padding) — otherwise every
+  // pan would needlessly churn the max-zoom.
+  const ct=gl.getContainer();
+  const key=RNG.mi+'|'+c.lat.toFixed(2)+'|'+ct.clientWidth+'x'+ct.clientHeight+'|'
+    +(_pad?[_pad.top,_pad.left,_pad.right,_pad.bottom].join(','):'0');
+  if(key===_ringZoomKey) return;
+  _ringZoomKey=key;
+  const km=3*RNG.mi*MI_TO_KM;
   const dLat=km/111.32, dLon=km/(111.32*Math.max(0.2,Math.cos(c.lat*Math.PI/180)));
+  // cameraForBounds CLAMPS its result to the current maxZoom, so from a locked-in
+  // (zoomed-to-the-cap) state it could only ever ratchet the cap DOWN and never
+  // back up when the ring is made smaller. Lift the cap to the hard ceiling first
+  // so the true fit zoom can be measured, then apply the real cap.
+  const prev=gl.getMaxZoom();
+  if(prev<RING_ZOOM_HARD) gl.setMaxZoom(RING_ZOOM_HARD);
   let z;
   try{ const cam=gl.cameraForBounds([[c.lng-dLon,c.lat-dLat],[c.lng+dLon,c.lat+dLat]],{padding:_pad||0}); z=cam&&cam.zoom; }catch(e){}
-  if(z==null||!isFinite(z)) return;
-  const cap=Math.max(gl.getMinZoom(),Math.min(16,z));
-  if(Math.abs(gl.getMaxZoom()-cap)>0.02){ cancelCenterZoom(); gl.setMaxZoom(cap); }
+  const cap=(z!=null&&isFinite(z))
+    ? Math.max(gl.getMinZoom(),Math.min(RING_ZOOM_HARD,z)) : prev;
+  if(Math.abs(cap-prev)>0.02) cancelCenterZoom();
+  gl.setMaxZoom(cap);   // also restores from the temporary hard-ceiling lift
 }
 gl.on('moveend',enforceRingZoom);
 gl.on('resize',enforceRingZoom);

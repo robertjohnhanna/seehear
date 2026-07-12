@@ -58,7 +58,9 @@ The bold altitude label marks the highest currently flyable row. **Max wind**
 map** — `(−) RANGE ⌖ n.n MI (+)`, which also holds the center-on-me (⌖) button.
 Both settings are persisted per device. Range drives the FAA query radius, the
 traffic/radar sweep, the SITREP card radius, and the dashed **range ring** drawn
-around the crosshair. Zoom is capped so the ring never exceeds ⅓ of the view.
+around the crosshair. Zoom is capped so the ring never exceeds ⅓ of the view —
+and the cap tracks the ring **both ways**: shrink the range and you can zoom in
+further; widen it and the camera eases back out.
 Both the range ring and the range control's own outline are tinted to the
 current verdict — green clear, amber reduced/unverified, red grounded — so the
 one-glance colour reaches the map even when the panel is off-screen.
@@ -122,16 +124,19 @@ context cards):
   Airspace cards follow a **solid three-way
   model** — *authorization* (controlled airspace, needs a ceiling) is not the
   same as a *restriction* (a stay-out zone), and neither is an *advisory*:
-  - ⛔ **hard restrictions** — defense, prohibited, security (NSUFR) — are red
-    and **ground** the chart: drones are prohibited outright.
-  - ⚠️ **conditional restrictions** — restricted areas and stadium TFRs — are
+  - **hard restrictions** — 🛡️ defense, ⛔ prohibited, 🔒 security (NSUFR) — are
+    red and **ground** the chart: drones are prohibited outright.
+  - **conditional restrictions** — ⚠️ restricted areas and 🏟️ stadium TFRs — are
     amber "no-fly if active" / "no-fly during events". They're only active on a
     schedule the app can't read live, so per fail-safe posture they *warn* but
     don't silently ground a flight that may be perfectly legal.
-  - ℹ️ **advisory** — MOAs, warning / alert / danger areas — carry no colour and
+  - 🎯 **advisory** — MOAs, warning / alert / danger areas — carry no colour and
     no title weight ("advisory only"): they concern manned military traffic, not
     a Part-107 drone in the 400-ft band, so treating them as restrictions would
     be a false alarm.
+
+  (Each airspace card's icon is class-specific — 🛡️ defense · 🔒 security · ⛔
+  prohibited · ⚠️ restricted · 🏟️ stadium · 🎯 military/special-use · 🗼 controlled.)
   - 🗼 **controlled airspace** (Class B/C/D/E) reads "authorization (LAANC)" —
     context that you need a ceiling here; the real ceiling severity stays on the
     FAA card above, and the tint (blue Class B/D, magenta Class C/E) doesn't
