@@ -250,23 +250,21 @@ On load: instant IP fix (ipwho.is), refined by browser GPS if you allow the
 prompt (denial is silently tolerated), then one clean camera move framing the
 10 mi view. A continuous geolocation **watch** keeps the green **you-are-here
 dot live** as you move. The ⌖ button lives in the map's **bottom-right corner**
-and **starts locked**: the app follows your live position from load — the
-crosshair sticks to you (map panning is disabled so you can't drag off yourself;
-zoom still works) and the icon is a 🔒 padlock. The **first tap unlocks**
-(releases panning, icon back to the crosshair); the **next tap centers you and
-resets the zoom** to the 10 mi view, then re-locks + follows — and the two-state
-toggle repeats (unlock → reset + lock → unlock → …). As a belt-and-braces guard
-for touch platforms where disabling the pan handler isn't enough, any stray
-gesture that nudges the map while locked snaps the crosshair straight back onto
-you. GPS jitter is tamed so a locked map doesn't fidget: fixes reported worse than
-~100 m are dropped, the position is EMA-smoothed so the dot glides, and the follow
-only recenters once you've moved past an ~18 m deadband. Cold-start GPS reports a
-few jumpy positions before it locks, so the recenter is **settle-debounced** —
-instead of hopping the map through each early fix, it waits for the position to
-settle (and never interrupts a zoom-reset animation, so the reset always lands at
-the full 10 mi view). And while you're **locked**, follow-moves **don't pull fresh
-data** — the map trailing your GPS isn't you exploring a new area, so aircraft/etc.
-refresh on the 15 s pulse around you rather than on every nudge; only a manual pan
+and **starts locked**. **Locked = a frozen map**: both **pan and zoom are disabled**,
+so the view is held at the 10 mi framing on your location and nothing moves it (the
+icon is a 🔒 padlock; the you-are-here dot still tracks you). The **first tap
+unlocks** (pan + zoom free again, icon back to the crosshair); the **next tap
+centers you and resets the zoom** to the 10 mi view, then re-locks — and the
+two-state toggle repeats (unlock → reset + lock → unlock → …). **Want to zoom out?
+Unlock.** While locked the map only ever **re-frames onto your precise spot** if a
+fix lands far off the current view (the initial IP→GPS settle, or you've teleported)
+— so the first lock lands on your real location — and never during that framing
+animation, so a zoom-reset always lands at the full 10 mi view. As a belt-and-braces
+guard for touch platforms where disabling the handlers isn't enough, any stray
+gesture that nudges the frozen map snaps it right back to the held view. GPS jitter
+is tamed regardless: fixes reported worse than ~100 m are dropped and the position is
+EMA-smoothed so the dot glides. And while you're **locked**, map moves **don't pull
+fresh data** — aircraft/etc. refresh on the 15 s pulse around you; only a manual pan
 while **unlocked** refetches for the new area. Position is resolved client-side and
 never leaves the browser except as anonymous lat/lon query parameters to the public
 weather APIs.

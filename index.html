@@ -198,7 +198,7 @@
      a padlock while follow-locked. */
   #loc-btn{position:absolute;z-index:16;bottom:calc(var(--sa-b) + 14px);
     right:376px;width:42px;height:42px;padding:0;
-    border:1px solid #fff;border-radius:9px;background:var(--panel);color:var(--sev,#fff);
+    border:none;border-radius:9px;background:var(--panel);color:var(--sev,#fff);
     cursor:pointer;display:flex;align-items:center;justify-content:center;
     backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
   #loc-btn:active{background:#fff;color:#00140a}
@@ -1348,65 +1348,53 @@ function setLocIcon(locked){
 // Start LOCKED at 2: load auto-locates, frames on you and follows from the first
 // fix; the first tap UNLOCKS, the next RESETS + re-locks, and so on.
 let locMode=2;
-function setPanLock(on){ try{ on?gl.dragPan.disable():gl.dragPan.enable(); }catch(e){} }
-// ---- FRAMING GUARD + FOLLOW SETTLE ------------------------------------------
-// While FOLLOW-locked the map trails your GPS. Two things keep that calm:
-//  • FRAMING GUARD (_framing): a click-to-lock zoom RESET (and the first-fix framing)
-//    is a ~1.2s animation — a GPS follow must NOT interrupt it or the zoom lands
-//    half-way (the "doesn't zoom all the way back" bug). _framing blocks the follow
-//    until the animation finishes.
-//  • SETTLE DEBOUNCE: cold-start GPS reports a few jumpy positions before it locks, so
-//    rather than chase each one we debounce the recenter — it fires once the fix stops
-//    jumping (SETTLE_MS), or at worst every MAX_MS while you're genuinely moving — so
-//    the map settles on you instead of hopping through a few spots.
-const FOLLOW_SETTLE_MS=1300, FOLLOW_MAX_MS=2000;
-let _framing=false, _frameT=null, _followT=null, _followSince=0, _followTo=null;
+// LOCKED = a FROZEN map: pan AND zoom are both disabled, so the view is held at the
+// init / reset 10 mi framing and nothing moves it. Unlock to pan or zoom. Programmatic
+// camera moves (our framing animations) still work — user gestures are what's blocked.
+function setPanLock(on){
+  ['dragPan','scrollZoom','boxZoom','doubleClickZoom','touchZoomRotate','keyboard']
+    .forEach(k=>{ try{ on?gl[k].disable():gl[k].enable(); }catch(e){} });
+}
+// ---- FRAMING GUARD ----------------------------------------------------------
+// frameNow() is the ONE authoritative camera move: it centers on a point AND resets
+// the zoom to the VIEW radius. _framing blocks anything from interrupting that ~1.2s
+// animation (so a click-to-lock zoom reset always lands fully). A frame is a NEW view,
+// so it clears _didInitialLoad → its moveend refetches data around the new spot.
+const FOLLOW_REFRAME_KM=2;   // while locked, only re-frame if a fix is this far off (the IP→GPS settle / a teleport)
+let _framing=false, _frameT=null;
 let _didInitialLoad=false;   // has the first around-you data pull happened? (see refreshViewport)
 function frameNow(lat,lon){
-  _framing=true; clearTimeout(_frameT); clearTimeout(_followT); _followT=null; _followSince=0;
+  _framing=true; _didInitialLoad=false; clearTimeout(_frameT);
   flyToRadiusMi(lat,lon,VIEW_MI);
   _frameT=setTimeout(()=>{ _framing=false; },1300);   // fitBounds is 1200ms + a small buffer
 }
-function scheduleFollow(lon,lat){
-  _followTo=[lon,lat];
-  const now=Date.now(); if(!_followSince) _followSince=now;
-  clearTimeout(_followT);
-  _followT=setTimeout(runFollow, now-_followSince>=FOLLOW_MAX_MS?0:FOLLOW_SETTLE_MS);
-}
-function runFollow(){
-  _followT=null; _followSince=0;
-  if(locMode!==2||_framing||!_followTo) return;
-  const c=gl.getCenter();
-  if(havKm(c.lat,c.lng,_followTo[1],_followTo[0])>GEO_FOLLOW_DEADBAND_KM){
-    cancelCenterZoom(); gl.easeTo({center:_followTo,duration:450});
-  }
-}
 function centerOnMe(){
   if(USER.lat==null){ toast('LOCATING…'); locate(); return; }
-  if(locMode===2){                 // LOCKED → unlock (release the map, keep the view)
+  if(locMode===2){                 // LOCKED → unlock (release pan + zoom, keep the view)
     locMode=0; setLocIcon(false); setPanLock(false);
-  } else {                         // UNLOCKED → center + reset zoom to the 10 mi VIEW, re-lock
+  } else {                         // UNLOCKED → center + reset zoom to the 10 mi VIEW, re-lock (freeze)
     frameNow(USER.lat,USER.lon);   // guarded frame → the zoom reset can't be cut short
     locMode=2; setLocIcon(true); setPanLock(true);
   }
 }
 $('#loc-btn').addEventListener('click',centerOnMe);
-// Engage the lock at load — the app starts following your location (padlock icon,
-// panning disabled). The first fix frames on you and the follow keeps it there.
+// Engage the lock at load — the app starts locked (padlock icon, map frozen). The
+// first fix frames on you and then the view holds there until you unlock.
 setLocIcon(true); setPanLock(true);
-// ROBUST LOCK: dragPan.disable() stops the pan handler, but some touch platforms
-// (notably iOS Safari) can still nudge the camera via other gestures. As a belt-
-// and-braces guarantee, whenever a USER gesture (originalEvent present) ends the
-// map while FOLLOW-locked, snap the crosshair straight back onto the live fix —
-// keeping the user's zoom. Programmatic moves (easeTo / fitBounds) carry no
-// originalEvent, so the follow + framing animations never trip this.
-let _lockSnap=false;
+// ROBUST LOCK: disabling the handlers stops pan + zoom, but some touch platforms
+// (notably iOS Safari) can still nudge the camera via other gestures. As a belt-and-
+// braces guarantee, whenever a USER gesture (originalEvent present) ends the map while
+// locked, snap it straight back to the FROZEN view. We remember that view from the last
+// programmatic move (our framing animations settle with no originalEvent).
+let _lockSnap=false, _frozenCenter=null;
 gl.on('moveend',e=>{
-  if(locMode!==2||_lockSnap||!e||!e.originalEvent||USER.lat==null) return;
+  if(locMode!==2||_lockSnap) return;
+  if(!e||!e.originalEvent){ _frozenCenter=gl.getCenter(); return; }   // programmatic settle = the frozen view
+  if(!_frozenCenter){ _frozenCenter=gl.getCenter(); return; }
   const ctr=gl.getCenter();
-  if(havKm(ctr.lat,ctr.lng,USER.lat,USER.lon)<=GEO_FOLLOW_DEADBAND_KM) return;
+  if(havKm(ctr.lat,ctr.lng,_frozenCenter.lat,_frozenCenter.lng)<=GEO_FOLLOW_DEADBAND_KM) return;
   _lockSnap=true;
-  gl.easeTo({center:[USER.lon,USER.lat],duration:200});
+  gl.easeTo({center:[_frozenCenter.lng,_frozenCenter.lat],duration:200});
   gl.once('moveend',()=>{ _lockSnap=false; });
 });
 
@@ -1455,18 +1443,17 @@ function setUserFix(lat,lon,src,meta){
     // first fix: one clean, guarded animation to the 10 mi VIEW framing
     frameNow(lat,lon);
   } else if(locMode===2){
-    // FOLLOW-LOCKED: keep the crosshair on the live position (so the whole SITREP/chart
-    // tracks where you actually are) — but only past a DEADBAND, and through the SETTLE
-    // debounce so a burst of jumpy cold-GPS fixes doesn't hop the map through a few
-    // spots. Never during a framing animation (so a zoom reset lands cleanly). Inside
-    // the deadband the map holds; the dot still updates.
+    // LOCKED = FROZEN: the map does NOT follow you. It only RE-FRAMES if the fix is far
+    // off the current view (the IP→GPS settle onto your precise spot, or you've
+    // teleported) — so the initial lock lands on your real location — otherwise it holds
+    // dead still (the dot keeps updating). Never re-frame during a framing animation.
     const ctr=gl.getCenter();
-    if(!_framing && havKm(ctr.lat,ctr.lng,lat,lon)>GEO_FOLLOW_DEADBAND_KM){
-      scheduleFollow(lon,lat);
+    if(!_framing && havKm(ctr.lat,ctr.lng,lat,lon)>FOLLOW_REFRAME_KM){
+      frameNow(lat,lon);
     }
   } else if(src==='gps'&&pLat!=null&&havKm(pLat,pLon,lat,lon)>8){
-    // GPS refined the IP guess by a lot (>8 km): re-frame at the precise spot (guarded,
-    // so the zoom always lands right).
+    // UNLOCKED and GPS refined the IP guess by a lot (>8 km): re-frame at the precise
+    // spot (guarded, so the zoom always lands right).
     frameNow(lat,lon);
   }
   sitrepTick();
