@@ -6,7 +6,7 @@ that answers it for wherever the crosshair points.**
 A self-contained HTML app: a dark map with a centre crosshair and a docked
 panel (a bottom sheet on mobile). The panel leads with the **flyability
 chart** — can a small drone fly *here, now, and for the next three hours, and
-how high* — plus a settings box (max wind, range) and a **SITREP** briefing: a
+how high* — plus a max-wind setting (and a range stepper on the map) and a **SITREP** briefing: a
 stack of distance-sorted cards for everything inside the range ring — low
 manned traffic, FAA airspace ceilings, NWS warnings, park no-fly land,
 severe-weather outlooks, space weather, and the local forecast.
@@ -48,12 +48,13 @@ header (hover for which inputs are unverified) and the SITREP title. The FAA
 airspace query hard-throws on anything that could understate a restriction
 (wrong units, truncated results, missing ceilings).
 
-The bold altitude label marks the highest currently flyable row. The
-**settings box** below the chart sets **max wind** (±1 mph) and **range**
-(±0.5 mi, 0.5–15) — both persisted per device. Range drives the FAA query
-radius, the traffic/radar sweep, the SITREP card radius, and the dashed
-**range ring** drawn around the crosshair. Zoom is capped so the ring never
-exceeds ⅓ of the view.
+The bold altitude label marks the highest currently flyable row. **Max wind**
+(±1 mph) is set in the **settings box** below the chart; **range** (±0.5 mi,
+0.5–15) has its own stepper pill floating at the **bottom-centre of the map**,
+next to the ring it controls. Both are persisted per device. Range drives the
+FAA query radius, the traffic/radar sweep, the SITREP card radius, and the
+dashed **range ring** drawn around the crosshair. Zoom is capped so the ring
+never exceeds ⅓ of the view.
 
 ## The SITREP cards
 
