@@ -93,6 +93,11 @@ context cards):
   pop it), this amber card names them. Tap to force a refresh; it clears the
   moment every feed is fresh. (Weather health rides the WX card instead — see
   below — so there's never a duplicate card for the same feed.)
+- ⛈️/💨 **WX WARNING** — the single most severe *weather* gate limiting the NOW
+  column: precipitation, high surface gusts, winds-aloft-over-max and low
+  visibility **ground** (red); wind aloft or a low cloud base can instead just
+  **cap the ceiling** (amber "wind/cloud ceiling N ft"). It reads the chart's own
+  NOW gates, so card and chart agree, and picks grounding over a reduced ceiling.
 - The 🌡️ **WEATHER** card doubles as the weather-feed health indicator: it turns
   **amber** ("stale — tap") when the feed is failing but last-good conditions
   still show, and **red** ("weather unavailable") when the feed never loaded and
@@ -107,9 +112,10 @@ context cards):
   zone drawn on the map. (Controlled-airspace tints are context — authorization
   required — and don't drive the title; the real ceiling severity stays on the
   FAA card above.)
-- Context cards at the bottom: 🌪️/⛈️ SPC Day-1 outlooks, ☀️ M/X solar flares
-  (an HF-blackout risk, but not a chart grounding gate), and the 🌡️ local
-  forecast (always present).
+- Context cards at the bottom: ☀️ M/X solar flares (an HF-blackout risk, but not
+  a chart grounding gate), then 🌪️/⛈️ SPC Day-1 **outlooks** — *info only*, no
+  colour and no title contribution (an outlook is "expected", not a warning) —
+  sitting just above the 🌡️ local forecast (always present).
 
 Tap any card to fly the map there (airspace/TFR zones recentre on the polygon
 centre; other polygons fly to their nearest edge — the same edge distance used

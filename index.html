@@ -761,7 +761,7 @@ defLayer({
         feats.push({type:'Feature',geometry:{type:'Point',coordinates:[a.lon,a.lat]},
           properties:{_kind:'sos',_rot:a.track!=null?a.track:0,
             flight:String(a.flight||a.r||a.hex||'?').trim(),hex:a.hex||'',
-            code:codes[i],type:a.t||'?',desc:a.desc||'',alt:a.alt_baro??a.alt_geom??'?',
+            code:codes[i],type:a.t||'?',desc:a.desc||'',op:a.ownOp||'',alt:a.alt_baro??a.alt_geom??'?',
             altBaro:(typeof a.alt_baro==='number'?a.alt_baro:null),
             spd:a.gs!=null?Math.round(a.gs):'?'}});
       });
@@ -1332,6 +1332,11 @@ const cut=(s,n)=>escapeHtml(String(s==null?'':s).trim().slice(0,n));
 // never "ground ft". planesNear/TRFC already skip it (+'ground' → NaN).
 const ALT=f=>{const a=f.properties.alt;
   return a==='ground'?'on ground':a!=null&&a!=='?'?a+U(' ft'):'—';};
+// Aircraft line-2 label: the human-readable description ("aircraft"), else the
+// ICAO type (skipping a bare '?'), else the operator, and only '?' as a last
+// resort — so a card never reads a bare '?' when a type or operator is known.
+const acSub=f=>{const p=f.properties, type=p.type&&p.type!=='?'?p.type:'';
+  return escapeHtml(p.desc||type||p.op||'?');};
 // hexes currently squawking an emergency — the same airframe also appears in
 // the civil/military feeds, so those cards filter against this set (the 🚨
 // card is the one card for that aircraft). Rebuilt at the top of sitrepTick.
@@ -1340,7 +1345,7 @@ const notSos=f=>!f.properties.hex||!SOS_HEX.has(f.properties.hex);
 const CATS=[
   {src:'sos', hazard:true, air:true, icon:'🚨', cls:()=>'danger',
    head:f=>cut(f.properties.flight||f.properties.hex||'?',12),
-   sub:f=>escapeHtml(f.properties.desc||f.properties.type||'aircraft'),
+   sub:acSub,
    detail:f=>'sq '+(f.properties.code||'7700')},
   {src:'nws', hazard:true, icon:'⚠️',
    cls:f=>/Extreme|Severe/i.test(f.properties.severity)?'danger':'alert',
@@ -1352,10 +1357,10 @@ const CATS=[
      return d&&!isNaN(d)?'til '+d.toLocaleTimeString([],Object.assign({hour:'numeric',minute:'2-digit'},tzOpt())):'';}},
   {src:'nearair', hazard:false, air:true, icon:'✈️', cls:()=>'', filter:notSos,
    head:f=>cut(f.properties.flight||f.properties.hex||'?',12),
-   sub:f=>escapeHtml(f.properties.desc||f.properties.type||'aircraft'), detail:ALT},
+   sub:acSub, detail:ALT},
   {src:'mil', hazard:false, air:true, icon:'🪖', cls:()=>'alert', filter:notSos,
    head:f=>cut(f.properties.flight||f.properties.hex||'?',10),
-   sub:f=>escapeHtml(f.properties.desc||f.properties.type||'military'), detail:ALT},
+   sub:acSub, detail:ALT},
   // FAA airspace RESTRICTIONS — each in-view zone is a distance-sorted, tappable
   // card (tap flies the map to it). Restrictions (defense / prohibited / MOA /
   // stadium / …) are red/amber hazards; controlled airspace (Class B/C/D/E) is a
@@ -1519,6 +1524,30 @@ function sitrepTick(){
       rangeTxt,openBtn(faaMapUrl(lat,lon)),true]);
   }
 
+  // -- WX WARNING (pinned): the most severe WEATHER gate limiting the NOW column.
+  //    Precipitation, gusts, winds-aloft-over-max and low visibility GROUND; wind
+  //    aloft and cloud base can instead just cap the ceiling. Reads the chart's
+  //    own NOW gates (FLY.detail.wxNow) so card and chart agree. FAA and Kp have
+  //    their own cards; this is the pure-weather one. Picks the single most severe
+  //    trigger: grounding (red) outranks a reduced ceiling (amber). --
+  const wn=FLY.detail&&FLY.detail.wxNow;
+  if(wn){
+    const wxCap=Math.min(wn.windCeilFt,wn.cloudCapFt);   // weather-only ceiling (ft)
+    if(wn.gust||wn.vis||wn.precip||wxCap<0){
+      const [ic,head,sub]=
+        wn.precip ? ['⛈️','PRECIPITATION','radar echo in range']
+        : wn.gust ? ['💨','HIGH WIND','surface gusts over max']
+        : wn.windCeilFt<0 ? ['💨','HIGH WIND','winds aloft over max']
+        : wn.vis ? ['🌫️','LOW VISIBILITY','under 3 SM']
+        : ['☁️','LOW CLOUD','cloud base too low'];
+      cards.push(['danger',ic,head,sub,'grounded now','',true]);
+    }else if(wxCap<SPEC.regFt){
+      const wind=wn.windCeilFt<=wn.cloudCapFt;
+      cards.push(['alert',wind?'💨':'☁️',wind?'WIND CEILING':'CLOUD CEILING',
+        wind?'winds aloft over max':'low cloud base','ceiling '+wxCap+U(' ft'),'',true]);
+    }
+  }
+
   // -- SPACE WEATHER (pinned): a geomagnetic Kp storm degrades the GPS/compass a
   //    drone relies on. Right-sized to actual drone impact (NOAA flags GPS
   //    degradation only at G3): RED grounding at Kp ≥ kpGnd (G3+, nav unreliable),
@@ -1557,18 +1586,20 @@ function sitrepTick(){
   //    they're background context, not the nearest thing to the crosshair. --
   const general=[];
   // SEVERE WEATHER OUTLOOK (SPC Day 1): is the map-centre under a severe /
-  // tornado risk TODAY? "Expected", not yet a warning. US only.
+  // tornado risk TODAY? It's just an OUTLOOK — "expected", not a warning — so
+  // it's an INFO card (no colour, no title contribution) that sits just above
+  // the weather card. Actual grounding weather is the WX WARNING card above.
+  const spcCards=[];
   const spcF=featsIn('spc');
   if(spcF.length){
     const tornHit=spcF.filter(f=>f.properties.kind==='torn'&&pointInFeature(f,lon,lat))
       .sort((a,b)=>(parseFloat(b.properties.code)||0)-(parseFloat(a.properties.code)||0))[0];
     const catHit=spcF.filter(f=>f.properties.kind==='cat'&&f.properties.rank>=1&&pointInFeature(f,lon,lat))
       .sort((a,b)=>b.properties.rank-a.properties.rank)[0];
-    if(tornHit){ const tp=parseFloat(tornHit.properties.code)||0; const red=tornHit.properties.sig||tp>=0.10;
-      general.push([red?'danger':'alert','🌪️','TORNADO OUTLOOK',cut(tornHit.properties.label,16)+' today',
-        tornHit.properties.sig?'significant EF2+ risk':'SPC Day 1 outlook',openBtn(SPCU),true]); }
-    if(catHit) general.push([catHit.properties.rank>=4?'danger':'alert','⛈️','SEVERE WX OUTLOOK',cut(catHit.properties.label,16)+' today',
-      'tornado / hail / wind risk',openBtn(SPCU),true]);
+    if(tornHit) spcCards.push(['','🌪️','TORNADO OUTLOOK',cut(tornHit.properties.label,16)+' today',
+      tornHit.properties.sig?'significant EF2+ risk':'SPC Day 1 outlook',openBtn(SPCU),false]);
+    if(catHit) spcCards.push(['','⛈️','SEVERE WX OUTLOOK',cut(catHit.properties.label,16)+' today',
+      'tornado / hail / wind risk',openBtn(SPCU),false]);
   }
   // solar flare (global scalar): an M/X GOES X-ray flare risks an HF radio
   // blackout. Not a chart grounding gate (no flare gate), so it stays a context
@@ -1652,6 +1683,7 @@ function sitrepTick(){
       llBtn(flyPt[0],flyPt[1]), hazardOv!=null?hazardOv:cfg.hazard, flash?true:undefined, col]);
   });
   general.forEach(c=>cards.push(c));   // area-wide context cards sink to the bottom
+  spcCards.forEach(c=>cards.push(c));  // SPC outlook (info) sits just above weather
   cards.push(wxCard(wxState));         // weather forecast + feed health — always the bottom card
 
   // title severity: 0 none · 1 alert (amber) · 2 warn (red). Driven by the
@@ -2077,6 +2109,7 @@ function flyComputeDetail(){
   };
   const traffic=flyTrafficRows();
   const restrict=flyRestriction();   // a hard Prohibited/security zone grounds every column
+  let wxNow=null;   // NOW-column weather-gate diagnostics for the WX WARNING card
   const grid=cols.map((c,n)=>{
     const prof=makeProfile(c.windPts);
     const visSM=c.visM!=null?c.visM*M_TO_SM:null;
@@ -2088,6 +2121,9 @@ function flyComputeDetail(){
     const cloudCapFt=c.baseFt==null?Infinity:(c.baseFt-SPEC.clrFt);
     let hitFt=null; for(const ft of ALTS_UP){ if(atLim(prof(ft))){ hitFt=ft; break; } }
     const windCeilFt=hitFt==null?SPEC.regFt:hitFt-50;
+    // capture NOW's weather gates for the SITREP WX WARNING card (which picks the
+    // most severe of precip / wind / gust / visibility / cloud to show)
+    if(n===0) wxNow={gust:gGust,vis:gVis,precip:gPcpn,windCeilFt,cloudCapFt};
     const capFt=Math.min(SPEC.regFt, cloudCapFt, windCeilFt, aspCapFt);
     const grounded=globalGrounded||capFt<0;
     let maxFly=-1;
@@ -2150,6 +2186,9 @@ function flyComputeDetail(){
     // kpNow: the planetary Kp in force for the NOW column (null = unknown). The
     // SITREP reads this for its SPACE WEATHER card, so card + chart KP gate agree.
     kpNow:kpAt(0),
+    // wxNow: the NOW-column weather gates (gust/vis/precip + wind & cloud ceilings)
+    // — the SITREP WX WARNING card reads these so card + chart NOW column agree.
+    wxNow,
     grid:grid.map(g=>({n:g.n,maxFly:g.maxFly,grounded:g.grounded,reason:g.reason,reasonAlt:g.reasonAlt}))};
 }
 
