@@ -205,19 +205,22 @@ by the SITREP cards, so the map stays a clean picture and the panel carries the
 detail.
 
 **Mobile:** the map and the CANIFLY panel are two full-screen pages. **Tap the
-map** to bring the panel up; **tap the flyability chart** (or any card) to drop
-back to the map. No drag, no snap points — one tap flips the page, and each page
-gets the whole screen. The panel uses the dynamic viewport height so it never
-spills below Safari's address bar. This two-page toggle is **portrait-only** — a
-phone in **landscape** is wide enough for the docked-right panel, so it falls
-through to the same layout as a tablet or desktop. Because the panel's **refresh
-dial** (see below) is hidden while you're on the map page, a duplicate sits at the
-map's top-right in portrait so it's always reachable.
+map** to bring the panel up; **tap anywhere on the panel** — the title bar, the
+flyability chart, any empty space — to drop back to the map. The only exceptions
+are the **SITREP cards** (which run their own fly-to / open action) and the
+**refresh dial** (which refreshes without dismissing). No drag, no snap points —
+one tap flips the page, and each page gets the whole screen. The panel uses the
+dynamic viewport height so it never spills below Safari's address bar. This
+two-page toggle is **portrait-only** — a phone in **landscape** is wide enough for
+the docked-right panel, so it falls through to the same layout as a tablet or
+desktop. Because the panel's **refresh dial** (see below) is hidden while you're
+on the map page, a duplicate sits at the map's top-right in portrait so it's
+always reachable.
 
 A **refresh dial** — a circular sweep that fills over the 15 s cycle (a
-numberless countdown) with a ↻ glyph — sits at the top-right of the panel header;
-it **spins** while a feed is fetching (it replaces the old corner load spinner)
-and a tap forces an immediate refresh.
+numberless countdown ring) — sits at the top-right of the panel header; it
+**spins** while a feed is fetching (it replaces the old corner load spinner) and a
+tap forces an immediate refresh.
 
 ## Location & privacy
 
