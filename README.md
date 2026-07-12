@@ -7,10 +7,10 @@ A self-contained HTML app: a dark map with a centre crosshair and a docked
 panel (on mobile, two full-screen pages — the map and the panel — that you flip
 between with a single tap). The panel leads with the
 **flyability chart** — can a small drone fly *here, now, and for the next three
-hours, and how high* — plus a max-wind setting (and a range stepper on the map)
-and a **SITREP** briefing: a stack of distance-sorted cards for everything
-inside the range ring — low manned traffic, FAA airspace ceilings, NWS warnings,
-park no-fly land, severe-weather outlooks, space weather, and the local forecast.
+hours, and how high* — and a **SITREP** briefing: a stack of distance-sorted
+cards for everything inside the range ring — low manned traffic, FAA airspace
+ceilings, NWS warnings, park no-fly land, severe-weather outlooks, space weather,
+and the local forecast.
 
 No backend. No build step. No API keys. No `npm install`. **Open `index.html`
 directly in a browser.** Fully responsive — iPhone, iPad, and desktop.
@@ -33,15 +33,15 @@ code in the cell where the limit bites:
 
 | Code | Gate | Source |
 |---|---|---|
-| WIND | wind aloft ≥ your max-wind setting (interpolated 10/80/120/180 m) | Open-Meteo |
-| GUST | surface gust ≥ max wind | Open-Meteo |
+| WIND | wind aloft ≥ the max-wind limit (27 mph, interpolated 10/80/120/180 m) | Open-Meteo |
+| GUST | surface gust ≥ max wind (27 mph) | Open-Meteo |
 | VIS | visibility < 3 SM (Part 107) | Open-Meteo |
 | SKY | cloud base − 500 ft clearance caps the ceiling | Open-Meteo (pressure-level decks + LCL) |
 | KPx | planetary Kp ≥ 7 (G3, GPS degraded) grounds; Kp 5–6 (G1–G2) is an amber caution. NOW uses the finalized observed bin; +1/+2/+3h use the forecast | NOAA SWPC |
 | FAA | LAANC grid ceiling caps the band; a National-Defense TFR in range grounds | FAA ArcGIS (point + range buffer) |
 | PROH / NSUF / PARK | Prohibited area, security UAS zone, or NPS land under the crosshair grounds | FAA ArcGIS · NPS |
-| PCPN | NEXRAD echo inside the range ring grounds NOW | Iowa State Mesonet mosaic (pixel-sampled) |
-| TRFC | manned aircraft within the low-aircraft net (3× the ring) caps the NOW column: the drone must stay 500 ft below it (§91.119 min altitude), so it flashes red/white at that ceiling and reds every row above | ADS-B |
+| PCPN | NEXRAD echo inside the 1 mi range ring grounds NOW | Iowa State Mesonet mosaic (pixel-sampled) |
+| TRFC | a low manned aircraft **inside the 1 mi range ring** caps the NOW column: the drone must stay 500 ft below it (§91.119 min altitude), so it flashes red/white at that ceiling and reds every row above | ADS-B |
 
 **Fail-safe posture:** a feed that can't be verified never silently reads
 "clear". Unknown inputs fail *open* for the grid values but amber the NOW
@@ -52,40 +52,42 @@ unverified past a short grace window, a **📡 DATA card** spells out which feed
 are stale (see the SITREP cards) — amber while the chart still renders from
 last-good data, red when there's no verdict at all.
 
-The bold altitude label marks the highest currently flyable row, and the CANIFLY
-title bar carries the same number centered as a **current-max-altitude readout**
-(e.g. `250 FT`, `0 FT` when grounded) in the same font and verdict colour as the
-CANIFLY title — green clear, amber capped, red grounded. **Max wind**
-(±1 mph) is set in the **settings box** below the chart; **range** (±0.5 mi,
-0.5–15) has its own stepper in the floating control at the **bottom-centre of the
-map** — `(−) RANGE ⌖ n.n MI (+)`, which also holds the center-on-me (⌖) button.
-Both settings are persisted per device. Range drives the FAA query radius, the
-radar sweep, the SITREP card radius, and the dashed **range ring** drawn around
-the crosshair. A second, **light-grey dotted ring at 3× the range** marks the
-low-aircraft warning net (see LOW AIRCRAFT below) — the same 3× radius the zoom
-cap uses, so one knob keeps them in lock-step. Zoom is capped so the range ring
-never exceeds ⅓ of the view — and the cap tracks the ring **both ways**: shrink
-the range and you can zoom in further; widen it and the camera eases back out.
-The range ring and the range control's RANGE / miles text are tinted to the
-current verdict — green clear, amber reduced/unverified, red grounded — so the
-one-glance colour reaches the map even when the panel is off-screen (the
-control's own box border stays white).
+The bold altitude label marks the highest currently flyable row, in the same
+verdict colour as the CANIFLY title — green clear, amber capped, red grounded.
+
+The three working radii are **fixed** (no settings to tune) and the max-wind
+limit is hardcoded to **27 mph**:
+
+- **RED · 1 mi** — the dashed **range ring** drawn around the crosshair. It's the
+  FAA query radius, the radar-echo sweep, the SITREP card radius, and the *red
+  flashing* low-aircraft alert zone. The ring is tinted to the current verdict —
+  green clear, amber reduced/unverified, red grounded — so the one-glance colour
+  reaches the map even when the panel is off-screen.
+- **GREY · 5 mi** — the **light-grey dotted ring**: the traffic net. Every plane
+  inside it is tracked, and a *low* one out here raises an **amber** low-aircraft
+  heads-up (see LOW AIRCRAFT below).
+- **VIEW · 15 mi** (3× grey) — the load-framing radius the map opens to on a
+  location fix, and the **tightest allowed zoom**: the view never shows less than
+  a 15-mile radius. Pan north and the camera eases back out to hold the cap.
 
 ## The SITREP cards
 
 Everything is measured from the **crosshair** (map centre) and limited to the
-range ring. Cards are tiered — red hazards, amber hazards, then routine
+1 mi range ring (aircraft are the exception — tracked out to the 5 mi grey ring,
+see below). Cards are tiered — red hazards, amber hazards, then routine
 traffic — and distance-sorted within each tier (capped at 14, plus pinned and
 context cards):
 
-- ✈️/🚁 **AIRCRAFT & LOW AIRCRAFT** — every aircraft is **tracked out to 3×
-  the range ring** (the light-grey dotted ring) as an ordinary, distance-sorted
-  card, so you see traffic approaching well before it's overhead. A plane that is
-  **under the warning altitude AND inside the range ring** escalates: its own card
-  becomes the red flashing **LOW AIRCRAFT** alert, sorts to the top, pulses a halo
-  on the map, flashes the SITREP title, and caps the chart's TRFC ceiling. It
-  reverts to its normal card the moment it climbs out or leaves the range ring —
-  exactly one card per plane, never two. The warning altitude is the **400 ft
+- ✈️/🚁 **AIRCRAFT & LOW AIRCRAFT** — every aircraft is **tracked out to the 5 mi
+  grey ring** (the light-grey dotted ring) as an ordinary, distance-sorted card,
+  so you see traffic approaching well before it's overhead. A plane **under the
+  warning altitude** escalates in two tiers by where it is: out in the grey ring
+  it's an **amber** LOW AIRCRAFT heads-up card; **inside the 1 mi red range ring**
+  it becomes the **red flashing** LOW AIRCRAFT alert — sorts to the top, pulses a
+  halo on the map, flashes the SITREP title, and caps the chart's TRFC ceiling.
+  Either way it's the plane's *own* card transforming (exactly one card per plane,
+  never two), reverting to a normal card the moment it climbs out or leaves the
+  grey ring. The warning altitude is the **400 ft
   drone ceiling + 500 ft separation = 900 ft AGL** (AGL = QNH-corrected altitude −
   ground elevation under that plane; see below): a plane below that pushes its
   required-clearance floor into the drone band. Part 107 sets no *numeric*
@@ -220,19 +222,23 @@ and a tap forces an immediate refresh.
 ## Location & privacy
 
 On load: instant IP fix (ipwho.is), refined by browser GPS if you allow the
-prompt (denial is silently tolerated), then one clean camera move framing 3×
-the range ring. A continuous geolocation **watch** keeps the green **you-are-here
-dot live** as you move. The ⌖ button **cycles** through center → lock → unlock.
-Since load already auto-locates and frames on you, the button starts **armed**:
-the **first tap locks + follows** — the crosshair sticks to your live position
-(map panning is disabled so you can't drag off yourself; zoom still works) and the
-icon becomes a 🔒 padlock. The next tap **unlocks** (releases panning, icon back
-to the crosshair), the next **centers** you again, then locks — the chain repeats. GPS jitter is tamed so a locked
-map doesn't fidget: fixes reported worse than ~100 m are dropped, the position is
-EMA-smoothed so the dot glides, and the follow only recenters once you've actually
-moved ~18 m (a big jump snaps instantly, no lag). Position is resolved client-side
-and never leaves the browser except as anonymous lat/lon query parameters to the
-public weather APIs.
+prompt (denial is silently tolerated), then one clean camera move framing the
+15 mi view. A continuous geolocation **watch** keeps the green **you-are-here
+dot live** as you move. The ⌖ button lives in the map's **bottom-right corner**
+and **cycles a three-state chain**. Since load already auto-locates and frames on
+you, it starts **armed**: the **first tap locks + follows** — the crosshair
+sticks to your live position (map panning is disabled so you can't drag off
+yourself; zoom still works) and the icon becomes a 🔒 padlock. The next tap
+**unlocks** (releases panning, icon back to the crosshair); the next **centers you
+and resets the zoom** to the 15 mi view, re-arming — then the chain repeats
+(lock → unlock → reset → lock → …). As a belt-and-braces guard for touch platforms
+where disabling the pan handler isn't enough, any stray gesture that nudges the
+map while locked snaps the crosshair straight back onto you. GPS jitter is tamed
+so a locked map doesn't fidget: fixes reported worse than ~100 m are dropped, the
+position is EMA-smoothed so the dot glides, and the follow only recenters once
+you've actually moved ~18 m (a big jump snaps instantly, no lag). Position is
+resolved client-side and never leaves the browser except as anonymous lat/lon
+query parameters to the public weather APIs.
 
 ## Design notes & honest caveats
 
@@ -243,12 +249,12 @@ public weather APIs.
 - Units are imperial (mi/ft, °F, mph). The UI is all-caps, units included — only a unit whose meaning
   depends on its case (SI symbols, a mixed-case index) would stay verbatim.
 - An aircraft below the 900 ft AGL warning altitude (400 ft ceiling + 500 ft
-  separation) that is **inside the range ring** flashes red/white on the map (a
-  pulsing halo), in the SITREP title, on its LOW AIRCRAFT card, and on the chart's
-  **TRFC** ceiling cell (all in sync — the TRFC cell only appears for an in-range
-  breach). Aircraft further out (to the grey 3× ring) are still tracked as ordinary
-  distance-sorted cards, just without the alert. Tapping the **refresh dial**
-  forces an immediate refresh.
+  separation) that is **inside the 1 mi range ring** flashes red/white on the map
+  (a pulsing halo), in the SITREP title, on its LOW AIRCRAFT card, and on the
+  chart's **TRFC** ceiling cell (all in sync — the TRFC cell + halo only appear for
+  an in-range breach). A low aircraft out in the **5 mi grey ring** gets a steady
+  **amber** LOW AIRCRAFT card instead; higher aircraft in the grey ring are ordinary
+  distance-sorted cards. Tapping the **refresh dial** forces an immediate refresh.
 - AGL is computed per plane: **QNH-corrected** barometric altitude (ADS-B
   reports pressure altitude off 29.92″; the local sea-level pressure from the
   weather feed corrects it, ~27 ft/hPa) minus the **ground elevation under that

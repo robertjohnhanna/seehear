@@ -152,34 +152,6 @@
   #fly-pane .sk{display:block;border-radius:4px;background:var(--ink-dim);opacity:.22;
     width:58%;height:min(3.5cqh,4.6cqw,15px);margin:0 auto;animation:flypulse 1.6s ease-in-out infinite}
   @media (prefers-reduced-motion:reduce){#fly-pane .sk{animation:none}}
-  /* settings-row base (used by the settings box below) */
-  #fly-pane .irow{display:flex;justify-content:flex-start;align-items:baseline;gap:.6em;
-    padding:.18em 0;font-size:var(--fti);min-width:0}
-  #fly-pane .irow .id{color:var(--ink);letter-spacing:.02em}
-  /* the settings box — max wind + range, ± steppers — its OWN box just below the
-     chart, both anchored to the foot of the panel. label left / value centre /
-     buttons right. */
-  #fly-settings{width:100%;max-width:560px;flex:0 0 auto;
-    border:1px solid var(--line);border-radius:12px;background:#000;
-    padding:min(1.6cqh,10px) min(2.6cqh,4cqw,16px)}
-  #fly-pane .irow.iset{align-items:center;gap:0}
-  #fly-pane .iset+.iset{margin-top:min(.9cqh,1.4cqw)}
-  #fly-pane .iset .isl{flex:1 1 0;text-align:left;font-weight:800;color:var(--ink);
-    letter-spacing:.05em;white-space:nowrap}
-  #fly-pane .iset .id{flex:1 1 0;text-align:center;font-variant-numeric:tabular-nums;white-space:nowrap}
-  #fly-pane .iset .id.sval{cursor:pointer}          /* tap the value to reset to default */
-  #fly-pane .iset .id.sval:active{color:var(--ok)}
-  #fly-pane .iset .sgrp{flex:1 1 0;display:flex;justify-content:flex-end;align-items:center;gap:.5em}
-  /* the ± glyphs are DRAWN (centred bars), not font characters */
-  #fly-pane .iset .sbtn{width:1.6em;height:1.6em;border-radius:50%;border:1px solid var(--line);
-    background:none;font-size:var(--fti);cursor:pointer;padding:0;flex:0 0 auto;position:relative}
-  #fly-pane .iset .sbtn::before,#fly-pane .iset .sbtn.splus::after{content:"";position:absolute;
-    top:50%;left:50%;transform:translate(-50%,-50%);background:var(--ink);border-radius:1px}
-  #fly-pane .iset .sbtn::before{width:.62em;height:.11em}
-  #fly-pane .iset .sbtn.splus::after{width:.11em;height:.62em}
-  #fly-pane .iset .sbtn:active{border-color:var(--ok)}
-  #fly-pane .iset .sbtn:active::before,#fly-pane .iset .sbtn:active::after{background:var(--ok)}
-
   /* ---------- toasts ---------- */
   #toast{position:absolute;top:calc(var(--topbar-h) + 10px);left:50%;transform:translateX(-50%);
     z-index:25;max-width:min(320px,86vw);display:flex;flex-direction:column;gap:6px;
@@ -189,19 +161,14 @@
   @keyframes sl{from{transform:translateY(8px);opacity:0}to{transform:none;opacity:1}}
   @keyframes sp{to{transform:rotate(360deg)}}
   /* ---------- SITREP briefing panel (right side) ---------- */
-  #sit-head{display:flex;align-items:center;gap:8px;padding:9px 12px;position:relative;
+  #sit-head{display:flex;align-items:center;gap:8px;padding:9px 12px;
     border-bottom:1px solid var(--line);flex:0 0 auto;min-height:48px}
   #sit-head .title{color:var(--accent);font-size:15px;letter-spacing:2px;font-weight:700;
     flex:0 0 auto}
   /* title severity — defined AFTER .title so they win on colour without
-     !important (which would otherwise beat the acflash animation below). Applied
-     to .title so BOTH the CANIFLY title and the centred max-altitude readout
-     share the exact same verdict colour + flash logic. */
+     !important (which would otherwise beat the acflash animation below). */
   #sit-head .title.alert{color:var(--warn)}
   #sit-head .title.warn{color:var(--danger)}
-  /* the centred current-max-altitude readout — same font/colour as the title */
-  #maxalt{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
-    pointer-events:none;white-space:nowrap}
   /* EXTRA ALERT — an aircraft breaching the range+altitude threshold flashes the
      SITREP title, its card headline, its map halo AND the chart's TRFC cell(s)
      between red and white (a TRFC cell only appears while a plane breaches). */
@@ -210,45 +177,17 @@
     animation:acflash .9s ease-in-out infinite}
   @media (prefers-reduced-motion:reduce){
     #sit-head .title.acflash,.sit-row.acflash .s1,#fly-pane .gc.acflash{animation:none}}
-  /* Combined control: range steppers + center-on-me, in one box styled like the
-     original center-on-me button but WHITE, not accent green (white border, text,
-     glyphs; dark blurred bg; 42px tall). Layout: (−) RANGE ⌖ n.n MI (+). Centred
-     at the bottom of the visible map: the wrap spans the map area (left of the
-     320px panel on desktop; full width on mobile) and centres the box, with
-     pointer-events passing through the wrap so only the box is interactive. */
-  #ctrl-wrap{position:absolute;z-index:16;left:calc(16px + var(--sa-l));
-    right:calc(376px + var(--sa-r));bottom:16px;display:flex;justify-content:center;
-    pointer-events:none}
-  /* --sev is the SITREP verdict colour (green/amber/red), set on this box by
-     sitrepTick; the RANGE / miles text tracks it. The border stays plain white. */
-  #ctrlbar{pointer-events:auto;height:42px;display:flex;align-items:center;gap:7px;padding:0 9px;
-    background:var(--panel);border:1px solid #fff;border-radius:9px;
-    color:#fff;font-family:var(--mono);font-size:13px;font-weight:700;
+  /* center-on-me / lock button — a single WHITE box in the map's bottom-right
+     corner (inside the map area, clear of the docked 360px panel on desktop; on
+     mobile the panel is an overlay sheet so it sits at the true bottom-right).
+     White border + glyph on a dark blurred bg; inverts to a white fill with a dark
+     glyph on press. The icon swaps to a padlock while follow-locked. */
+  #loc-btn{position:absolute;z-index:16;bottom:16px;
+    right:calc(376px + var(--sa-r));width:42px;height:42px;padding:0;
+    border:1px solid #fff;border-radius:9px;background:var(--panel);color:#fff;
+    cursor:pointer;display:flex;align-items:center;justify-content:center;
     backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
-  /* the label and value each fill (and centre within) their segment — RANGE
-     centred between the − and the ⌖ button, the miles centred between ⌖ and + */
-  #ctrlbar .cb-label{flex:1 1 0;min-width:64px;text-align:center;letter-spacing:1px;font-weight:800;color:var(--sev,#fff)}
-  #ctrlbar .cb-val{flex:1 1 0;min-width:64px;text-align:center;font-variant-numeric:tabular-nums;
-    white-space:nowrap;cursor:pointer;-webkit-user-select:none;user-select:none;color:var(--sev,#fff)}
-  #ctrlbar .cb-val:active{opacity:.55}
-  /* center-on-me icon button, now living inside the bar (white; inverts to a
-     white fill with dark glyph on press, like the original box did) */
-  #loc-btn{width:32px;height:32px;padding:0;border:none;border-radius:7px;
-    background:none;color:#fff;cursor:pointer;flex:0 0 auto;
-    display:flex;align-items:center;justify-content:center}
   #loc-btn:active{background:#fff;color:#00140a}
-  /* range ± — DRAWN glyphs (centred bars) inside a WHITE circle: the + glyph is
-     green, the − glyph is red; the button border stays white. */
-  #ctrlbar .cb-btn{width:26px;height:26px;border-radius:50%;border:1px solid #fff;
-    background:none;cursor:pointer;padding:0;flex:0 0 auto;position:relative}
-  #ctrlbar .cb-btn::before,#ctrlbar .cb-btn.cb-plus::after{content:"";position:absolute;
-    top:50%;left:50%;transform:translate(-50%,-50%);border-radius:1px}
-  #ctrlbar .cb-btn::before{width:11px;height:2px}
-  #ctrlbar .cb-btn.cb-plus::after{width:2px;height:11px}
-  #ctrlbar .cb-btn:not(.cb-plus)::before{background:var(--danger)}   /* − glyph = red */
-  #ctrlbar .cb-plus::before,#ctrlbar .cb-plus::after{background:var(--ok)}   /* + glyph = green */
-  #ctrlbar .cb-btn:active{background:#fff}
-  #ctrlbar .cb-btn:active::before,#ctrlbar .cb-btn:active::after{background:#00140a}
   #sit-body{display:flex;flex-direction:column;align-content:start;
     overflow-y:auto;padding:4px 0;-webkit-overflow-scrolling:touch;flex:1 1 auto;min-height:0}
   /* every SITREP row is a uniform 3-line block: icon · three text lines · an
@@ -313,9 +252,9 @@
     #sit-head{padding-top:calc(var(--sa-t) + 11px)}
     #sit-body{padding-bottom:calc(var(--sa-b) + 6px)}
     #fly-board{cursor:pointer}          /* tap the chart to drop back to the map */
-    /* floating map controls sit above the safe-area bottom */
-    #ctrl-wrap{left:calc(14px + var(--sa-l));right:calc(14px + var(--sa-r));
-      bottom:calc(var(--sa-b) + 14px)}
+    /* the panel is an overlay sheet on mobile, so the center-on-me button sits at
+       the TRUE bottom-right of the map (no docked panel to clear), above the safe area */
+    #loc-btn{right:calc(14px + var(--sa-r));bottom:calc(var(--sa-b) + 14px)}
     #map-attrib{right:0;bottom:calc(var(--sa-b) + 2px)}
   }
 </style>
@@ -340,7 +279,6 @@
 <div id="sitrep" class="panel">
   <div id="sit-head">
     <span class="title" id="sit-title">◈ CANIFLY</span>
-    <span class="title" id="maxalt" title="highest flyable altitude now" aria-label="current maximum flyable altitude">—</span>
     <button id="refresh-badge" class="rdial" type="button" title="tap to refresh · auto every 15 s" aria-label="refresh data now">
       <span class="rdial-prog"></span>
       <svg class="rdial-ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v4h-4"/></svg>
@@ -350,7 +288,6 @@
        map-centre crosshair on the same unified data-refresh pulse. -->
   <div id="fly-pane">
     <div id="fly-board" class="board" role="group" aria-label="Can I Fly? drone preflight"></div>
-    <div id="fly-settings" aria-label="Preflight settings"></div>
   </div>
   <div id="sit-body">
     <div class="sit-empty">ACQUIRING POSITION…</div>
@@ -365,18 +302,10 @@
   <svg class="rdial-ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v4h-4"/></svg>
 </button>
 
-<!-- combined control, centred at the bottom of the map: range steppers +
-     center-on-me in one box styled like the original center-on-me button.
-     Layout: (−) RANGE ⌖ n.n MI (+). rng-val text is refreshed by flyRenderRange();
-     the ± and value keep the same ids the delegated stepper handler drives; the
-     ⌖ button keeps id loc-btn. -->
-<div id="ctrl-wrap"><div id="ctrlbar">
-  <button type="button" class="cb-btn" id="rng-minus" aria-label="Decrease range half a mile"></button>
-  <span class="cb-label">range</span>
-  <button id="loc-btn" title="center map on my location" aria-label="center on my location"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><circle cx="12" cy="12" r="3.2" fill="currentColor"/><circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 1.5v3.4M12 19.1v3.4M1.5 12h3.4M19.1 12h3.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
-  <span class="cb-val" id="rng-val" role="button" tabindex="0" title="Tap to reset range">1.0 mi</span>
-  <button type="button" class="cb-btn cb-plus" id="rng-plus" aria-label="Increase range half a mile"></button>
-</div></div>
+<!-- center-on-me / lock control — a single button in the map's bottom-right
+     corner. Cycles armed → lock → unlock → reset (see centerOnMe). The icon
+     swaps to a padlock while follow-locked. -->
+<button id="loc-btn" title="center map on my location" aria-label="center on my location"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><circle cx="12" cy="12" r="3.2" fill="currentColor"/><circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 1.5v3.4M12 19.1v3.4M1.5 12h3.4M19.1 12h3.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
 
 <div id="toast"></div>
 
@@ -1318,12 +1247,7 @@ let userMarker=null, sitrepTimer=null;
 // Frame the map to a `miles`-radius circle around (lat,lon). fitBounds honours
 // the panel padding, so the point lands centred in the visible area between the
 // panels.
-// THE shared "3× the range ring" factor. One knob drives three things that must
-// stay in lock-step: the framing radius on a location fix, the max-zoom cap (the
-// ring must stay ≤ ⅓ of the view), and the LOW-AIRCRAFT warning radius (+ its
-// grey dotted ring). Change this and all of them move together.
-const RING_VIEW_MULT=3;
-const ringViewMi=()=>RING_VIEW_MULT*RNG.mi;   // statute miles — the 3× radius
+// (radii RED_MI / GREY_MI / VIEW_MI are fixed constants defined with the settings)
 function flyToRadiusMi(lat,lon,miles,opts){
   cancelCenterZoom();
   const {dLat,dLon}=geoDeltas(miles*MI_TO_KM,lat);
@@ -1385,26 +1309,46 @@ function setLocIcon(locked){
   b.title=locked?'following your location — tap to unlock':'center map on my location';
   b.setAttribute('aria-label',locked?'unlock location follow':'center on my location');
 }
-// The ⌖ button cycles: CENTER (pan to me, keep zoom) → LOCK (crosshair STUCK on
-// the live fix; icon → padlock) → UNLOCK (release; icon → crosshair) → repeat.
-// Locking disables map panning so the crosshair can't be dragged off you — zoom
-// still works; unlocking re-enables the drag. No fix yet → first tap kicks off
-// location. locMode: 0 idle · 1 centered · 2 locked (following).
-// Start ARMED at 1 (centered): load auto-locates + frames on you, so the first tap
-// LOCKS — from there it follows the chain (unlock → center → lock → …).
+// The ⌖ button cycles a three-state chain: it starts ARMED, then
+//   ARMED → LOCK   : snap onto you + FOLLOW; the crosshair is stuck on the live
+//                    fix (icon → padlock, panning disabled — zoom still works).
+//   LOCK → UNLOCK  : release the map (icon → crosshair; drag re-enabled), view kept.
+//   UNLOCK → RESET : center on you AND reset the zoom to the 15 mi VIEW framing,
+//                    then re-ARM — so the next tap LOCKS again.
+// No fix yet → first tap kicks off location. locMode: 0 unlocked · 1 armed · 2 locked.
+// Start ARMED at 1: load auto-locates + frames on you, so the first tap LOCKS —
+// from there it follows the chain (lock → unlock → reset → lock → …).
 let locMode=1;
 function setPanLock(on){ try{ on?gl.dragPan.disable():gl.dragPan.enable(); }catch(e){} }
 function centerOnMe(){
   if(USER.lat==null){ toast('LOCATING…'); locate(); return; }
-  if(locMode===2){                 // LOCKED → unlock (release the map)
-    locMode=0; setLocIcon(false); setPanLock(false); return;
+  if(locMode===1){                 // ARMED → lock: snap onto you + follow
+    cancelCenterZoom();
+    gl.easeTo({center:[USER.lon,USER.lat],duration:400});
+    locMode=2; setLocIcon(true); setPanLock(true);
+  } else if(locMode===2){          // LOCKED → unlock (release the map, keep the view)
+    locMode=0; setLocIcon(false); setPanLock(false);
+  } else {                         // UNLOCKED → center + reset zoom to the 15 mi VIEW, re-arm
+    flyToRadiusMi(USER.lat,USER.lon,VIEW_MI);
+    locMode=1; setLocIcon(false);
   }
-  cancelCenterZoom();
-  gl.easeTo({center:[USER.lon,USER.lat],duration:locMode?400:800});   // snap to me, keep zoom
-  if(locMode===0){ locMode=1; }    // idle → centered
-  else { locMode=2; setLocIcon(true); setPanLock(true); }   // centered → lock: crosshair stuck on you
 }
 $('#loc-btn').addEventListener('click',centerOnMe);
+// ROBUST LOCK: dragPan.disable() stops the pan handler, but some touch platforms
+// (notably iOS Safari) can still nudge the camera via other gestures. As a belt-
+// and-braces guarantee, whenever a USER gesture (originalEvent present) ends the
+// map while FOLLOW-locked, snap the crosshair straight back onto the live fix —
+// keeping the user's zoom. Programmatic moves (easeTo / fitBounds) carry no
+// originalEvent, so the follow + framing animations never trip this.
+let _lockSnap=false;
+gl.on('moveend',e=>{
+  if(locMode!==2||_lockSnap||!e||!e.originalEvent||USER.lat==null) return;
+  const ctr=gl.getCenter();
+  if(havKm(ctr.lat,ctr.lng,USER.lat,USER.lon)<=GEO_FOLLOW_DEADBAND_KM) return;
+  _lockSnap=true;
+  gl.easeTo({center:[USER.lon,USER.lat],duration:200});
+  gl.once('moveend',()=>{ _lockSnap=false; });
+});
 
 // Map padding keeps the geographic centre inside the open area left of the
 // docked SITREP panel (desktop only; on mobile the panel is an overlay sheet).
@@ -1448,8 +1392,8 @@ function setUserFix(lat,lon,src,meta){
   // GPS refinement of the IP guess only gently recenters, and only if it moved
   // us far — so the load isn't a stutter of two back-to-back zoom animations.
   if(first){
-    // first fix: one clean animation to the 3×-range-ring view
-    flyToRadiusMi(lat,lon,ringViewMi());
+    // first fix: one clean animation to the 15 mi VIEW framing
+    flyToRadiusMi(lat,lon,VIEW_MI);
   } else if(locMode===2){
     // FOLLOW-LOCKED: keep the crosshair on the live position at the current zoom
     // (so the whole SITREP/chart tracks where you actually are) — but only recenter
@@ -1465,7 +1409,7 @@ function setUserFix(lat,lon,src,meta){
     // Re-framing (not easeTo) so the final ZOOM is always the right one — easeTo
     // mid-fitBounds was leaving the zoom half-finished ("hung"). For small
     // corrections we leave the camera and just move the marker.
-    flyToRadiusMi(lat,lon,ringViewMi());
+    flyToRadiusMi(lat,lon,VIEW_MI);
   }
   sitrepTick();
 }
@@ -1628,17 +1572,17 @@ function planeAglFt(a,crossGround){
 const AGL_CAND_MAX_FT=16000;
 
 function sitrepTick(){
-  // SITREP reflects what's inside the RANGE RING (RNG.mi around the crosshair),
+  // SITREP reflects what's inside the RED RANGE RING (RED_MI around the crosshair),
   // not the whole visible map — the same radius the flyability check sweeps.
   // Fully synchronous: reads only already-loaded layer/chart state.
   const c=gl.getCenter();
-  const lat=c.lat, lon=c.lng, rangeKm=RNG.mi*MI_TO_KM;
+  const lat=c.lat, lon=c.lng, rangeKm=RED_MI*MI_TO_KM;
   // Aircraft are TRACKED further out than everything else in the SITREP — to the
-  // shared 3× radius (ringViewMi — same factor as the zoom cap; the grey dotted
-  // ring marks it) — so you see traffic approaching. They're ordinary distance-
-  // sorted cards out there; the red LOW AIRCRAFT alert is scanned only in the
-  // range ring (below). Everything else in the SITREP stays inside the range ring.
-  const warnKm=ringViewMi()*MI_TO_KM;
+  // 5 mi GREY ring (GREY_MI; the grey dotted ring marks it) — so you see traffic
+  // approaching. A low plane in the grey ring gets an AMBER low-aircraft heads-up
+  // card; a low plane inside the red range ring escalates to the RED flashing LOW
+  // AIRCRAFT alert (below). Everything else in the SITREP stays inside the red ring.
+  const warnKm=GREY_MI*MI_TO_KM;
   SOS_HEX=new Set(featsIn('sos').map(f=>f.properties.hex).filter(Boolean));
   const rows=[];
   // Every row is 3 lines (l1/l2/l3). The WHOLE card is the click target — the
@@ -1662,35 +1606,39 @@ function sitrepTick(){
 
   const cards=[];   // [cls, icon, l1, l2, l3, action, hazard]
 
-  // -- LOW AIRCRAFT BREACH: a plane (civil / military / emergency) inside the
-  //    RANGE RING AND under the WARN_AGL_FT (400 ft ceiling + FAA_SEP_FT) warning
-  //    altitude (aircraft further out, to the grey ring, are tracked as ordinary
-  //    cards but don't trigger the alert until they're in range). Rather
+  // -- LOW AIRCRAFT (two-tier): a plane (civil / military / emergency) under the
+  //    WARN_AGL_FT (400 ft ceiling + FAA_SEP_FT) warning altitude. Where it is
+  //    decides the tier: inside the RED range ring → the RED flashing LOW AIRCRAFT
+  //    alert; out in the 5 mi GREY ring → an AMBER low-aircraft heads-up. Rather
   //    than a separate pinned card, the plane's OWN card (below) transforms into
-  //    the red flashing LOW AIRCRAFT alert while it breaches, and reverts to the
-  //    normal plane card when it climbs out / leaves — always exactly ONE card
-  //    per plane. planesNear() is the SAME deduped collector that drives the
-  //    chart's TRFC cells, so card, chart and halo always agree. AGL = QNH-
-  //    corrected MSL altitude (planeMslFt) − ground elevation UNDER THE PLANE
-  //    (planeAglFt; cached, keyless Open-Meteo, crosshair cell as fallback).
-  //    breachInfo maps a plane's hex/callsign → its AGL label; the item loop
+  //    the alert while it's low, and reverts to the normal plane card when it climbs
+  //    out / leaves — always exactly ONE card per plane. planesNear() is the SAME
+  //    deduped collector that drives the chart's TRFC cells, so card, chart and halo
+  //    always agree. AGL = QNH-corrected MSL altitude (planeMslFt) − ground elevation
+  //    UNDER THE PLANE (planeAglFt; cached, keyless Open-Meteo, crosshair fallback).
+  //    breachInfo maps a plane's hex/callsign → {label, inRange}; the item loop
   //    reads it. Ground aircraft (alt='ground'/'?') skip. --
   const acGround=groundElevFt(lat,lon);          // ft AMSL at crosshair, null until fetched
-  // The LOW AIRCRAFT alert is scanned in the RANGE RING only — aircraft further out
-  // (to the grey 3× ring) are still tracked as ordinary cards below, but a low one
-  // only becomes the red flashing alert once it's in range.
-  const near=planesNear(lat,lon,rangeKm);
+  // Scan for low traffic across the whole GREY ring (5 mi) — a low plane out there
+  // gets the amber heads-up, and one inside the red range ring gets the red alert.
+  const near=planesNear(lat,lon,warnKm);
   // pull terrain under the crosshair + every plausibly-low plane in one batch
   ensureGroundElev([[lat,lon],...near.filter(a=>a.alt<AGL_CAND_MAX_FT).map(a=>[a.pt[1],a.pt[0]])]);
-  const breachers=near
+  const lowAc=near
     .map(a=>{ const {ground,agl}=planeAglFt(a,acGround); return {...a,ground,agl}; })
     .filter(a=>a.agl<WARN_AGL_FT);
-  const breachInfo=new Map();   // acKey → AGL label ('254 ft AGL' / '254 ft' if ground unknown)
-  breachers.forEach(a=>breachInfo.set(acKey(a.f.properties),
-    Math.max(0,Math.round(a.agl))+U(' ft')+(a.ground==null?'':' AGL')));
-  const acFlash=breachers.length>0;
-  // pulsing map halo(s) at the breaching aircraft (empty = cleared)
-  setAcAlert(breachers.map(a=>({type:'Feature',
+  const breachInfo=new Map();   // acKey → {label:'254 ft AGL'/'254 ft', inRange:bool}
+  const redBreach=[];           // low + inside the red range ring → flashing alert + halo
+  lowAc.forEach(a=>{
+    const inRange=havKm(lat,lon,a.pt[1],a.pt[0])<=rangeKm;
+    breachInfo.set(acKey(a.f.properties),{
+      label:Math.max(0,Math.round(a.agl))+U(' ft')+(a.ground==null?'':' AGL'),
+      inRange});
+    if(inRange) redBreach.push(a);
+  });
+  const acFlash=redBreach.length>0;   // title flashes only for an in-range red breach
+  // pulsing map halo(s) at the RED breaching aircraft only (empty = cleared)
+  setAcAlert(redBreach.map(a=>({type:'Feature',
     geometry:{type:'Point',coordinates:a.pt},properties:{}})));
 
   // -- FAA CEILING (pinned): surfaces the chart's OWN airspace gate directly.
@@ -1790,26 +1738,28 @@ function sitrepTick(){
   const items=[];
   CATS.forEach(cfg=>catItems(cfg,lat,lon,cfg.air?warnKm:rangeKm).forEach(f=>{
     const g=f.geometry; if(!g) return;
-    // Aircraft are tracked out to the grey 3× ring — every one in that net gets a
-    // normal distance-sorted card. A low one only escalates to the red LOW AIRCRAFT
-    // alert once it's IN RANGE (in breachInfo, which is scanned at the range ring).
+    // Aircraft are tracked out to the grey 5 mi ring — every one in that net gets a
+    // normal distance-sorted card. A LOW one becomes the LOW AIRCRAFT alert: RED
+    // flashing if it's inside the red range ring, AMBER if it's only in the grey ring
+    // (breachInfo carries which, keyed by hex/callsign).
     // pt = the CLOSEST EDGE point to the crosshair (label + sorting distance);
     // for an airspace/TFR zone the tap instead recentres on the polygon CENTRE
     // (flyPt below). Inside still sorts to the top / reads "overhead".
     const inside=g.type!=='Point'&&pointInFeature(f,lon,lat);
     let cls=cfg.cls?cfg.cls(f):'', det=null, headOv=null, subOv=null, icOv=null, flash=false, hazardOv=null;
-    // BREACHING aircraft (low + IN RANGE): this plane's own card BECOMES the red
-    // flashing LOW AIRCRAFT alert while it's in breachInfo, and reverts to its
-    // normal card the moment it climbs out / leaves the range ring. One card per
-    // plane, never two.
-    if(cfg.air && breachInfo.has(acKey(f.properties))){
-      cls='danger'; flash=true; hazardOv=true; icOv=acIcon(f);   // ✈️/🚁, same as every card
-      // l2 is the callsign / TAIL NUMBER (the headline is now the flashing LOW
-      // AIRCRAFT alert); tint it to the map icon colour like the regular cards do.
-      // The ground speed rides l3 after the AGL, the same as every plane card.
-      headOv='LOW AIRCRAFT';
+    // LOW AIRCRAFT: this plane's own card BECOMES the LOW AIRCRAFT alert while it's
+    // in breachInfo, and reverts to its normal card the moment it climbs out /
+    // leaves the grey ring. RED flashing danger when in the red range ring; AMBER
+    // alert (steady, no flash) when only in the grey ring. One card per plane, never
+    // two. l2 carries the callsign / TAIL NUMBER tinted to the map icon colour; the
+    // AGL rides det (l3), and the ground speed follows it like every plane card.
+    const bi=cfg.air?breachInfo.get(acKey(f.properties)):null;
+    if(bi){
+      icOv=acIcon(f); hazardOv=true; headOv='LOW AIRCRAFT';   // ✈️/🚁, same as every card
+      if(bi.inRange){ cls='danger'; flash=true; }             // red range ring → flashing
+      else { cls='alert'; }                                   // grey ring only → amber heads-up
       subOv='<span style="color:'+AC_COL[cfg.src]+'">'+acTail(f,12,'aircraft')+'</span>';
-      det=breachInfo.get(acKey(f.properties));
+      det=bi.label;
     }
     // Controlled-airspace cards (Class B/C/D/E) are hazard:false, so their
     // polygon colour (applied at render) tints the card without driving the title
@@ -1850,10 +1800,10 @@ function sitrepTick(){
     // card matches what's drawn (blue B/D, magenta C/E, red defense/prohibited,
     // orange restricted, gold advisory). A REGULAR aircraft card tints its tail
     // number (the headline) to the same colour as its plane/heli map icon — green
-    // civil, yellow military, red emergency. A breaching-aircraft override keeps
-    // the flashing red headline (its tail number is tinted on l2 instead). Only a
-    // bare hex passes, so a feed can't inject into the style attribute.
-    const rawCol=flash?null:cfg.src==='airspace'?f.properties._col:cfg.air?AC_COL[cfg.src]:null;
+    // civil, yellow military, red emergency. A LOW AIRCRAFT override (red flashing
+    // OR amber) keeps its verdict-coloured headline — its tail number is tinted on
+    // l2 instead. Only a bare hex passes, so a feed can't inject into the style attr.
+    const rawCol=(flash||head==='LOW AIRCRAFT')?null:cfg.src==='airspace'?f.properties._col:cfg.air?AC_COL[cfg.src]:null;
     const col=/^#[0-9a-fA-F]{3,8}$/.test(rawCol||'')?rawCol:undefined;
     // Every plane card (civil / military / emergency / low-aircraft) carries its
     // ADS-B ground speed on line 3, AFTER the altitude — spd is knots, shown MPH,
@@ -1879,22 +1829,17 @@ function sitrepTick(){
   if(g0) titleSev=g0.grounded?2:(g0.maxFly<SPEC.regFt?1:0);
   if(FLY.detail&&flyUnknown().length) titleSev=Math.max(titleSev,1);
   cards.forEach(cd=>{ if(cd[6]) titleSev=Math.max(titleSev,cd[0]==='danger'?2:cd[0]==='alert'?1:0); });
-  // The centred readout shows the current highest flyable altitude (grounded → 0);
-  // it shares the verdict colour + breach-flash logic with the CANIFLY title.
-  const ma=$('#maxalt');
-  if(ma) ma.textContent = g0 ? Math.max(0,g0.maxFly)+' FT' : '—';
-  [$('#sit-title'), ma].forEach(t=>{ if(!t) return;
+  // The CANIFLY title takes the verdict colour + breach-flash.
+  const t=$('#sit-title');
+  if(t){
     t.classList.remove('warn','alert');
     if(titleSev>=2) t.classList.add('warn'); else if(titleSev>=1) t.classList.add('alert');
     t.classList.toggle('acflash',acFlash);   // breaching aircraft → flash red/white
-  });
-  // the map range ring AND the range control (its outline + the RANGE / miles
-  // text) both track the SITREP title severity: green clear / amber reduced-or-
-  // unverified / red grounded (same 0·1·2 the title colour uses). The control
-  // reads --sev in CSS, so one property drives its border and both labels.
+  }
+  // the map range ring tracks the SITREP title severity: green clear / amber
+  // reduced-or-unverified / red grounded (same 0·1·2 the title colour uses).
   const sevCol=SEV_COL[titleSev]||SEV_COL[0];
   if(gl.getLayer('ly-ring')) gl.setPaintProperty('ly-ring','line-color',sevCol);
-  const cbar=$('#ctrlbar'); if(cbar) cbar.style.setProperty('--sev',sevCol);
   cards.forEach(cd=>row(cd[0],cd[1],cd[2],cd[3],cd[4],cd[5],cd[7],cd[8]));
 
   // the weather card is always appended, so there's always at least one row
@@ -2015,16 +1960,15 @@ const FAA_SEP_FT=500;
 // ONE number shared by the SITREP card and the chart, so they always agree.
 const WARN_AGL_FT=SPEC.regFt+FAA_SEP_FT;   // 400 + 500 = 900
 // LIM.wind = the aircraft's max wind [mph] — gates the surface gust and caps the
-// wind-aloft scan. Adjustable via the settings-box stepper, persisted per device.
-const MW_DEFAULT=27, MW_KEY='canifly.maxwind';
-const LIM={wind:MW_DEFAULT};
-try{ const v=Math.round(Number(localStorage.getItem(MW_KEY))); if(v>=1&&v<=99) LIM.wind=v; }catch(e){}
-// RNG.mi = the RANGE setting [statute miles]: the FAA airspace query radius,
-// the LOW AIRCRAFT warning radius, the TRFC traffic radius AND the PCPN
-// radar-echo radius. Adjustable ±0.5 in the settings box, persisted per device.
-const RNG_DEFAULT=1, RNG_KEY='canifly.rangemi';
-const RNG={mi:RNG_DEFAULT};
-try{ const v=Math.round(Number(localStorage.getItem(RNG_KEY))*2)/2; if(v>=0.5&&v<=15) RNG.mi=v; }catch(e){}
+// wind-aloft scan. FIXED at 27 mph (no setting).
+const LIM={wind:27};
+// The three FIXED radii [statute miles]. RED (the range ring, RNG.mi) = 1 mi VLOS:
+// the FAA query radius, the RED low-aircraft alert, the TRFC chart cap + the PCPN
+// radar-echo radius. GREY = 5 mi: the traffic net (planes tracked + amber low-
+// aircraft heads-up out to here). VIEW = 15 mi (3× grey): the load-framing radius
+// AND the tightest allowed zoom (the view never shows less than this).
+const RED_MI=1, GREY_MI=5, VIEW_MI=15;
+const RNG={mi:RED_MI};
 // Altitude ladder, 50 ft steps through the FAA band (matches the grid rows).
 const ALTS_UP=(()=>{const a=[];for(let f=0;f<=SPEC.regFt;f+=50)a.push(f);return a;})();
 const ALTS=[...ALTS_UP].reverse();
@@ -2441,72 +2385,14 @@ function flySkeletonHtml(){
   const gust=`<div class="grow ggust"><span class="ga">gust</span>${sk}</div>`;
   return `<div ${FLY_GRID_ATTRS}>${head}${rows}${gust}</div>`;
 }
-// The settings box — MAX WIND only — rendered into its own #fly-settings box
-// below the chart. (RANGE lives in the combined #ctrlbar control at the bottom-
-// right of the map, see flyRenderRange.) Independent of feed data, so it renders
-// once at boot and re-renders only when a value changes.
-function flySettingsHtml(){
-  return `<div class="irow iset"><span class="isl">max wind</span>`
-    +`<span class="id sval" id="mw-val" role="button" tabindex="0" title="Tap to reset to ${MW_DEFAULT} mph">${LIM.wind} mph</span>`
-    +`<span class="sgrp">`
-    +`<button type="button" class="sbtn" id="mw-minus" aria-label="Decrease max wind 1 mph"></button>`
-    +`<button type="button" class="sbtn splus" id="mw-plus" aria-label="Increase max wind 1 mph"></button></span></div>`;
-}
-function flyRenderSettings(){ const s=$('#fly-settings'); if(s) s.innerHTML=flySettingsHtml(); }
-// RANGE lives in the combined bottom-right control (#ctrlbar: steppers + center-
-// on-me). The markup is static in the HTML; this just refreshes the value text.
-// The rng-minus/rng-plus/rng-val ids are unchanged, so the delegated stepper +
-// tap-to-reset handler below drives it as before.
-function flyRenderRange(){ const v=$('#rng-val'); if(v) v.textContent=RNG.mi.toFixed(1)+' mi'; }
+// RANGE and MAX WIND are no longer user-adjustable — the three radii are fixed
+// (RED 1 / GREY 5 / VIEW 15 mi) and LIM.wind is hardcoded to 27 mph — so there's
+// no settings box or range control to render; the chart just paints from data.
 function flyRender(){
   const board=$('#fly-board'); if(!board) return;
   board.innerHTML=FLY.detail?flyBoardHtml(FLY.detail.board):flySkeletonHtml();
 }
 function flyPaint(){ FLY.detail=FLY.data?flyComputeDetail():null; flyRender(); }
-
-// ---- settings ----
-// Max wind: ±1 mph, clamped 1–99, persisted. Pure local math → recompute + repaint.
-function setMaxWind(w){
-  w=Math.max(1,Math.min(99,Math.round(w)));
-  if(!Number.isFinite(w)||w===LIM.wind) return;
-  LIM.wind=w;
-  store(MW_KEY,w);
-  flyRenderSettings();   // update the displayed value in the settings box
-  flyPaint();            // recompute the grid (wind gate) + repaint now…
-  scheduleSitrep();      // …and re-tick the SITREP (the title reads the NOW column)
-}
-// Range: ±0.5 mi, clamped 0.5–15, persisted. Changes the FAA query, the radar
-// sample AND the SITREP low-aircraft radius — repaint + SITREP recompute now,
-// refetch debounced past a burst of presses.
-let rngFetchTimer=null;
-function setRange(mi){
-  mi=Math.max(0.5,Math.min(15,Math.round(mi*2)/2));
-  if(!Number.isFinite(mi)||mi===RNG.mi) return;
-  RNG.mi=mi;
-  store(RNG_KEY,RNG.mi);
-  flyRenderRange();      // update the displayed value in the floating range pill
-  updateRing();          // resize the on-map range ring to match
-  enforceRingZoom();     // re-cap zoom so the resized ring still fits in 1/3 of the view
-  flyPaint(); scheduleSitrep();
-  clearTimeout(rngFetchTimer);
-  rngFetchTimer=setTimeout(flyRefresh,700);
-}
-// Settings steppers: a ± press adjusts the setting; tapping a value resets it.
-document.addEventListener('click',e=>{
-  const step=e.target.closest('#mw-minus,#mw-plus,#rng-minus,#rng-plus');
-  if(step){
-    if(step.id[0]==='m') setMaxWind(LIM.wind+(step.id==='mw-plus'?1:-1));
-    else setRange(RNG.mi+(step.id==='rng-plus'?0.5:-0.5));
-    return;
-  }
-  const val=e.target.closest('#mw-val,#rng-val');
-  if(val){ if(val.id==='mw-val') setMaxWind(MW_DEFAULT); else setRange(RNG_DEFAULT); }
-});
-document.addEventListener('keydown',e=>{
-  if(e.key!=='Enter'&&e.key!==' ') return;
-  const t=e.target, val=t&&t.closest?t.closest('#mw-val,#rng-val'):null;
-  if(val){ e.preventDefault(); if(val.id==='mw-val') setMaxWind(MW_DEFAULT); else setRange(RNG_DEFAULT); }
-});
 
 // ---- refresh — called from the unified refresh pulse, on viewport moves, on range
 // changes and at boot. Weather + the radar sample go every call; Kp re-fetches on
@@ -2636,11 +2522,10 @@ function startAcPulse(){
 
 /* =====================================================================
    9. RANGE RING — a dashed circle drawn on the map around the crosshair (the
-   map centre) at the current canifly RANGE setting (RNG.mi). It tracks the
-   crosshair as you pan and resizes the instant the range stepper changes,
-   so the map shows exactly the radius the flyability check sweeps. Its colour
-   tracks the SITREP title severity (see sitrepTick): green clear, amber reduced
-   / unverified, red grounded.
+   map centre) at the fixed 1 mi RED radius (RED_MI). It tracks the crosshair as
+   you pan, so the map shows exactly the radius the flyability check sweeps. Its
+   colour tracks the SITREP title severity (see sitrepTick): green clear, amber
+   reduced / unverified, red grounded.
    ===================================================================== */
 // ring colour by title severity 0·1·2 — matches --accent / --warn / --danger
 const SEV_COL=['#2fe07a','#ffb454','#ff4455'];
@@ -2662,35 +2547,34 @@ function ringFC(lat,lon,miles){
 let _ringRaf=0;
 function updateRing(){
   const c=gl.getCenter();
-  const s=gl.getSource('src-ring'); if(s) s.setData(ringFC(c.lat,c.lng,RNG.mi));
-  // the light-grey dotted ring marks the LOW-AIRCRAFT warning net (3× the range)
-  const w=gl.getSource('src-warnring'); if(w) w.setData(ringFC(c.lat,c.lng,ringViewMi()));
+  const s=gl.getSource('src-ring'); if(s) s.setData(ringFC(c.lat,c.lng,RED_MI));
+  // the light-grey dotted ring marks the LOW-AIRCRAFT traffic net (the 5 mi grey ring)
+  const w=gl.getSource('src-warnring'); if(w) w.setData(ringFC(c.lat,c.lng,GREY_MI));
 }
 // coalesce the burst of 'move' events into one setData per animation frame
 function scheduleRing(){ if(_ringRaf) return; _ringRaf=requestAnimationFrame(()=>{ _ringRaf=0; updateRing(); }); }
 gl.on('move',scheduleRing);
 
-// Keep the range ring at 1/3 of the view at most: the smallest on-screen extent
-// must always be at least 3× the ring radius (ring DIAMETER ≤ 1/3 of that span).
-// We enforce this as a dynamic MAX ZOOM — the zoom at which a 3×-radius box just
-// fills the padded viewport. Zooming in past it is blocked (the center-anchored
-// zoom clamp reads getMaxZoom), and widening the range or panning north auto-eases
-// the camera back out. Recomputed on latitude change / resize / range change since
-// the mile↔zoom relationship depends on cos(lat) and the pixel viewport.
+// Never zoom in tighter than the VIEW radius (15 mi = 3× the grey ring): the view
+// always shows at least a 15-mile-radius extent. We enforce this as a dynamic MAX
+// ZOOM — the zoom at which a VIEW_MI-radius box just fills the padded viewport.
+// Zooming in past it is blocked (the center-anchored zoom clamp reads getMaxZoom),
+// and panning north auto-eases the camera back out. Recomputed on latitude change
+// / resize since the mile↔zoom relationship depends on cos(lat) and the viewport.
 const RING_ZOOM_HARD=16;   // the absolute max-zoom ceiling (matches map init)
 let _ringZoomKey=null;
 function enforceRingZoom(){
   const c=gl.getCenter();
-  // Only recompute when an INPUT to the cap actually changed (range, latitude
-  // band via cos(lat), the pixel viewport, or the map padding) — otherwise every
-  // pan would needlessly churn the max-zoom.
+  // Only recompute when an INPUT to the cap actually changed (latitude band via
+  // cos(lat), the pixel viewport, or the map padding) — otherwise every pan would
+  // needlessly churn the max-zoom.
   const ct=gl.getContainer();
-  const key=RNG.mi+'|'+c.lat.toFixed(2)+'|'+ct.clientWidth+'x'+ct.clientHeight+'|'
+  const key=c.lat.toFixed(2)+'|'+ct.clientWidth+'x'+ct.clientHeight+'|'
     +(_pad?[_pad.top,_pad.left,_pad.right,_pad.bottom].join(','):'0');
   if(key===_ringZoomKey) return;
   _ringZoomKey=key;
-  // the shared 3× radius (see RING_VIEW_MULT) and the shared °↔km math
-  const {dLat,dLon}=geoDeltas(ringViewMi()*MI_TO_KM,c.lat);
+  // the fixed 15 mi VIEW radius and the shared °↔km math
+  const {dLat,dLon}=geoDeltas(VIEW_MI*MI_TO_KM,c.lat);
   // cameraForBounds CLAMPS its result to the current maxZoom, so from a locked-in
   // (zoomed-to-the-cap) state it could only ever ratchet the cap DOWN and never
   // back up when the ring is made smaller. Lift the cap to the hard ceiling first
@@ -2723,9 +2607,9 @@ gl.on('load',()=>{
     paint:{'circle-radius':14,'circle-color':SEV_COL[2],'circle-opacity':0.4,
       'circle-stroke-color':'#ffffff','circle-stroke-width':1.5,'circle-stroke-opacity':0.9}});
   if(gl.getLayer('ly-nearair')) gl.moveLayer('ly-acalert','ly-nearair');
-  // LOW-AIRCRAFT warning ring — a light-grey DOTTED circle at the 3× radius
-  // (ringViewMi), marking how far out the manned-traffic-below-1,000ft alert
-  // reaches. Added before the green ring so the accent ring reads on top.
+  // LOW-AIRCRAFT traffic ring — a light-grey DOTTED circle at the 5 mi grey
+  // radius (GREY_MI), marking how far out manned traffic is tracked + the amber
+  // low-aircraft heads-up reaches. Added before the green ring so it reads under it.
   gl.addSource('src-warnring',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
   gl.addLayer({id:'ly-warnring',type:'line',source:'src-warnring',
     layout:{'line-cap':'round'},
@@ -2749,7 +2633,7 @@ gl.on('load',()=>{
   loadWeather(true);   // weather forecast: the always-present bottom SITREP card
   setMapPadding();
   enforceRingZoom();   // recompute the cap now that desktop panel padding is applied
-  flyRenderSettings(); flyRenderRange(); flyRender(); flyRefresh();   // settings box + range pill + skeleton now, first data pull immediately
+  flyRender(); flyRefresh();   // chart skeleton now, first data pull immediately
   locate();
   sitrepTick(); // SITREP works off the map area, even before a location fix
   if(!sitrepTimer) sitrepTimer=setInterval(sitrepTick,90000);
