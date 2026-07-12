@@ -1,21 +1,18 @@
 # sitrep
 
-**One map. Every keyless public signal. The nearest NOAA Weather Radio,
-auto-tuned to where you are.**
+**One map, one panel: a live drone-preflight SITREP for wherever the
+crosshair points. Keyless, single-file, no backend.**
 
-A single self-contained HTML file OSINT dashboard: live aircraft, earthquakes,
-military aircraft, emergency squawks, NWS + global disaster warnings, the ISS,
-satellites, natural disasters, rocket launches — flanked by two docked,
-full-height, equal-width side panels (**OBJECTS** left, **SITREP** right). The
-SITREP panel also **auto-plays the nearest NOAA Weather Radio station** to your
-detected location and re-tunes it whenever that location changes.
-
-Aircraft load for the **current map area** and refresh on every pan/zoom and
-once a minute; the global feeds (satellites, seismicity, warnings…) load in
-full.
+A self-contained HTML dashboard: a dark map with a centre crosshair and a
+docked **SITREP** panel (a bottom sheet on mobile). The panel holds the
+**canifly flyability chart** — can a small drone fly *here, now, and for the
+next three hours, and how high* — plus a settings box (max wind, range) and a
+stack of distance-sorted intelligence cards for everything inside the range
+ring: low manned traffic, NWS warnings, FAA restrictions, park no-fly land,
+severe-weather outlooks, space weather, and the local forecast.
 
 No backend. No build step. No API keys. No `npm install`. **Open `index.html`
-directly in a browser.** Fully responsive — works on iPhone, iPad, and desktop.
+directly in a browser.** Fully responsive — iPhone, iPad, and desktop.
 
 ## Run it
 
@@ -23,137 +20,106 @@ directly in a browser.** Fully responsive — works on iPhone, iPad, and desktop
 open index.html      # or just double-click it
 ```
 
-MapLibre GL and satellite.js load from CDN; every data feed is fetched
-client-side from keyless public APIs. Nothing is installed or served.
+MapLibre GL loads from CDN; every data feed is fetched client-side from
+keyless public APIs.
 
-## Layout — two docked side panels
+## The flyability chart (canifly, integrated)
 
-The screen is anchored by two **unfloated, full-height, equal-width** panels
-flush to the left and right edges, with the map centred in the open area
-between them:
+A grid of altitudes (400 ft → surface, 50 ft steps — the FAA Part 107 band)
+× four time columns (NOW, +1 h, +2 h, +3 h). Each cell is binary: green =
+fly, red = can't. Every gate that can ground or cap a column shows its own
+code in the cell where the limit bites:
 
-- **OBJECTS** (left) — the map-layer switchboard.
-- **SITREP** (right) — the "at a glance" intelligence briefing, plus the
-  auto-tuned emergency broadcast pinned at its foot.
+| Code | Gate | Source |
+|---|---|---|
+| WIND | wind aloft ≥ your max-wind setting (interpolated 10/80/120/180 m) | Open-Meteo |
+| GUST | surface gust ≥ max wind | Open-Meteo |
+| VIS | visibility < 3 SM (Part 107) | Open-Meteo |
+| SKY | cloud base − 500 ft clearance caps the ceiling | Open-Meteo (pressure-level decks + LCL) |
+| KPx | planetary Kp ≥ 5 (GPS/compass risk), forecast bin per hour | NOAA SWPC |
+| FAA | LAANC grid ceiling caps the band; a National-Defense TFR in range grounds | FAA ArcGIS (point + range buffer) |
+| PROH / NSUF / PARK | Prohibited area, security UAS zone, or NPS land under the crosshair grounds | FAA ArcGIS · NPS |
+| PCPN | NEXRAD echo inside the range ring grounds NOW | Iowa State Mesonet mosaic (pixel-sampled) |
+| TRFC | manned aircraft in range under 1,000 ft AGL reds its altitude row in NOW | ADS-B |
 
-There is no top chrome and no bottom bar. The map is otherwise chrome-free —
-zoom by scroll/pinch, and a single **⌖ recenter button floats at the
-bottom-right corner of the map**.
+**Fail-safe posture:** a feed that can't be verified never silently reads
+"clear". Unknown inputs fail *open* for the grid values but amber the NOW
+header (hover for which inputs are unverified) and the SITREP title. The FAA
+airspace query hard-throws on anything that could understate a restriction
+(wrong units, truncated results, missing ceilings).
 
-The whole interface is set in **upper case** (only measurement units stay in
-natural case), at one uniform minimum text size, for a dense minimalist read.
+The bold altitude label marks the highest currently flyable row. The
+**settings box** below the chart sets **max wind** (±1 mph) and **range**
+(±0.5 mi, 0.5–15) — both persisted per device. Range drives the FAA query
+radius, the traffic/radar sweep, the SITREP card radius, and the dashed
+**range ring** drawn around the crosshair. Zoom is capped so the ring never
+exceeds ⅓ of the view.
 
-## SITREP — situational awareness at a glance
+## The SITREP cards
 
-On load, sitrep locates you (instant IP fix via ipwho.is, refined by GPS if
-you allow the browser prompt — denial is silently tolerated), flies the map to
-your position, drops a pulsing marker, and builds a live **SITREP briefing**
-that refreshes every 60 s.
+Everything is measured from the **crosshair** (map centre) and limited to the
+range ring. Cards are tiered — red hazards, amber hazards, then routine
+traffic — and distance-sorted within each tier (capped at 14, plus pinned and
+context cards):
 
-The SITREP reflects the **current map area** (viewport), not a fixed point —
-pan or zoom and it re-reads what's in view (nearest aircraft, quakes,
-disasters…).
+- 🛩️ **LOW AIRCRAFT** (pinned top) — any plane in range under 1,000 ft AGL
+  (AGL = barometric altitude − ground elevation at the crosshair). The same
+  deduped collector feeds the chart's TRFC cells, so card and chart always
+  agree.
+- 🚨 emergency squawks (7700/7600/7500) · ⚠️ NWS **warnings** (not watches) ·
+  ⛔/⚠️ FAA restrictions (defense, prohibited, security, MOA, stadium…) ·
+  🏞️ NPS land · 🗼 controlled airspace (Class B/C/D/E — authorization info,
+  not a hazard) · ✈️ / 🪖 civil and military traffic
+- Context cards at the bottom: 🌪️/⛈️ SPC Day-1 outlooks, 🧲 geomagnetic
+  storms (Kp ≥ 5), ☀️ M/X solar flares, and the 🌡️ local forecast (always
+  present).
 
-- **Anomalies** — a correlation pass across every in-view feed surfaces the
-  outliers at the top (aircraft squawking 7500/7600/7700, NWS warnings,
-  red/orange GDACS alerts, M5+ quakes). When anything is flagged, the **SITREP
-  title turns red** (warnings) or **amber** (alerts).
-- ✈ every aircraft in view (auto-enabled, refetched as you pan)
-- 🎖 military aircraft in view, with closest callsign
-- 🚨 aircraft squawking 7700/7600/7500 worldwide, with distance to nearest
-- 🌍 nearest earthquake and 🔥 nearest natural event, with distances
-- 🌀 nearest global disaster (GDACS)
+Tap any card to fly the map there (polygons fly to their nearest edge — the
+same edge distance used for sorting and range inclusion). The **SITREP title**
+is the one-glance verdict: red when the NOW column is grounded or a red hazard
+is in range, amber for a reduced ceiling, an amber hazard, or any unverified
+gate input.
 
-Every row has a VIEW action that flies the map there. The header carries a UTC
-clock and your resolved location. Position is resolved client-side and never
-leaves the browser.
+## Map layers
 
-Units are imperial (mi/ft, °F, mph) and the interface is set in a minimalist
-all-caps style, with measurement units left in natural case.
+| Layer | Source | Refresh |
+|---|---|---|
+| Aircraft (250 nm around centre, civil) | airplanes.live → adsb.fi fallback | on move · 30 s |
+| Military aircraft (worldwide) | ADS-B `/mil` | 30 s |
+| Emergency squawks (worldwide) | ADS-B `/squawk` | 30 s |
+| NWS warning polygons (US) | api.weather.gov | 30 s |
+| NEXRAD reflectivity mosaic | Iowa State Mesonet | per mosaic minute |
+| SPC Day-1 outlook (hidden; feeds cards) | NOAA SPC | 15 min |
+| FAA airspace + restrictions (in view, ≥z7) | FAA ArcGIS ×5 services | 15 min |
+| NPS lands (in view, ≥z7) | NPS ArcGIS | 30 min |
 
-## Emergency broadcast — NOAA Weather Radio, auto-tuned
-
-Pinned at the foot of the SITREP panel is the nearest **NOAA Weather Radio
-(NWR All Hazards)** station — the actual government emergency weather
-broadcast, not a music or talk station. sitrep pulls the NWR feeds from
-**radio-browser.info** (the keyless, CORS-friendly index), geolocates each one
-(by its coordinates, or by the US state in its name when coordinates are
-missing), plays the closest to your detected location through one `<audio>`
-element, and **re-tunes automatically every time that location changes**. A
-single **▶/⏸ button** stops and starts it; if a stream dies it drops that
-station and falls back to the next-nearest.
-
-> NWR is US-only, so outside the US the closest station is simply the nearest
-> US transmitter. `<audio>` media loading is not gated by CORS, so the stream
-> plays cross-origin without ACAO headers; browsers only defer autoplay until
-> the first user gesture on the page.
-
-## Live map layers
-
-| Group | Layer | Source | Refresh |
-|---|---|---|---|
-| Air | Aircraft (**in view**, civil) | adsb viewport tiling | on move · 60 s |
-| | Military aircraft (worldwide) | adsb ADS-B `/mil` | 60 s |
-| | Emergency squawks (7700/7600/7500) | adsb | 60 s |
-| Surface | Amtrak trains | amtraker v3 | 60 s |
-| Space | ISS live position | wheretheiss.at | 15 s |
-| | Bright satellites | CelesTrak TLE → SGP4 propagated in-browser | 60 s |
-| | GPS constellation | CelesTrak TLE → SGP4 | 2 min |
-| | Starlink constellation (**full**) | CelesTrak TLE → SGP4 | 2 min |
-| | Rocket launches (upcoming, at the pad) | Launch Library 2 | 60 min |
-| Hazard | **Earthquakes (live)** — sized by strength, coloured by recency | EMSC seismicportal | 2 min |
-| | **NWS warnings (US)** — warnings only, not watches | NOAA / api.weather.gov | 2 min |
-| | Global disasters / warnings — quakes/cyclones/floods (alert-graded) | GDACS (UN/EC) | 30 min |
-| | Natural events — wildfires, storms, volcanoes, ice | NASA EONET v3 | 10 min |
-| | River / flood gauges (in view) | USGS water services | 10 min |
-| | Holocene volcanoes | Smithsonian GVP (curated static) | — |
-
-Earthquakes come from a **single** live source (EMSC) — the old USGS "24 h"
-layer was a duplicate and was removed. **Warnings** are worldwide across the two
-free, keyless, CORS-open warning APIs: **NWS** (every US warning type, watches
-excluded) and **GDACS** (global multi-hazard alerts).
-
-**Starts checked:** all aircraft (civil + military) — every other intel feed
-loads in the background so the SITREP and anomaly detection stay complete
-without cluttering the map.
-
-> **Aircraft coverage.** The CORS-open ADS-B mirrors cap point queries at
-> 250 nm, so sitrep tiles the visible map bounds with as many 250-nm cells as
-> the view needs — one when you're zoomed into a city, a handful for a region —
-> then merges and dedupes by hex. It refetches on every pan/zoom and once a
-> minute. A per-refresh cell budget means an extreme zoom-out samples the area
-> rather than firing hundreds of requests.
+Viewport-scoped layers refetch on every pan/zoom; zoom-gated layers keep
+their last data when you zoom out (so a restriction under the crosshair never
+vanishes from the chart). Every loader retries with backoff and a failure
+never wipes what's on the map.
 
 **Dossier:** right-click (desktop) or long-press (touch) anywhere →
 reverse-geocoded place (Nominatim) + country profile (RestCountries) + head of
-state (Wikidata SPARQL) + Wikipedia summary.
+state (Wikidata) + Wikipedia summary.
 
-**Search:** place name or raw `lat,lon` via OSM Nominatim.
+## Location & privacy
 
-## Mobile
-
-Designed for iPhone/iPad as first-class targets: bottom MAP / SITREP / OBJECTS
-navigation with slide-up sheets, 44 px touch targets, safe-area (notch/home
-indicator) insets, long-press dossier, `viewport-fit=cover`, momentum
-scrolling. Desktop gets the two side-by-side docked panels.
+On load: instant IP fix (ipwho.is), refined by browser GPS if you allow the
+prompt (denial is silently tolerated), then one clean camera move framing 3×
+the range ring. The ⌖ button recentres on you. Position is resolved
+client-side and never leaves the browser except as anonymous lat/lon query
+parameters to the public weather APIs.
 
 ## Design notes & honest caveats
 
-- **`<audio>` playback is not gated by CORS** — only JSON `fetch()` is. So the
-  emergency stream plays cross-origin fine; only the radio-browser *JSON API*
-  carries any CORS risk, and it degrades silently with a retry.
-- Every layer loader is defensive with silent auto-retry (exponential backoff):
-  one dead feed never breaks the board, and failures show a neutral count
-  rather than an error.
-- **Dropped because they require a key** (violating the keyless rule):
-  OpenAQ v3, NASA FIRMS (MAP_KEY), APRS.fi, OpenSky, aisstream, Shodan,
-  Global Fishing Watch, Sentinel Hub.
-
-## Provenance
-
-The list of public endpoints (and the keyless/keyed split) draws on
-ShadowBroker's data-source table
-([github.com/BigBodyCobain/Shadowbroker](https://github.com/BigBodyCobain/Shadowbroker),
-AGPL-3.0). Only the *list of public endpoints* — public knowledge — is reused,
-not any of their code. ShadowBroker is the full-fidelity Docker build; sitrep
-is deliberately the opposite: minimal, keyless, one file.
+- **Advisory, not authoritative.** This is a preflight *aid*. LAANC grids,
+  TFRs, and NOTAMs change; verify with official sources before flying.
+- US-centric hazard feeds: NWS, SPC, FAA, NEXRAD, and NPS cover the United
+  States; aircraft, weather, and space-weather feeds are global.
+- Units are imperial (mi/ft, °F, mph); aircraft popups use aviation units
+  (ft, kt). The UI is all-caps except unit tokens.
+- AGL uses the ground elevation at the crosshair (cached per ~1 km cell) —
+  a good approximation at ring radii; failed lookups are retried, never
+  cached, so bad data can't suppress the traffic warnings.
+- Every feed is keyless with `ACAO:*`; anything requiring a key is excluded
+  by the keyless rule. One dead feed never breaks the board.
