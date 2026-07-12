@@ -202,7 +202,7 @@ gate input.
 | NWS warning polygons (US) — red outline for Extreme/Severe, amber otherwise | api.weather.gov | 15 s |
 | NEXRAD reflectivity mosaic | Iowa State Mesonet | 15 s |
 | SPC Day-1 outlook (hidden; feeds cards) | NOAA SPC | 15 min |
-| FAA airspace + restrictions (regional cache) | FAA ArcGIS ×5 services | on travel |
+| FAA airspace + restrictions (regional cache) — loads around YOU once the fix settles (skips the pre-fix default centre, same as the aircraft feed) | FAA ArcGIS ×5 services | on travel |
 | NPS lands (regional cache) | NPS ArcGIS | on travel |
 
 **Two refresh classes.** *Dynamic* feeds (aircraft, radar, weather, Kp, NWS,
@@ -240,7 +240,9 @@ since the panel is an overlay sheet rather than docked.
 A **refresh dial** — a circular sweep that fills over the 15 s cycle (a
 numberless countdown ring) — sits at the map's top-right corner; it **spins** while
 a feed is fetching (it replaces the old corner load spinner) and a tap forces an
-immediate refresh.
+immediate refresh. Its fill **tracks the CANIFLY verdict colour** (green/amber/red),
+as does the **lock control's glyph** — so both map controls carry the same
+one-glance go/no-go as the rings and the CANIFLY tag.
 
 ## Location & privacy
 
