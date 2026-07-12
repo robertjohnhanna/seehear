@@ -72,14 +72,14 @@ range ring. Cards are tiered — red hazards, amber hazards, then routine
 traffic — and distance-sorted within each tier (capped at 14, plus pinned and
 context cards):
 
-- 🛩️ **LOW AIRCRAFT** — when a plane is in range **and** under 1,000 ft AGL
+- ✈️/🚁 **LOW AIRCRAFT** — when a plane is in range **and** under 1,000 ft AGL
   (AGL = QNH-corrected altitude − ground elevation under that plane; see below),
   that plane's own card transforms into the red flashing LOW AIRCRAFT alert and
-  sorts to the top; it reverts to the normal ✈️/🪖/🚨 card the moment it
-  climbs out or leaves. Always exactly one card per plane. The same deduped
-  collector feeds the chart's TRFC cells, so card, chart and map halo agree.
-  Every plane card — civil, military, emergency and low-aircraft — shows its
-  ADS-B **ground speed** (MPH) on line 3, right after the altitude.
+  sorts to the top; it reverts to the normal card the moment it climbs out or
+  leaves. Always exactly one card per plane. The same deduped collector feeds
+  the chart's TRFC cells, so card, chart and map halo agree. Every plane card —
+  civil, military, emergency and low-aircraft — shows its ADS-B **ground speed**
+  (MPH) on line 3, right after the altitude.
 - ⛔ **FAA NO-FLY / FAA CEILING** — surfaces the chart's own airspace gate: it
   reads the exact `aspCapFt` the flyability chart's FAA column computes (the
   FAA LAANC UASFM grid + defense TFRs swept over the range ring), so the card
@@ -115,12 +115,13 @@ context cards):
     **red** ("weather unavailable", promoted) when it never loaded and the chart
     can't compute — the red case reddens the title so a total outage can't hide
     behind a green skeleton.
-- 🚨 emergency squawks (7700/7600/7500) · ⚠️ NWS **warnings** (not watches) ·
-  civil and military traffic, each icon reflecting **plane vs helicopter** (from
-  the ADS-B rotorcraft category): civil ✈️ / 🚁, military 🪖✈️ / 🪖🚁 (the 🪖
-  marks military — there's only one helicopter glyph, so military can't use a
-  different one). On the map the same split shows as a plane or helicopter
-  silhouette in the type colour (green civil, yellow military, red emergency).
+- emergency squawks (7700/7600/7500) · ⚠️ NWS **warnings** (not watches) ·
+  civil and military traffic. Every aircraft card uses just **two icons** — ✈️
+  plane / 🚁 helicopter (from the ADS-B rotorcraft category) — for all of them,
+  low-aircraft included. Which category it is (civil / military / emergency) is
+  carried by **colour instead**: the tail-number string is tinted to match the
+  plane/heli icon drawn on the map — **green** civil, **yellow** military, **red**
+  emergency — on both the regular and the LOW AIRCRAFT card.
   Airspace cards follow a **solid three-way
   model** — *authorization* (controlled airspace, needs a ceiling) is not the
   same as a *restriction* (a stay-out zone), and neither is an *advisory*:

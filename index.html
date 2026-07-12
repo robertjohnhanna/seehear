@@ -252,9 +252,6 @@
      three text lines. .u keeps the emoji from being forced upper-case. */
   .sit-row .ic{flex:0 0 30px;text-align:center;align-self:center;
     font-size:23px;line-height:1;text-transform:none}
-  /* military aircraft icon = 🪖 marker + type glyph (✈️/🚁); shrink the pair so
-     the two emoji fit the fixed icon slot without spilling into the text */
-  .sit-row .ic .micon{display:inline-block;font-size:15px;letter-spacing:-.5px;white-space:nowrap}
   .sit-row .tx{flex:1;min-width:0;line-height:1.34;display:flex;flex-direction:column;justify-content:center}
   .sit-row .tx .s1,.sit-row .tx .s2,.sit-row .tx .s3{display:block;white-space:nowrap;
     overflow:hidden;text-overflow:clip}
@@ -1413,20 +1410,20 @@ const ALT=f=>{const a=f.properties.alt;
 // resort — so a card never reads a bare '?' when a type or operator is known.
 const acSub=f=>{const p=f.properties, type=p.type&&p.type!=='?'?p.type:'';
   return escapeHtml(p.desc||type||p.op||'?');};
-// Aircraft card icons — plane vs helicopter, military distinct from civil. There
-// is only ONE helicopter glyph (🚁), so military can't use a different helicopter
-// emoji; instead it extends the app's existing 🪖 military marker into a
-// helmet+type compound. Civil stays a single glyph (✈️ / 🚁); military reads
-// 🪖✈️ / 🪖🚁. The compound is wrapped in .micon so CSS shrinks it to fit the slot.
+// Aircraft card icon — just two glyphs for EVERY aircraft (civil, military,
+// emergency, low-aircraft): ✈️ plane / 🚁 helicopter. Military vs civil vs
+// emergency is carried by COLOUR instead — the tail-number (headline) string is
+// tinted to match the plane/heli icon drawn on the map (green civil / yellow
+// military / red emergency), via AC_COL below.
 const acIcon=f=>f.properties.heli?'🚁':'✈️';
-const milIcon=f=>'<span class="micon">🪖'+(f.properties.heli?'🚁':'✈️')+'</span>';
+const AC_COL={nearair:'#2fe07a',mil:'#ffce4d',sos:'#ff4455'};
 // hexes currently squawking an emergency — the same airframe also appears in
 // the civil/military feeds, so those cards filter against this set (the 🚨
 // card is the one card for that aircraft). Rebuilt at the top of sitrepTick.
 let SOS_HEX=new Set();
 const notSos=f=>!f.properties.hex||!SOS_HEX.has(f.properties.hex);
 const CATS=[
-  {src:'sos', hazard:true, air:true, icon:'🚨', cls:()=>'danger',
+  {src:'sos', hazard:true, air:true, icon:acIcon, cls:()=>'danger',
    head:f=>cut(f.properties.flight||f.properties.hex||'?',12),
    sub:acSub,
    detail:f=>'sq '+(f.properties.code||'7700')},
@@ -1441,7 +1438,7 @@ const CATS=[
   {src:'nearair', hazard:false, air:true, icon:acIcon, cls:()=>'', filter:notSos,
    head:f=>cut(f.properties.flight||f.properties.hex||'?',12),
    sub:acSub, detail:ALT},
-  {src:'mil', hazard:false, air:true, icon:milIcon, cls:()=>'alert', filter:notSos,
+  {src:'mil', hazard:false, air:true, icon:acIcon, cls:()=>'alert', filter:notSos,
    head:f=>cut(f.properties.flight||f.properties.hex||'?',10),
    sub:acSub, detail:ALT},
   // FAA airspace RESTRICTIONS that gate a drone — each in-view zone is a
@@ -1707,11 +1704,13 @@ function sitrepTick(){
     // (red, flashing) while it's low + in range; it reverts automatically once
     // it's no longer in breachInfo. One card per plane, never two.
     if(cfg.air && breachInfo.has(acKey(f.properties))){
-      cls='danger'; flash=true; hazardOv=true; icOv=f.properties.heli?'🚁':'🛩️';
-      // l2 is the callsign (the headline is now LOW AIRCRAFT); the ground speed
-      // rides l3 after the AGL, the same as every other plane card below.
+      cls='danger'; flash=true; hazardOv=true; icOv=acIcon(f);   // ✈️/🚁, same as every card
+      // l2 is the callsign / TAIL NUMBER (the headline is now the flashing LOW
+      // AIRCRAFT alert); tint it to the map icon colour like the regular cards do
+      // via `col` (which here colours the flashing headline, not the tail number).
+      // The ground speed rides l3 after the AGL, the same as every plane card.
       headOv='LOW AIRCRAFT';
-      subOv=cut(f.properties.flight||f.properties.hex||'aircraft',12);
+      subOv='<span style="color:'+AC_COL[cfg.src]+'">'+cut(f.properties.flight||f.properties.hex||'aircraft',12)+'</span>';
       det=breachInfo.get(acKey(f.properties));
     }
     // Controlled-airspace cards (Class B/C/D/E) are hazard:false, so their
@@ -1748,12 +1747,14 @@ function sitrepTick(){
     const ic=icOv!=null?icOv:(typeof cfg.icon==='function'?cfg.icon(f):cfg.icon);
     const head=headOv!=null?headOv:cfg.head(f);
     const sub=subOv!=null?subOv:((cfg.sub?cfg.sub(f):'')||'—');
-    // Airspace cards (restrictions + controlled) take their MAP POLYGON colour so
-    // the card matches what's drawn: blue B/D, magenta C/E, red defense/prohibited,
-    // orange restricted, gold MOA/warning/stadium. A breaching-aircraft override
-    // keeps the flashing red (no polygon colour). Only a bare hex is allowed
-    // through, so the feed can't inject into the style attribute.
-    const rawCol=cfg.src==='airspace'&&!flash?f.properties._col:null;
+    // Headline (.s1) colour. Airspace cards take their MAP POLYGON colour so the
+    // card matches what's drawn (blue B/D, magenta C/E, red defense/prohibited,
+    // orange restricted, gold advisory). A REGULAR aircraft card tints its tail
+    // number (the headline) to the same colour as its plane/heli map icon — green
+    // civil, yellow military, red emergency. A breaching-aircraft override keeps
+    // the flashing red headline (its tail number is tinted on l2 instead). Only a
+    // bare hex passes, so a feed can't inject into the style attribute.
+    const rawCol=flash?null:cfg.src==='airspace'?f.properties._col:cfg.air?AC_COL[cfg.src]:null;
     const col=/^#[0-9a-fA-F]{3,8}$/.test(rawCol||'')?rawCol:undefined;
     // Every plane card (civil / military / emergency / low-aircraft) carries its
     // ADS-B ground speed on line 3, AFTER the altitude — spd is knots, shown MPH,
