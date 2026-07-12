@@ -176,7 +176,9 @@ context cards):
 
 Tap any card to fly the map there (airspace/TFR zones recentre on the polygon
 centre; other polygons fly to their nearest edge — the same edge distance used
-for sorting and range inclusion). The **SITREP title**
+for sorting and range inclusion). If the map was follow-locked, flying to a card
+**unlocks** it (so the next GPS fix doesn't snap you back off the target) — the
+next ⌖ tap re-locks and re-centres on you. The **SITREP title**
 is the one-glance verdict: red when the NOW column is grounded or a red hazard
 is in range, amber for a reduced ceiling, an amber hazard, or any unverified
 gate input.

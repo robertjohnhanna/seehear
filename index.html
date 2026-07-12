@@ -1850,6 +1850,11 @@ function handleAct(btn){
   const act=btn.dataset.act;
   if(act==='fly'&&btn.dataset.ll){
     const [lo,la]=btn.dataset.ll.split(',').map(Number);
+    // Flying to a card takes over the camera, so drop any active FOLLOW-lock first —
+    // otherwise the next GPS fix would snap the map straight back off the plane. The
+    // button is left unlocked (crosshair icon, panning re-enabled); the next tap
+    // re-locks + re-centres on you.
+    if(locMode===2){ locMode=0; setLocIcon(false); setPanLock(false); }
     // zoom IN to at least 9 but never zoom the user OUT of a closer view
     if(isFinite(lo)&&isFinite(la)){ cancelCenterZoom();
       gl.flyTo({center:[lo,la],zoom:Math.max(gl.getZoom(),9)}); }
@@ -2304,8 +2309,8 @@ function flyComputeDetail(){
     // low traffic is ALWAYS visible on the chart — even when a lower or grounding
     // gate (FAA / weather) owns the column's single binding-reason cell. The marker
     // sits at the first no-go band above the traffic ceiling (surface when the plane
-    // is low enough to ground the column). Only NOW carries live traffic.
-    const trfcAlt = (n===0 && trafficCeil!==Infinity)
+    // is low enough to ground the whole band). Only NOW carries live traffic.
+    let trfcAlt = (n===0 && trafficCeil!==Infinity)
       ? (trafficCeil<0 ? 0 : Math.min(SPEC.regFt, trafficCeil+50)) : null;
     const capFt=Math.min(SPEC.regFt, cloudCapFt, windCeilFt, aspCapFt, tCeil);
     const grounded=globalGrounded||capFt<0;
@@ -2330,6 +2335,11 @@ function flyComputeDetail(){
     }else if(maxFly<SPEC.regFt){
       reasonAlt=maxFly+50; reason=capSrc;
     }
+    // A grounding traffic ceiling lands the TRFC marker at the surface — the same
+    // cell a DIFFERENT grounding reason (FAA / gust / …) already owns. Bump it up one
+    // 50-ft band so BOTH stay visible: the reason at SFC, TRFC flashing just above it.
+    // (If the reason IS traffic, they're the same marker — no bump.)
+    if(trfcAlt===0 && reasonAlt===0 && reason!=='TRFC') trfcAlt=50;
     return {n,prof,gustKt:c.gustKt,capFt,maxFly,grounded,reason,reasonAlt,trfcAlt};
   });
   const cellState=(g,ft)=>{
