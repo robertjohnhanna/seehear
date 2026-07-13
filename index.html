@@ -400,7 +400,10 @@ gl.dragRotate.disable();
    ===================================================================== */
 // ONE colour per aircraft feed — map silhouettes, layer defs and the SITREP tail-number
 // tint all read this, so map and panel agree on what green/yellow/red means.
-const AC_COL={nearair:'#2fe07a',mil:'#ffce4d',sos:'#ff4455'};
+// aircraft IDENTITY is one neutral colour (white) — traffic never competes with the
+// green/amber/red VERDICT palette. Only an emergency squawk keeps red (a real danger),
+// and a low-aircraft breach is flagged by the pulsing alert ring, not the icon colour.
+const AC_COL={nearair:'#eaf1f8',mil:'#eaf1f8',sos:'#ff4455'};
 // shared canvas setup for the silhouette rasterisers (centre-origin, u = 1/32 px)
 function iconCanvas(px){
   const s=px||40, c=document.createElement('canvas'); c.width=c.height=s;
@@ -439,11 +442,11 @@ function heliShape(color,px){
 }
 function addImg(name,data){ if(!gl.hasImage(name)) gl.addImage(name,data,{pixelRatio:2}); }
 function registerIcons(){
-  addImg('ac-near',  shapeIcon(AC_COL.nearair,PLANE));    // civil plane = green
-  addImg('ac-mil',   shapeIcon(AC_COL.mil,PLANE));        // military plane = yellow
+  addImg('ac-near',  shapeIcon(AC_COL.nearair,PLANE));    // civil plane = white
+  addImg('ac-mil',   shapeIcon(AC_COL.mil,PLANE));        // military plane = white (labelled on its card)
   addImg('ac-sos',   shapeIcon(AC_COL.sos,PLANE,44));     // emergency plane = red
-  addImg('heli-near',heliShape(AC_COL.nearair));          // civil helicopter = green
-  addImg('heli-mil', heliShape(AC_COL.mil));              // military helicopter = yellow
+  addImg('heli-near',heliShape(AC_COL.nearair));          // civil helicopter = white
+  addImg('heli-mil', heliShape(AC_COL.mil));              // military helicopter = white
   addImg('heli-sos', heliShape(AC_COL.sos,44));           // emergency helicopter = red
 }
 // per-contact map icon: the heli silhouette for rotorcraft, the plane otherwise
@@ -604,39 +607,40 @@ defLayer({
     ((cls&&cls.features)||[]).forEach(f=>{ const p=f.properties||{},cl=p.CLASS;
       if(!(/^[BCD]$/.test(cl)||p.LOCAL_TYPE==='CLASS_E2')||!f.geometry) return;
       push(f.geometry,{_kind:'airspace',sev:'ctrl',cls:cl,code:cl,name:p.NAME||'',_col:CTRL[cl]||'#c06ad0'}); });
-    // national-defense TFR zones — hard no-fly (red)
+    // national-defense TFR zones — hard no-fly (verdict red)
     ((def&&def.features)||[]).forEach(f=>push(f.geometry,{_kind:'airspace',sev:'hard',cls:'DEF',code:'DEF',
-      name:(f.properties&&f.properties.NAME)||'',_col:'#ff5a3c'}));
+      name:(f.properties&&f.properties.NAME)||'',_col:'#ff4455'}));
     // special-use airspace, right-sized to a drone at ≤400 ft:
     //   • Prohibited (P)        → HARD no-fly (red)
     //   • Restricted (R)        → CONDITIONAL no-fly (amber, only when active)
     //   • MOA/Warning/Alert/Danger → ADVISORY (they don't restrict a Part-107
     //     drone — military/hazard activity to be aware of, not a no-fly)
     // zones whose FLOOR is above the drone band (400 ft) are dropped — irrelevant here
-    const SUA={P:['hard','PROH','#ff5a3c'],R:['caution','RSTD','#ff8c42'],
-      MOA:['advisory','MOA','#d9b44a'],W:['advisory','WARN','#d9b44a'],A:['advisory','ALRT','#d9b44a'],D:['advisory','DNGR','#d9b44a']};
+    // hard→verdict red · conditional→verdict amber · advisory→cool steel (clearly "just aware")
+    const SUA={P:['hard','PROH','#ff4455'],R:['caution','RSTD','#ffb454'],
+      MOA:['advisory','MOA','#8fa3bf'],W:['advisory','WARN','#8fa3bf'],A:['advisory','ALRT','#8fa3bf'],D:['advisory','DNGR','#8fa3bf']};
     ((sua&&sua.features)||[]).forEach(f=>{ const p=f.properties||{},t=SUA[p.TYPE_CODE]; if(!t||!f.geometry) return;
       if(floorFt(p.LOWER_VAL)>SPEC.regFt) return;   // starts above the drone band → irrelevant
       push(f.geometry,{_kind:'airspace',sev:t[0],cls:p.TYPE_CODE,code:t[1],
         name:p.NAME||'',lo:p.LOWER_VAL,hi:p.UPPER_VAL,_col:t[2]}); });
-    // part-time national-security UAS zones — hard no-fly for drones (red)
+    // part-time national-security UAS zones — hard no-fly for drones (verdict red)
     ((nsufr&&nsufr.features)||[]).forEach(f=>{ const p=f.properties||{};
       if(floorFt(p.Floor)>SPEC.regFt) return;
       push(f.geometry,{_kind:'airspace',sev:'hard',cls:'NSUFR',code:'NSUF',
-        name:p.Facility||'security zone',lo:p.Floor,hi:p.Ceiling,_col:'#ff5a3c'}); });
-    // stadiums → 3 nm (5.556 km) rings (the 99.7 event TFR), amber advisory
+        name:p.Facility||'security zone',lo:p.Floor,hi:p.Ceiling,_col:'#ff4455'}); });
+    // stadiums → 3 nm (5.556 km) rings (the 99.7 event TFR), conditional (verdict amber)
     ((stad&&stad.features)||[]).forEach(f=>{ const g=f.geometry; if(!g||g.type!=='Point') return;
       push({type:'Polygon',coordinates:[circleRing(g.coordinates[1],g.coordinates[0],5.556,48)]},
-        {_kind:'airspace',sev:'caution',cls:'STDM',code:'STDM',name:(f.properties&&f.properties.NAME)||'stadium',_col:'#d9b44a'}); });
+        {_kind:'airspace',sev:'caution',cls:'STDM',code:'STDM',name:(f.properties&&f.properties.NAME)||'stadium',_col:'#ffb454'}); });
     return {type:'FeatureCollection',features:feats};
   }
 });
 
 defLayer({
   // NATIONAL PARK SERVICE lands — NPS prohibits operating a drone from within a unit,
-  // so a preflight treats it as hard no-fly. Drawn lightly in park green. Keyless NPS
-  // ArcGIS, VIEWPORT-scoped like airspace; boundary generalised ~150 m to stay light.
-  id:'nps', label:'National Park Service lands', color:'#3fa46a',
+  // so a preflight treats it as hard no-fly. Drawn lightly in an earthy olive (ground, not
+  // airspace). Keyless NPS ArcGIS, VIEWPORT-scoped like airspace; boundary generalised ~150 m.
+  id:'nps', label:'National Park Service lands', color:'#9c8b3e',
   viewport:true, geom:'fill', colored:true, fillOpacity:0.06, lineWidth:1, lineOpacity:0.3,
   loader: async ()=>{
     const env=viewEnv();
@@ -648,7 +652,7 @@ defLayer({
     const feats=[];
     (j.features||[]).forEach(f=>{ if(!f.geometry) return; const p=f.properties||{};
       feats.push({type:'Feature',geometry:f.geometry,properties:{_kind:'nps',
-        name:p.UNIT_NAME||'',utype:p.UNIT_TYPE||'',_col:'#3fa46a'}}); });
+        name:p.UNIT_NAME||'',utype:p.UNIT_TYPE||'',_col:'#9c8b3e'}}); });
     return {type:'FeatureCollection',features:feats};
   }
 });
