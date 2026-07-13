@@ -1,301 +1,85 @@
 # canifly
 
-**Can I fly my drone here, now, and how high? One keyless, single-file map
-that answers it for your location.**
+**Can I fly my drone here, now, and how high?**
 
-A self-contained HTML app: a dark map locked and centred on your location, with a
-docked panel (on mobile, two full-screen pages — the map and the panel — that you flip
-between with a single tap). The panel leads with the
-**flyability chart** — can a small drone fly *here, now, and for the next three
-hours, and how high* — and a **SITREP** briefing: a stack of distance-sorted
-cards for everything inside the operational range — low manned traffic, FAA airspace
-ceilings, NWS warnings, park no-fly land, severe-weather outlooks, space weather,
-and the local forecast.
-
-No backend. No build step. No API keys. No `npm install`. **Open `index.html`
-directly in a browser.** Fully responsive — iPhone, iPad, and desktop.
-
-## Run it
+One self-contained `index.html`. No backend, no build, no keys, no install —
+open it in a browser. A dark map stays locked and centred on your location;
+a panel carries a **flyability chart** and a distance-sorted **SITREP** of
+everything around you. Works on iPhone, iPad, and desktop.
 
 ```
-open index.html      # or just double-click it
+open index.html
 ```
 
-MapLibre GL loads from CDN; every data feed is fetched client-side from
-keyless public APIs.
+## The chart
 
-## The flyability chart
-
-A grid of altitudes (400 ft → surface, 50 ft steps — the FAA Part 107 band)
-× four time columns (NOW, +1 h, +2 h, +3 h). Each cell is binary: green =
-fly, red = can't. Every gate that can ground or cap a column shows its own
-code in the cell where the limit bites:
+Altitudes 400 ft → surface (the Part 107 band) × NOW / +1h / +2h / +3h.
+Green = fly, red = can't. The gate that bites prints its code in the cell:
 
 | Code | Gate | Source |
 |---|---|---|
-| WIND | wind aloft ≥ the max-wind limit (27 mph, interpolated 10/80/120/180 m) | Open-Meteo |
-| GUST | surface gust ≥ max wind (27 mph) | Open-Meteo |
-| VIS | visibility < 3 SM (Part 107) | Open-Meteo |
-| SKY | cloud base − 500 ft clearance caps the ceiling | Open-Meteo (pressure-level decks + LCL) |
-| KPx | planetary Kp ≥ 7 (G3, GPS degraded) grounds; Kp 5–6 (G1–G2) is an amber caution. NOW uses the finalized observed bin; +1/+2/+3h use the forecast | NOAA SWPC |
-| FAA | LAANC grid ceiling caps the band; a National-Defense TFR in range grounds | FAA ArcGIS (point + range buffer) |
-| PROH / NSUF / PARK | Prohibited area, security UAS zone, or NPS land under the crosshair grounds | FAA ArcGIS · NPS |
-| PCPN | NEXRAD echo inside the 5 mi operational bubble grounds NOW (an echo anywhere else on the visible map instead ambers the weather card "precip nearby" without grounding) | Iowa State Mesonet mosaic (pixel-sampled) |
-| TRFC | a low manned aircraft **inside the 1 mi operational range** caps the NOW column: the drone must stay 500 ft below it (§91.119 min altitude), so it flashes red/white at that ceiling and reds every row above. It's shown as its **own flashing marker** — so the traffic is always visible even when a lower or grounding gate (FAA / weather) also limits the column | ADS-B |
+| WIND / GUST | wind aloft / surface gust ≥ 27 mph | Open-Meteo |
+| VIS | visibility < 3 SM | Open-Meteo |
+| SKY | cloud base − 500 ft clearance caps the ceiling | Open-Meteo |
+| KPx | Kp ≥ 7 grounds (GPS degraded) · Kp 5–6 ambers | NOAA SWPC |
+| FAA | LAANC grid ceiling caps · defense TFR grounds | FAA ArcGIS |
+| PROH / NSUF / PARK | prohibited / security zone / NPS land grounds | FAA · NPS |
+| PCPN | radar echo within 5 mi grounds NOW · elsewhere on screen ambers | NEXRAD (pixel-sampled) |
+| TRFC | a manned aircraft low in the 1 mi ring caps the column (stay 500 ft below it) | ADS-B |
 
-**Fail-safe posture:** a feed that can't be verified never silently reads
-"clear". Unknown inputs fail *open* for the grid values but amber the NOW
-header (hover for which inputs are unverified) and the SITREP title. The FAA
-airspace query hard-throws on anything that could understate a restriction
-(wrong units, truncated results, missing ceilings). When a gate input stays
-unverified past a short grace window, a **📡 DATA card** spells out which feeds
-are stale (see the SITREP cards) — amber while the chart still renders from
-last-good data, red when there's no verdict at all.
+**Fail-safe posture:** an unverifiable feed never silently reads "clear" — the
+grid fails *open* but the NOW header, the rings, and a 📡 DATA card flag it
+until the feed recovers. Feeds auto-retry; a failure never wipes the map.
 
-The bold altitude label marks the highest currently flyable row, in the same
-verdict colour as the CANIFLY title — green clear, amber capped, red grounded.
+## The rings
 
-The three working radii are **fixed** (no settings to tune) and the max-wind
-limit is hardcoded to **27 mph**:
+- **OPERATIONAL RANGE · 1 mi** (dashed) — the FAA query radius, the SITREP
+  radius, and the red-flashing low-aircraft alert zone.
+- **OPERATIONAL BUBBLE · 5 mi** (dotted) — traffic tracked, amber low-aircraft
+  heads-up, and the precip grounding radius.
 
-- **OPERATIONAL RANGE · 1 mi** — the inner **dashed ring** at the map centre. It's
-  the FAA query radius, the SITREP card radius, and the *red flashing* low-aircraft
-  alert zone.
-- **OPERATIONAL BUBBLE · 5 mi** — the outer **dotted ring**. Every plane inside it is
-  tracked, a *low* one out here raises an **amber** low-aircraft heads-up (see LOW
-  AIRCRAFT below), and a radar echo inside it grounds NOW.
+Both rings tint to the verdict — **green** clear, **amber** reduced or
+unverified, **red** grounded. That colour *is* the go/no-go; the map carries no
+other chrome. The view is fixed at a 10-mile framing, identical on every device.
 
-Both rings are drawn **bold and bright** for visibility.
+## The SITREP
 
-**Both rings are tinted to the current verdict** — green clear, amber
-reduced/unverified, red grounded — so the one-glance colour reaches the map even
-when the panel is off-screen; they stay distinguishable by dash (inner dashed,
-outer dotted).
-- **VIEW · 10 mi** (2× grey) — the framing radius the map opens to on a location
-  fix and holds at. The locked framing is a **fixed scale** computed from latitude
-  alone (not the window size), so it's identical on every layout — phone portrait,
-  phone landscape, tablet, desktop. The map is always locked here; it never zooms
-  in or out.
+Info-only cards (no taps, no popups), tiered and distance-sorted: a red-flashing
+**LOW AIRCRAFT** breach tops the pile, then red groundings, then the amber
+low-aircraft heads-up, then everything else; below the weather card, whatever
+else is **visible on screen but out of range** is listed as neutral context.
 
-## The SITREP cards
+- Aircraft: ✈️/🚁 icons; tail tinted green civil / yellow military / red
+  emergency. Low = under 900 ft AGL (400 ft band + 500 ft separation,
+  QNH-corrected altitude minus terrain under the plane).
+- Airspace: **restriction** (red — defense/prohibited/security) ≠
+  **conditional** (amber — restricted/stadium, "no-fly if active") ≠
+  **advisory** (MOA etc., info only) ≠ **authorization** (Class B/C/D/E,
+  LAANC). Zones with floors above 400 ft are dropped.
+- One weather card: promoted to a top hazard when a gate bites, otherwise the
+  bottom conditions card. NWS warnings, SPC outlooks, Kp storms, solar flares.
 
-Everything is measured from the **map centre** (your location) and the top of the
-list is limited to the 1 mi range ring (aircraft are the exception — tracked out to
-the 5 mi grey ring, see below). Cards are tiered — red hazards, amber hazards, then
-routine traffic — and distance-sorted within each tier (capped at 14, plus pinned and
-context cards). **Below the bottom weather card**, every other map object that's
-**visible on screen but outside its ring** is listed too — a neutral, distance-sorted
-read-out of what's on the map (out-of-range airspace, farther traffic), so nothing on
-screen is a mystery:
+On phones the map and panel are two full-screen pages — tap the map for the
+panel, tap anywhere on the panel for the map, scroll to browse cards.
 
-- ✈️/🚁 **AIRCRAFT & LOW AIRCRAFT** — every aircraft is **tracked out to the 5 mi
-  grey ring** (the light-grey dotted ring) as an ordinary, distance-sorted card,
-  so you see traffic approaching well before it's overhead. A plane **under the
-  warning altitude** escalates in two tiers by where it is: out in the grey ring
-  it's an **amber** LOW AIRCRAFT heads-up card — it sorts **just below the red
-  hazards** (above routine traffic) and ambers the CANIFLY title; **inside the 1 mi
-  red range ring** it becomes the **red flashing** LOW AIRCRAFT alert — it jumps to
-  the **very top of the entire pile** (above even the pinned FAA / space-weather /
-  data cards; it's the most immediate, out-of-nowhere threat), pulses a halo on the
-  map, flashes the SITREP title, and caps the chart's TRFC ceiling. Either way it's the plane's *own* card transforming (exactly one
-  card per plane, never two), reverting to a normal card the moment it climbs out
-  or leaves the grey ring. The warning altitude is the **400 ft
-  drone ceiling + 500 ft separation = 900 ft AGL** (AGL = QNH-corrected altitude −
-  ground elevation under that plane; see below): a plane below that pushes its
-  required-clearance floor into the drone band. Part 107 sets no *numeric*
-  drone-vs-aircraft separation — the rule is simply "yield the right of way"
-  (§107.37) — so 500 ft is used as the buffer, the manned minimum safe altitude
-  over non-congested areas (§91.119(c)), i.e. the closest a plane should legally
-  get to the 400 ft band. The in-range low set feeds the chart's TRFC ceiling + the
-  map halo, so card, chart and halo agree. The chart's **TRFC** cell marks the
-  highest usable band (plane AGL − 500, clamped to the grid), flashing at that
-  ceiling with every row above it red and the rows below green. Every plane card
-  shows its ADS-B **ground speed** (MPH) on line 3, right after the altitude. Line 2
-  cascades through the best available identity — description → ICAO type → operator →
-  tail registration → a generic ("military aircraft" / "helicopter" / "aircraft") — so
-  it's never blank, never a bare "?", and never a repeat of the line-1 tail number.
-- ⛔ **FAA NO-FLY / FAA CEILING** — surfaces the chart's own airspace gate: it
-  reads the exact `aspCapFt` the flyability chart's FAA column computes (the
-  FAA LAANC UASFM grid + defense TFRs swept over the range ring), so the card
-  and the chart can never disagree. Red "no-fly" when the LAANC ceiling in
-  range is 0, amber "ceiling N ft" when it caps below 400. Appears whenever the
-  chart is FAA-limited — even where no charted-airspace polygon is in range
-  (the LAANC grid's 0-ft cells follow approach corridors, not the drawn
-  bubbles).
-- 🧲 **SPACE WEATHER** — a geomagnetic Kp storm degrades the GPS/compass a drone
-  relies on, right-sized to actual impact: **red grounding at Kp ≥ 7** (G3, where
-  NOAA flags GPS degradation), **amber caution at Kp 5–6** (G1–G2, accuracy may
-  drop but flyable). It reads the same `kpNow` the chart's KP gate uses — the
-  **finalized observed** value for NOW (the in-progress estimate is preliminary
-  and jumpy), forecasts for the +1/+2/+3h columns — so card and chart agree.
-- 📡 **DATA** — the flyability gates fail *open*, so an unverifiable feed keeps
-  its last-good value and only ambers the NOW header quietly. If **FAA airspace,
-  Kp, or radar** stays stale past a ~35 s grace window (a self-healing blip won't
-  pop it), this amber card names them. It auto-retries on the 5 s pulse and clears
-  the moment every feed is fresh. (Weather health rides the weather card itself — see
-  below — so there's never a duplicate card for the same feed.)
-- 🌡️ **WEATHER** — there's one weather feed, so there's **one weather card**, and
-  it changes rank, colour and text with its own severity (no separate transient
-  "weather warning" duplicating the forecast):
-  - a weather **gate** limiting the NOW column **promotes** it to a top hazard —
-    precipitation **in the 5 mi grey ring**, high gusts, winds-aloft-over-max and
-    low visibility **ground** (red ⛈️/💨/🌫️); wind aloft or a low cloud base
-    instead **cap the ceiling** (amber "wind/cloud ceiling N ft"). The headline is
-    the gate and the measured value; the **current conditions fold onto line 3**, so
-    the sky/temp/wind show exactly once. It reads the chart's own NOW gates, so card
-    and chart agree.
-  - a radar echo **anywhere on the visible map but not yet in the 5 mi grey ring**
-    promotes the card to an amber **🌧️ PRECIP NEARBY** heads-up (a storm in view — land
-    now) without grounding the chart; the moment it reaches the 5 mi ring it becomes the
-    red PRECIPITATION ground above. The on-screen sample scales with the view, so it
-    covers exactly what you can see.
-  - otherwise it's the routine **conditions card at the bottom** (temp, sky,
-    wind, feels-like, hi/lo), which also carries feed health: **amber**
-    ("stale") when the feed is failing but last-good conditions still show,
-    **red** ("weather unavailable", promoted) when it never loaded and the chart
-    can't compute — the red case reddens the title so a total outage can't hide
-    behind a green skeleton.
-- emergency squawks (7700/7600/7500) · ⚠️ NWS **warnings** (not watches) ·
-  civil and military traffic. Every aircraft card uses just **two icons** — ✈️
-  plane / 🚁 helicopter (from the ADS-B rotorcraft category) — for all of them,
-  low-aircraft included. Which category it is (civil / military / emergency) is
-  carried by **colour instead**: the tail-number string is tinted to match the
-  plane/heli icon drawn on the map — **green** civil, **yellow** military, **red**
-  emergency — on both the regular and the LOW AIRCRAFT card.
-  Airspace cards follow a **solid three-way
-  model** — *authorization* (controlled airspace, needs a ceiling) is not the
-  same as a *restriction* (a stay-out zone), and neither is an *advisory*:
-  - **hard restrictions** — 🛡️ defense, ⛔ prohibited, 🔒 security (NSUFR) — are
-    red and **ground** the chart: drones are prohibited outright.
-  - **conditional restrictions** — ⚠️ restricted areas and 🏟️ stadium TFRs — are
-    amber "no-fly if active" / "no-fly during events". They're only active on a
-    schedule the app can't read live, so per fail-safe posture they *warn* but
-    don't silently ground a flight that may be perfectly legal.
-  - 🎯 **advisory** — MOAs, warning / alert / danger areas — carry no colour and
-    no title weight ("advisory only"): they concern manned military traffic, not
-    a Part-107 drone in the 400-ft band, so treating them as restrictions would
-    be a false alarm.
+## Data
 
-  (Each airspace card's icon is class-specific — 🛡️ defense · 🔒 security · ⛔
-  prohibited · ⚠️ restricted · 🏟️ stadium · 🎯 military/special-use · 🗼 controlled.)
-  - 🗼 **controlled airspace** (Class B/C/D/E) reads "authorization (LAANC)" —
-    context that you need a ceiling here; the real ceiling severity stays on the
-    FAA card above, and the tint (blue Class B/D, magenta Class C/E) doesn't
-    drive the title.
-
-  Every zone whose **floor is above 400 ft** is dropped entirely — it can't
-  touch the drone band — so the cards only ever show airspace that actually
-  matters at flight altitude. Each card is still tinted to match its **map
-  polygon** colour (red defense/prohibited, orange restricted, gold advisory) so
-  it reads at a glance as the zone drawn on the map.
-- Context cards at the bottom: ☀️ M/X solar flares (an HF-blackout risk, but not
-  a chart grounding gate), then 🌪️/⛈️ SPC Day-1 **outlooks** — *info only*, no
-  colour and no title contribution (an outlook is "expected", not a warning) —
-  sitting just above the 🌡️ local forecast (always present).
-
-**Cards are info-only** — no tap actions, no chevron. Each carries a distance +
-bearing to its item (airspace/TFR zones by the polygon's nearest edge — the same
-edge distance used for sorting and range inclusion). On mobile the card list
-**scrolls**, and a **tap anywhere** — a card, the chart, empty space — drops back
-to the map, where the item already sits inside the fixed 10-mile view. The **SITREP
-title** is the one-glance verdict: red when the NOW column is grounded or a red
-hazard is in range, amber for a reduced ceiling, an amber hazard, or any unverified
-gate input.
-
-## Map layers
-
-| Layer | Source | Refresh |
-|---|---|---|
-| Aircraft (civil) — the point query is **sized to the visible map** (half the view diagonal, clamped 15–100 nm): a tiny sub-second pull at the locked 10 mi view that lands inside every 5 s pulse, growing as you zoom out. Loads around YOU (skips the pre-fix default centre) | airplanes.live → adsb.fi fallback | on move · 5 s |
-| Military aircraft (worldwide) | ADS-B `/mil` | 5 s |
-| Emergency squawks (worldwide) | ADS-B `/squawk` | 5 s |
-| NWS warning polygons (US) — red outline for Extreme/Severe, amber otherwise | api.weather.gov | 15 s |
-| NEXRAD reflectivity mosaic — drawn as **raw pixels** (nearest-neighbour, no smoothing) | Iowa State Mesonet | 60 s (source updates ~5 min) |
-| SPC Day-1 outlook (hidden; feeds cards) | NOAA SPC | 15 min |
-| FAA airspace + restrictions — scoped to the **visible map**, refetched when the map recenters on your new location | FAA ArcGIS ×5 services | on move |
-| NPS lands — scoped to the **visible map**, same as airspace | NPS ArcGIS | on move |
-
-**One pulse, per-feed cadences.** The unified refresh pulse fires every **5 s** —
-that's how often live traffic updates. Each feed then keeps its own natural cadence
-on top of it (NWS 15 s, winds-aloft 15 s, Kp ~3 min, radar 60 s, SPC 15 min), so the
-fast pulse never hammers a source whose data doesn't change that fast.
-
-**Everything is scoped to the visible map.** The map is locked to the fixed ~10-mile
-VIEW, so every geo query is a small box around you: aircraft (sized to the view),
-FAA airspace, and NPS lands all query just what's on screen. Because the map moves
-*only* when your location moves, those overlays refetch exactly when they need to —
-when the map recenters onto your new spot — not on the periodic pulse. Small box ⇒
-each pull is fast and reliable. The drawn airspace set is bounded (controlled airspace
-B/C/D + surface-E2, national-defense TFRs, low special-use airspace, security UAS
-zones, stadiums). Every loader retries with backoff, a failing feed backs off instead
-of being re-hammered, and a failure never wipes the map.
-
-The map has **no click popups** — everything inside the range ring is described
-by the SITREP cards, so the map stays a clean picture and the panel carries the
-detail.
-
-**The panel has no header in any layout, and the map has no controls or title.** The
-map is always locked and centred on you — there's no pan, no zoom, and no buttons. The
-one-glance go/no-go reads off the **ring colour** (green/amber/red + breach-flash), so
-the map itself carries no text tag. The panel is just the flyability chart + the SITREP
-cards. Data **auto-refreshes every 5 s** — no manual refresh control.
-
-**Mobile portrait** (iPhone, and any ≤1000px-wide portrait screen) is a **two-page
-toggle**: the map and the panel are separate full-screen pages. **Tap the map** to
-bring the panel up; **tap anywhere on the panel** — a card, the chart, any empty
-space — to drop back to the map. Cards are info-only, so nothing is exempt; only
-**scrolling** the card list (a non-tap gesture) stays on the panel. No drag, no snap
-points — one tap flips the page, and each gets the whole screen (the panel uses the
-dynamic viewport height so it never spills below Safari's address bar).
+All keyless, client-side, refreshed on a 5 s pulse (each feed at its own
+natural cadence). Aircraft: airplanes.live → adsb.fi. Weather: Open-Meteo.
+Warnings: api.weather.gov. Radar: Iowa State Mesonet (drawn as raw pixels).
+Airspace: FAA ArcGIS. Parks: NPS. Space weather: NOAA SWPC. Geo queries are
+scoped to the visible map and refetch when your location moves.
 
 ## Location & privacy
 
-**The fix pipeline is dead simple.** The GPS watch starts at load. A ping that's
-already **accurate enough (≤ 65 m) commits immediately**, so a phone with a quick
-sharp fix frames in a fraction of a second. Otherwise pings are **collected for up to
-3 seconds**, keeping the most accurate, and the best one commits when that ceiling
-fires — nothing recenters, zooms or loads location data until the fix **commits**.
-There is **no absolute accuracy cut-off**: a phone with precise location off (every ping ~2 km
-accuracy) still commits its best ping — a couple of km beats an IP centroid hundreds
-of miles away. The IP lookup (ipwho.is) is **fallback only**, used solely if GPS
-delivers nothing (denied/unavailable) within ~6 s; if GPS shows up later anyway, the
-map heals onto the real spot. After the commit the watch keeps the green
-**you-are-here dot live**, EMA-smoothed so it glides; a ping is dropped only if it's
-junk *relative* to the best accuracy the device has shown.
+GPS commits instantly when a ping is ≤ 65 m accurate, else the best ping
+within 3 s; IP lookup is fallback-only. The map then follows you — jitter
+holds, walking glides, a big correction re-frames. All camera input is dead;
+data loads are positionally gated to your fix. Position never leaves the
+browser except as anonymous lat/lon parameters to the public APIs.
 
-**The map is always locked and centred on you — it moves only when your location
-moves.** There is no lock button and no unlock: every user camera input is dead —
-pan, wheel, double-tap, pinch, the custom touch navigation, all of it — and the zoom
-is held at the 10 mi framing (a fixed scale, identical on every device). The map
-**follows you**: inside a ~25 m jitter deadband it holds still; walk past it and the
-centre glides onto the fix (zoom untouched); a huge correction (a late GPS grant fixing
-an IP fallback) re-frames outright. Data loads are **positionally gated**: nothing
-fetches unless the view is actually on your fix, so nothing can ever load data for a
-spot you aren't at — and as belt-and-braces, any stray gesture that somehow nudges the
-map snaps straight back onto the fix. Position is resolved client-side and never leaves
-the browser except as anonymous lat/lon query parameters to the public weather APIs.
+## Caveats
 
-## Design notes & honest caveats
-
-- **Advisory, not authoritative.** This is a preflight *aid*. LAANC grids,
-  TFRs, and NOTAMs change; verify with official sources before flying.
-- US-centric hazard feeds: NWS, SPC, FAA, NEXRAD, and NPS cover the United
-  States; aircraft, weather, and space-weather feeds are global.
-- Units are imperial (mi/ft, °F, mph). The UI is all-caps, units included — only a unit whose meaning
-  depends on its case (SI symbols, a mixed-case index) would stay verbatim.
-- An aircraft below the 900 ft AGL warning altitude (400 ft ceiling + 500 ft
-  separation) that is **inside the 1 mi range ring** flashes red/white on the map
-  (a pulsing halo), in the SITREP title, on its LOW AIRCRAFT card, and on the
-  chart's **TRFC** ceiling cell (all in sync — the TRFC cell + halo only appear for
-  an in-range breach). A low aircraft out in the **5 mi grey ring** gets a steady
-  **amber** LOW AIRCRAFT card instead; higher aircraft in the grey ring are ordinary
-  distance-sorted cards.
-- AGL is computed per plane: **QNH-corrected** barometric altitude (ADS-B
-  reports pressure altitude off 29.92″; the local sea-level pressure from the
-  weather feed corrects it, ~27 ft/hPa) minus the **ground elevation under that
-  plane** (Open-Meteo, cached per ~1 km cell, batched into one request, with the
-  crosshair cell as fallback). Failed elevation lookups are retried, never
-  cached, so bad data can't suppress the traffic warnings. Geometric-only
-  altitudes (no baro) are used as-is (already ≈ MSL).
-- Every feed is keyless with `ACAO:*`; anything requiring a key is excluded
-  by the keyless rule. One dead feed never breaks the board.
+- **Advisory, not authoritative.** Verify with official sources before flying.
+- Hazard feeds (FAA, NWS, SPC, NEXRAD, NPS) cover the US; the rest is global.
+- Imperial units throughout.
