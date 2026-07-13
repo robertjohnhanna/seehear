@@ -1901,14 +1901,19 @@ function sitrepTick(){
   const sevCol=SEV_COL[titleSev]||SEV_COL[0];
   if(gl.getLayer('ly-ring')) gl.setPaintProperty('ly-ring','line-color',sevCol);
   if(gl.getLayer('ly-warnring')) gl.setPaintProperty('ly-warnring','line-color',sevCol);
-  // The red flashing LOW AIRCRAFT breach is the most immediate, out-of-nowhere threat
-  // (a manned aircraft low and in range), so it jumps to the very TOP of the pile —
-  // above even the pinned FAA / space-weather / data cards. cd[7] (the flash flag) is
-  // set ONLY for an in-range low aircraft; filter is stable so multiple breaches keep
-  // their distance order.
-  const ordered=[...cards.filter(cd=>cd[7]), ...cards.filter(cd=>!cd[7])];
-  // In-range/pinned cards first (flash breach at the very top), then the on-screen
-  // context cards ALWAYS last — a promoted weather card can rise, but context stays put.
+  // Card priority (top → bottom): manned traffic is the most immediate, out-of-nowhere
+  // threat, so a red flashing in-range LOW AIRCRAFT breach jumps to the very TOP (above
+  // even the pinned FAA / space-weather / data cards); then RED grounding hazards; then
+  // the AMBER LOW AIRCRAFT heads-up — a nearby low plane outranks an amber precip /
+  // ceiling / space-weather heads-up; then everything else in its built order. A STABLE
+  // rank sort (index tie-break) preserves the distance order within each rank.
+  const rank=cd=>cd[7]?0                                   // red flashing low-aircraft breach
+    :(cd[6]&&cd[0]==='danger')?1                           // red grounding hazard
+    :(cd[2]==='LOW AIRCRAFT'&&cd[0]==='alert')?2           // amber low-aircraft heads-up
+    :3;                                                    // everything else
+  const ordered=cards.map((cd,i)=>({cd,i})).sort((a,z)=>rank(a.cd)-rank(z.cd)||a.i-z.i).map(x=>x.cd);
+  // …then the on-screen context cards ALWAYS render last (a promoted card can rise, but
+  // context stays pinned to the bottom).
   [...ordered, ...ctxCards].forEach(cd=>row(cd[0],cd[1],cd[2],cd[3],cd[4],cd[5],cd[7],cd[8]));
 
   // the weather card is always appended, so there's always at least one row
