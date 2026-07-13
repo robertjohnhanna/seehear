@@ -754,7 +754,7 @@ async function runLayer(cfg){
           if(src) src.setData(fc);
           st.features=fc.features||[];
         }
-        st.fails=0; st.failSince=0;   // recovered → clear the sustained-failure clock
+        st.fails=0; st.failSince=0; st.everLoaded=true;   // recovered / printed at least once
         scheduleSitrep();   // SITREP re-reads the fresh data as part of the refresh
         return;
       }catch(e){
@@ -817,7 +817,7 @@ function refreshTick(){ if(Date.now()-refreshBase>=REFRESH_S*1000) pulse(); }
 // loaded only to feed the SITREP outlook card)
 function initLayers(){
   LAYERS.forEach(cfg=>{
-    LAYER_STATE[cfg.id]={features:[],started:false,
+    LAYER_STATE[cfg.id]={features:[],started:false,everLoaded:false,
       gen:0,quickTimer:null,fails:0,failSince:0,loading:false,loadStart:0};
     ensureMapLayer(cfg);
   });
@@ -1314,22 +1314,31 @@ function sitrepTick(){
       'GPS accuracy may be reduced',true]);
   }
 
-  // -- DATA HEALTH (pinned): gates fail OPEN (keep last-good, quietly amber the NOW
-  //    header). This surfaces that once a feed is stale past the grace window — FAA /
-  //    Kp / radar only (weather health rides the weather card). Auto-retries on the pulse. --
-  const unstable=flyUnknownStable();
+  // -- DATA HEALTH (pinned): a feed shows here until it has PULLED + PRINTED. Two tiers:
+  //    RED "not loaded" (never verified — startup or missing from the map, shown at once)
+  //    vs AMBER "unverified" (was loaded, now blipping — shown after the grace window). FAA
+  //    airspace covers BOTH the chart gate AND the map overlay, so it stays up until the
+  //    polygons are actually drawn. Weather rides the weather card, not this one. --
+  const unstable=flyUnknownStable();   // errored past the grace window (updates the clocks)
   const wxStale=unstable.includes('weather');
-  const dataBad=unstable.filter(x=>x!=='weather');
-  // the airspace OVERLAY (the map polygons) is a separate feed from the chart's FAA gate —
-  // if it's been failing to load past the grace window, flag it here too, so the DATA card
-  // reflects what's actually on the map (not just the chart gate) and stays up until the
-  // polygons load, instead of clearing while airspace is still missing.
-  const aspSt=LAYER_STATE.airspace;
-  if(aspSt && aspSt.failSince && Date.now()-aspSt.failSince>=DATA_ERR_GRACE_MS && !dataBad.includes('FAA airspace'))
-    dataBad.push('FAA airspace');
-  if(dataBad.length){
-    cards.push(['alert','📡','DATA UNVERIFIED',cut(dataBad.join(' · '),30),
-      'retrying every 5 s',true]);
+  const gracedSet=new Set(unstable);
+  const aspOv=LAYER_STATE.airspace;
+  // the airspace OVERLAY (map polygons) is a separate, heavier feed than the chart FAA gate;
+  // if it's actively failing to load past the grace window, keep 'FAA airspace' up so the card
+  // reflects the empty map even when the lightweight gate query succeeded.
+  const aspOverlayFailing=!!(aspOv && aspOv.failSince && Date.now()-aspOv.failSince>=DATA_ERR_GRACE_MS);
+  const redFeeds=[], amberFeeds=[];
+  for(const [k,label] of [['asp','FAA airspace'],['kp','Kp'],['radar','radar']]){
+    let never = FLY.err[k] && !flyEver[k];              // gate never loaded → red, immediate
+    let blip  = flyEver[k] && gracedSet.has(label);     // was loaded, now failing → amber, graced
+    if(k==='asp') blip = blip || aspOverlayFailing;
+    if(never) redFeeds.push(label); else if(blip) amberFeeds.push(label);
+  }
+  const dataFeeds=[...redFeeds,...amberFeeds];
+  if(dataFeeds.length){
+    const red=redFeeds.length>0;
+    cards.push([red?'danger':'alert','📡', red?'DATA NOT LOADED':'DATA UNVERIFIED',
+      cut(dataFeeds.join(' · '),30), red?'acquiring — verify before flying':'retrying every 5 s', true]);
   }
   // weather-feed health: down = never loaded (red), stale = last-good shows (amber)
   const wxState=wxStale?(FLY.data?'stale':'down'):'ok';
@@ -1469,7 +1478,10 @@ function sitrepTick(){
   let titleSev=0;
   const g0=FLY.detail&&FLY.detail.grid&&FLY.detail.grid[0];
   if(g0) titleSev=g0.grounded?2:(g0.maxFly<SPEC.regFt?1:0);
-  if(FLY.detail&&flyUnknown().length) titleSev=Math.max(titleSev,1);
+  // required data not yet pulled/printed → RED grounding (can't confirm ⇒ don't fly), even
+  // before the first chart render; a post-load transient blip is amber caution (fail-open)
+  if(flyNeverVerified()) titleSev=2;
+  else if(FLY.detail&&flyUnknown().length) titleSev=Math.max(titleSev,1);
   cards.forEach(cd=>{ if(cd[5]) titleSev=Math.max(titleSev,cd[0]==='danger'?2:cd[0]==='alert'?1:0); });
   // stamp the verdict on the hidden #sit-title (tests/parity); the visible verdict is the ring colour
   { const t=$('#sit-title'); if(t){
@@ -1780,11 +1792,22 @@ const FLY={
   detail:null,   // computed render model (kept for tests/debug)
   precip:null,   // radar echo within the GREY ring (5 mi)? true/false/null → grounds NOW
   precipInbound:null,   // radar echo within the #3 data radius (DATA_MI) but NOT the 5 mi ring → amber "nearby"
-  err:{om:false,kp:false,asp:false,radar:false},
+  // Every gate starts UNVERIFIED (true), not clear — so the app never opens falsely-green.
+  // Each clears as its feed pulls + prints; while a gate has NEVER loaded the verdict
+  // GROUNDS RED (can't confirm → don't fly) and a red DATA card names it, immediately (no
+  // grace). Once a feed has loaded once, a later blip reverts to amber caution (fail-open).
+  err:{om:true,kp:true,asp:true,radar:true},
 };
-// gate inputs currently UNKNOWN (fetch failed / stale). Each fails OPEN, so the NOW
-// header + SITREP title amber immediately while any is unverified (the quiet signal).
+// has each gate EVER pulled successfully? Distinguishes "never loaded" (red, immediate)
+// from a "was-loaded, now-blipping" transient (amber, graced). Latched in flyRefresh.
+const flyEver={om:false,asp:false,kp:false,radar:false};
 const FLY_ERR_LABEL={om:'weather',asp:'FAA airspace',kp:'Kp',radar:'radar'};
+// true while any required CHART GATE has never verified (weather/FAA/Kp/radar). Drives the
+// red "not ready" verdict — keyed to the authoritative gates, not the visual overlay.
+function flyNeverVerified(){
+  for(const k in FLY_ERR_LABEL) if(FLY.err[k] && !flyEver[k]) return true;
+  return false;
+}
 function flyUnknown(){
   return Object.keys(FLY_ERR_LABEL).filter(k=>FLY.err[k]).map(k=>FLY_ERR_LABEL[k]);
 }
@@ -1915,10 +1938,11 @@ function flyComputeDetail(){
   const kpNowV=kpAt(0);
   const kpCautNow=kpNowV!=null&&kpNowV>=SPEC.kpCaut&&kpNowV<SPEC.kpGnd;
   const nowAdv=[...unk]; if(kpCautNow) nowAdv.push('Kp '+Math.round(kpNowV)+' storm');
-  // the amber 'unk' NOW header flags an unverified/advisory input; the SITREP cards
-  // (DATA / SPACE WEATHER / weather) spell out which — no tooltip (cards do the work)
+  // NOW header: red 'bad' if grounded OR a required feed has never verified (not ready);
+  // amber 'unk' for a post-load advisory/blip. The SITREP cards spell out which feed.
+  const nowRed=flyNeverVerified();
   const colLabels=grid.map(g=>({v:g.n===0?'now':'+'+g.n+'h',
-    st:g.grounded?'bad':(g.n===0&&nowAdv.length?'unk':''), now:g.n===0}));
+    st:(g.grounded||(g.n===0&&nowRed))?'bad':(g.n===0&&nowAdv.length?'unk':''), now:g.n===0}));
   const topFt=ALTS[0];
   const altRows=ALTS.map(ft=>{
     const cells=grid.map(g=>{
@@ -2041,6 +2065,9 @@ async function flyRefresh(){
       if(FLY.data){ FLY.data.kp=kp; if(asp!=null){ FLY.data.asp=asp; FLY.err.asp=false; } }
     }
     FLY.err.kp=kp==null;
+    // latch "ever loaded" for every gate that's currently verified — a later blip then
+    // reverts to amber caution instead of the red never-verified grounding
+    for(const k in flyEver) if(!FLY.err[k]) flyEver[k]=true;
     // repaint the chart AND re-tick the SITREP: the title reads the NOW column
     // (and the unknown-input flags), so fresh gate data must reach both.
     flyPaint();
