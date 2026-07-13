@@ -751,7 +751,7 @@ async function runLayer(cfg){
           if(src) src.setData(fc);
           st.features=fc.features||[];
         }
-        st.fails=0;
+        st.fails=0; st.failSince=0;   // recovered → clear the sustained-failure clock
         scheduleSitrep();   // SITREP re-reads the fresh data as part of the refresh
         return;
       }catch(e){
@@ -766,6 +766,7 @@ async function runLayer(cfg){
     // Failed this cycle — NEVER wipe the map; keep features and retry on a bounded
     // backoff (6→30s) instead of waiting a full refresh interval.
     st.fails=(st.fails||0)+1; st.failAt=Date.now();   // the pulse backs off while failing
+    if(!st.failSince) st.failSince=Date.now();          // first fail of a run → start the sustained clock
     console.warn('[layer '+cfg.id+']',lastErr&&lastErr.message);
     if(!st.quickTimer){
       const delay=Math.min(30000,6000*st.fails);
@@ -814,7 +815,7 @@ function refreshTick(){ if(Date.now()-refreshBase>=REFRESH_S*1000) pulse(); }
 function initLayers(){
   LAYERS.forEach(cfg=>{
     LAYER_STATE[cfg.id]={features:[],started:false,
-      gen:0,quickTimer:null,fails:0,loading:false,loadStart:0};
+      gen:0,quickTimer:null,fails:0,failSince:0,loading:false,loadStart:0};
     ensureMapLayer(cfg);
   });
 }
@@ -880,28 +881,35 @@ function wxCard(wxState, wn){
   // feed totally down — chart can't compute; pin it so the outage is unmissable
   if(wxState==='down') return {pin:true, card:['danger','🌡️','WEATHER UNAVAILABLE',
     'feed down · chart can\'t compute','retrying every 5 s',true]};
-  // an active weather GATE promotes the card to a top hazard (grounded red / capped
-  // amber); conditions ride line 3, so the sky/temp aren't repeated elsewhere
+  // The weather card's headline is driven by the chart's NOW binding reason (wn.reason),
+  // so it can NEVER show a different gate than the chart cell. Only the WEATHER reasons
+  // promote it; FAA / TRFC / Kp / restriction groundings are shown by their own cards, so
+  // for those the weather card stays the routine bottom card (no mismatched hazard).
   if(wn){
     const wxCap=Math.min(wn.windCeilFt,wn.cloudCapFt);   // weather-only ceiling (ft)
-    if(wn.gust||wn.vis||wn.precip||wxCap<0){
-      let ic,head,sub;
-      if(wn.precip){ ic='⛈️'; head='PRECIPITATION'; sub='radar echo within '+GREY_MI+U(' mi'); }
-      else if(wn.gust){ ic='💨'; head='HIGH WIND'; sub='gust '+Math.round(wn.gustMph)+U(' mph')+' · max '+LIM.wind; }
-      else if(wn.windCeilFt<0){ ic='💨'; head='HIGH WIND'; sub=Math.round(wn.windPeakMph)+U(' mph')+' aloft · max '+LIM.wind; }
-      else if(wn.vis){ ic='🌫️'; head='LOW VISIBILITY'; sub=(wn.visSM!=null?wn.visSM.toFixed(1):'—')+U(' SM')+' · min 3'+U(' SM'); }
-      else { ic='☁️'; head='LOW CLOUD'; sub='base '+Math.round(wn.cloudCapFt+SPEC.clrFt)+U(' ft')+' · need 500 clr'; }
+    // headline per chart reason. GUST/VIS/PCPN are groundings; WIND (winds aloft) / SKY
+    // (cloud) are the weather CAPS — the same codes the chart prints in the cell.
+    const WXHEAD={
+      PCPN:['⛈️','PRECIPITATION','radar echo within '+GREY_MI+U(' mi')],
+      GUST:['💨','HIGH WIND','gust '+Math.round(wn.gustMph)+U(' mph')+' · max '+LIM.wind],
+      WIND:['💨','HIGH WIND',Math.round(wn.windPeakMph)+U(' mph')+' aloft · max '+LIM.wind],
+      VIS: ['🌫️','LOW VISIBILITY',(wn.visSM!=null?wn.visSM.toFixed(1):'—')+U(' SM')+' · min 3'+U(' SM')],
+      SKY: ['☁️','LOW CLOUD','base '+Math.round(wn.cloudCapFt+SPEC.clrFt)+U(' ft')+' · need 500 clr'],
+    };
+    // grounded by a weather reason → red, headline exactly matching the chart cell
+    if(wn.grounded && WXHEAD[wn.reason]){
+      const [ic,head,sub]=WXHEAD[wn.reason];
       return {pin:true, card:['danger',ic,head,sub,condLine(),true]};
     }
-    // PRECIP NEARBY: an echo within DATA_MI but not yet in the 5 mi grounding ring —
-    // amber ("land now"), above a mere reduced ceiling; red in-range precip outranks it.
-    if(wn.precipInbound){
-      return {pin:true, card:['alert','🌧️','PRECIP NEARBY','radar echo within '+DATA_MI+U(' mi'),condLine(),true]};
-    }
-    if(wxCap<SPEC.regFt){
-      const wind=wn.windCeilFt<=wn.cloudCapFt;
+    // reduced ceiling (not grounded) where WEATHER is the binding cap → amber
+    if(!wn.grounded && (wn.reason==='WIND'||wn.reason==='SKY') && wxCap<SPEC.regFt){
+      const wind=wn.reason==='WIND';
       return {pin:true, card:['alert',wind?'💨':'☁️',(wind?'WIND':'CLOUD')+' CEILING '+wxCap+U(' ft'),
         wind?'winds aloft over max':'low cloud base',condLine(),true]};
+    }
+    // PRECIP NEARBY: an echo within DATA_MI but not yet grounding — amber heads-up
+    if(wn.precipInbound){
+      return {pin:true, card:['alert','🌧️','PRECIP NEARBY','radar echo within '+DATA_MI+U(' mi'),condLine(),true]};
     }
   }
   // no gate — routine conditions card at the bottom (neutral / amber-if-stale)
@@ -1088,6 +1096,7 @@ function setUserFix(lat,lon,src,meta){
     const d=el('div'); d.id='user-dot';
     userMarker=new maplibregl.Marker({element:d}).setLngLat([lon,lat]).addTo(gl);
   } else userMarker.setLngLat([lon,lat]);
+  updateRing();   // snap the rings onto the new fix (they're anchored to USER, not the map centre)
   // first fix flies in from the world view; a later refinement only gently recenters
   if(first) frameNow(lat,lon);
   else lockFollow();   // follows the fix — moves only when your location moves
@@ -1308,6 +1317,13 @@ function sitrepTick(){
   const unstable=flyUnknownStable();
   const wxStale=unstable.includes('weather');
   const dataBad=unstable.filter(x=>x!=='weather');
+  // the airspace OVERLAY (the map polygons) is a separate feed from the chart's FAA gate —
+  // if it's been failing to load past the grace window, flag it here too, so the DATA card
+  // reflects what's actually on the map (not just the chart gate) and stays up until the
+  // polygons load, instead of clearing while airspace is still missing.
+  const aspSt=LAYER_STATE.airspace;
+  if(aspSt && aspSt.failSince && Date.now()-aspSt.failSince>=DATA_ERR_GRACE_MS && !dataBad.includes('FAA airspace'))
+    dataBad.push('FAA airspace');
   if(dataBad.length){
     cards.push(['alert','📡','DATA UNVERIFIED',cut(dataBad.join(' · '),30),
       'retrying every 5 s',true]);
@@ -1880,6 +1896,9 @@ function flyComputeDetail(){
     if(trfcAlt===0 && reasonAlt===0 && reason!=='TRFC') trfcAlt=50;
     return {n,prof,gustKt:c.gustKt,capFt,maxFly,grounded,reason,reasonAlt,trfcAlt};
   });
+  // hand the NOW column's binding reason to the weather card so its headline MATCHES the
+  // chart cell exactly (chart says GUST → card says HIGH WIND, never a different gate)
+  if(wxNow){ const g0=grid[0]; wxNow.reason=g0.reason; wxNow.grounded=g0.grounded; }
   const cellState=(g,ft)=>{
     if(g.grounded) return 'bad';
     const kt=g.prof(ft); if(kt==null) return '';
@@ -1893,9 +1912,10 @@ function flyComputeDetail(){
   const kpNowV=kpAt(0);
   const kpCautNow=kpNowV!=null&&kpNowV>=SPEC.kpCaut&&kpNowV<SPEC.kpGnd;
   const nowAdv=[...unk]; if(kpCautNow) nowAdv.push('Kp '+Math.round(kpNowV)+' storm');
+  // the amber 'unk' NOW header flags an unverified/advisory input; the SITREP cards
+  // (DATA / SPACE WEATHER / weather) spell out which — no tooltip (cards do the work)
   const colLabels=grid.map(g=>({v:g.n===0?'now':'+'+g.n+'h',
-    st:g.grounded?'bad':(g.n===0&&nowAdv.length?'unk':''), now:g.n===0,
-    t:g.n===0&&nowAdv.length?'advisory: '+nowAdv.join(', ')+' — treat as advisory':''}));
+    st:g.grounded?'bad':(g.n===0&&nowAdv.length?'unk':''), now:g.n===0}));
   const topFt=ALTS[0];
   const altRows=ALTS.map(ft=>{
     const cells=grid.map(g=>{
@@ -1930,7 +1950,7 @@ const FLY_GRID_ATTRS='class="grid"';
 function flyBoardHtml(b){
   const unit=u=>u?`<i class="gu">${u}</i>`:'';
   const cell=c=>`<span class="gc${c.st?' '+c.st:''}${c.rsn?' rsn':''}${c.flash?' acflash':''}">${c.v==null?'':c.v}${unit(c.u)}</span>`;
-  const head=`<div class="grow ghead"><span class="ga"></span>${b.colLabels.map(l=>`<span class="gc${l.st?' '+l.st:''}${l.now?' now':''}"${l.t?` title="${escapeHtml(l.t)}"`:''}>${l.v}</span>`).join('')}</div>`;
+  const head=`<div class="grow ghead"><span class="ga"></span>${b.colLabels.map(l=>`<span class="gc${l.st?' '+l.st:''}${l.now?' now':''}">${l.v}</span>`).join('')}</div>`;
   const alts=b.altRows.map(r=>`<div class="grow"><span class="ga${r.st?' '+r.st:''}${r.hi?' hi':''}">${r.a}${unit(r.u)}</span>${r.cells.map(cell).join('')}</div>`).join('');
   const gust=`<div class="grow ggust"><span class="ga${b.gustSt?' '+b.gustSt:''}">gust</span>${b.gustCells.map(cell).join('')}</div>`;
   return `<div ${FLY_GRID_ATTRS}>${head}${alts}${gust}</div>`;
@@ -2089,13 +2109,18 @@ function ringFC(lat,lon,miles){
 }
 let _ringRaf=0;
 function updateRing(){
+  // Anchor the rings to YOUR FIX, not the map's transient centre. The map is locked on
+  // you, so at rest they're identical — but during the fly-in / a stray-gesture nudge the
+  // centre drifts off you while the user-dot stays put, which left the rings sitting
+  // misaligned. Drawn at USER, the rings are always glued to the dot. Pre-fix: map centre.
   const c=gl.getCenter();
-  const s=gl.getSource('src-ring'); if(s) s.setData(ringFC(c.lat,c.lng,RED_MI));
-  // the light-grey dotted ring marks the LOW-AIRCRAFT traffic net (the 5 mi grey ring)
-  const w=gl.getSource('src-warnring'); if(w) w.setData(ringFC(c.lat,c.lng,GREY_MI));
+  const lat=USER.lat!=null?USER.lat:c.lat, lon=USER.lat!=null?USER.lon:c.lng;
+  const s=gl.getSource('src-ring'); if(s) s.setData(ringFC(lat,lon,RED_MI));
+  const w=gl.getSource('src-warnring'); if(w) w.setData(ringFC(lat,lon,GREY_MI));
 }
-// coalesce the burst of 'move' events into one setData per animation frame
-function scheduleRing(){ if(_ringRaf) return; _ringRaf=requestAnimationFrame(()=>{ _ringRaf=0; updateRing(); }); }
+// pre-fix the ring tracks the (default) map centre; once fixed it's anchored to USER and
+// only redraws when the fix moves (setUserFix), so a move burst can't leave it behind
+function scheduleRing(){ if(USER.lat!=null||_ringRaf) return; _ringRaf=requestAnimationFrame(()=>{ _ringRaf=0; updateRing(); }); }
 gl.on('move',scheduleRing);
 
 // caps maxZoom at the fixed viewZoom so the locked scale is identical on every device
