@@ -60,12 +60,6 @@
     font-family:var(--mono);font-size:13px;overflow:hidden;
     overscroll-behavior:none;touch-action:manipulation}
   #map{position:absolute;inset:0}
-  /* centre reticle: white, subtle, never blocks the map (pointer-events:none).
-     Position is set in JS to the map's projected centre so it stays exact under
-     panel padding and on mobile. */
-  #crosshair{position:absolute;z-index:5;left:50%;top:50%;
-    transform:translate(-50%,-50%);pointer-events:none;opacity:.8;
-    filter:drop-shadow(0 0 1px #000) drop-shadow(0 0 2px #0008)}
   /* static map attribution — ghosted black, centred along the bottom of the map
      area left of the docked SITREP panel. pointer-events:none so it never blocks
      the map; natural case + a low z so it reads as part of the basemap. */
@@ -237,15 +231,6 @@
 <!-- static map attribution (OSM/CARTO licence) — ghosted in black so it sinks
      into the dark basemap, centred along the bottom of the visible map area -->
 <div id="map-attrib" aria-hidden="true">© OpenStreetMap · © CARTO · NEXRAD · Iowa State Mesonet</div>
-<!-- fixed reticle marking the exact map centre (what SITREP / the ME button use) -->
-<svg id="crosshair" width="30" height="30" viewBox="0 0 30 30" aria-hidden="true">
-  <g fill="none" stroke="#fff" stroke-width="1.4" stroke-linecap="round">
-    <line x1="15" y1="2"  x2="15" y2="10"/><line x1="15" y1="20" x2="15" y2="28"/>
-    <line x1="2"  y1="15" x2="10" y2="15"/><line x1="20" y1="15" x2="28" y2="15"/>
-  </g>
-  <circle cx="15" cy="15" r="1.3" fill="#fff"/>
-</svg>
-
 <!-- CANIFLY panel — desktop / tablet: docked right. iPhone portrait: a full-screen
      page toggled with the map. There is NO header (the CANIFLY verdict lives on the
      map's corner); the panel is just the flyability chart, then the SITREP cards
@@ -269,7 +254,7 @@
      (portrait's map page, and landscape where the header is dropped) so the
      at-a-glance verdict colour is always reachable. sitrepTick keeps its
      colour/flash in sync with the header title. -->
-<div id="map-title" aria-hidden="true">◈ CANIFLY</div>
+<div id="map-title" aria-hidden="true">CANIFLY</div>
 
 <div id="toast"></div>
 
@@ -1249,9 +1234,10 @@ function flyToRadiusMi(lat,lon,miles,opts){
   }catch(e){ gl.jumpTo({center:[lon,lat],zoom:z}); }
 }
 
-// ---- FIX PIPELINE — dead simple. The GPS watch starts at load; pings are COLLECTED
-// for GEO_SETTLE_MS (3 s) from the first one, keeping the most accurate — nothing
-// frames, zooms or loads location data until that settled fix COMMITS. The IP guess is
+// ---- FIX PIPELINE — dead simple. The GPS watch starts at load. A ping that's already
+// accurate enough (≤ GEO_GOOD_ACC_M) COMMITS immediately — the common case frames in a
+// fraction of a second. Otherwise pings are collected for up to GEO_SETTLE_MS (3 s),
+// keeping the most accurate, and the best commits when the ceiling fires. The IP guess is
 // only a fallback if GPS delivers NOTHING (denied / unavailable) by GEO_IP_FALLBACK_MS;
 // if GPS shows up later anyway, the commit path runs and the locked map re-frames onto
 // the real spot. There is NO absolute accuracy cut-off: an imprecise phone (precise
@@ -1260,6 +1246,7 @@ function flyToRadiusMi(lat,lon,miles,opts){
 // commit, pings keep updating the fix (EMA-smoothed); a ping is dropped only if it's
 // junk RELATIVE to the best accuracy this device has demonstrated.
 const GEO_SETTLE_MS=3000, GEO_IP_FALLBACK_MS=6000;
+const GEO_GOOD_ACC_M=65;   // a ping this accurate is good enough → commit NOW, don't wait out the settle
 const GEO_EMA=0.25;        // dot low-pass factor (0 = frozen, 1 = raw/no smoothing)
 const GEO_JUMP_KM=0.05;    // a fix >50 m from the smoothed point = real move → snap, no lag
 let _geoBest=null, _geoBestAcc=Infinity, _geoDone=false, _ipFix=null;
@@ -1274,9 +1261,13 @@ function onGeoFix(lat,lon,acc){
   const a=acc==null?9999:acc;
   if(a<_geoBestAcc) _geoBestAcc=a;
   if(!_geoDone){
-    // SETTLE WINDOW: first ping arms the 3 s commit; every ping competes on accuracy
+    // SETTLE WINDOW: the first ping arms a 3 s ceiling and every ping competes on
+    // accuracy — BUT a ping that's already accurate enough commits immediately, so a
+    // phone with a quick sharp fix frames in a fraction of a second instead of always
+    // waiting out the settle. The 3 s ceiling only bites when nothing sharp shows up.
     if(!_geoBest) setTimeout(commitGeo,GEO_SETTLE_MS);
     if(!_geoBest || a<=_geoBest.acc) _geoBest={lat,lon,acc:a};
+    if(a<=GEO_GOOD_ACC_M) commitGeo();   // good enough → frame now
     return;
   }
   if(a>Math.max(150,_geoBestAcc*3)) return;   // junk vs what this device can do → drop
@@ -1411,20 +1402,6 @@ function setMapPadding(){
 }
 window.addEventListener('resize',()=>{ clearTimeout(window.__pad);
   window.__pad=setTimeout(setMapPadding,200); });
-// Pin the centre reticle to the map's projected centre (accounts for panel
-// padding on desktop and the raised map bottom on mobile). Cheap: only writes
-// when the pixel actually moves.
-let _chx=-1,_chy=-1;
-function placeCrosshair(){
-  const ch=$('#crosshair'); if(!ch) return;
-  const c=gl.project(gl.getCenter());
-  const x=Math.round(c.x), y=Math.round(c.y);
-  if(x===_chx&&y===_chy) return;
-  _chx=x; _chy=y; ch.style.left=x+'px'; ch.style.top=y+'px';
-}
-gl.on('render',placeCrosshair);
-window.addEventListener('resize',placeCrosshair);
-
 function setUserFix(lat,lon,src,meta){
   const first=USER.lat==null;
   if(!first&&src==='ip'&&USER.src==='gps') return; // never downgrade gps -> ip
@@ -1440,6 +1417,7 @@ function setUserFix(lat,lon,src,meta){
   if(first){
     // first fix: one clean, guarded animation to the 10 mi VIEW framing
     frameNow(lat,lon);
+    flyRender();   // reveal the chart pane now that we have a location (skeleton → data)
   } else {
     // the map follows the fix — it moves when your location moves, and only then.
     lockFollow();
@@ -2451,6 +2429,9 @@ function flySkeletonHtml(){
 // no settings box or range control to render; the chart just paints from data.
 function flyRender(){
   const board=$('#fly-board'); if(!board) return;
+  // The chart is meaningless without a location, so keep the whole pane HIDDEN until
+  // the first fix — no empty/skeleton slot at the top of the panel on initial load.
+  const pane=$('#fly-pane'); if(pane) pane.style.display=USER.lat==null?'none':'';
   board.innerHTML=FLY.detail?flyBoardHtml(FLY.detail.board):flySkeletonHtml();
 }
 function flyPaint(){ FLY.detail=FLY.data?flyComputeDetail():null; flyRender(); }
@@ -2662,8 +2643,8 @@ gl.on('load',()=>{
   gl.addLayer({id:'ly-warnring',type:'line',source:'src-warnring',
     layout:{'line-cap':'round'},
     paint:{'line-color':SEV_COL[0],'line-width':1.4,'line-opacity':0.55,'line-dasharray':[0,2.6]}});
-  // range ring — a dashed accent circle tracking the crosshair at RNG.mi, added
-  // last so it sits on top of the map layers (under the HTML crosshair overlay)
+  // range ring — a dashed accent circle at the map centre at RNG.mi, added
+  // last so it sits on top of the map layers
   gl.addSource('src-ring',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
   gl.addLayer({id:'ly-ring',type:'line',source:'src-ring',
     paint:{'line-color':SEV_COL[0],'line-width':1.5,'line-opacity':0.72,'line-dasharray':[2,2]}});

@@ -1,10 +1,10 @@
 # canifly
 
 **Can I fly my drone here, now, and how high? One keyless, single-file map
-that answers it for wherever the crosshair points.**
+that answers it for your location.**
 
-A self-contained HTML app: a dark map with a centre crosshair and a docked
-panel (on mobile, two full-screen pages — the map and the panel — that you flip
+A self-contained HTML app: a dark map locked and centred on your location, with a
+docked panel (on mobile, two full-screen pages — the map and the panel — that you flip
 between with a single tap). The panel leads with the
 **flyability chart** — can a small drone fly *here, now, and for the next three
 hours, and how high* — and a **SITREP** briefing: a stack of distance-sorted
@@ -142,7 +142,7 @@ context cards):
     red PRECIPITATION ground above.
   - otherwise it's the routine **conditions card at the bottom** (temp, sky,
     wind, feels-like, hi/lo), which also carries feed health: **amber**
-    ("stale — tap") when the feed is failing but last-good conditions still show,
+    ("stale") when the feed is failing but last-good conditions still show,
     **red** ("weather unavailable", promoted) when it never loaded and the chart
     can't compute — the red case reddens the title so a total outage can't hide
     behind a green skeleton.
@@ -243,10 +243,12 @@ dynamic viewport height so it never spills below Safari's address bar).
 
 ## Location & privacy
 
-**The fix pipeline is dead simple.** The GPS watch starts at load; pings are
-**collected for 3 seconds** from the first one, keeping the most accurate — nothing
-recenters, zooms or loads location data until that settled fix **commits**. There is
-**no absolute accuracy cut-off**: a phone with precise location off (every ping ~2 km
+**The fix pipeline is dead simple.** The GPS watch starts at load. A ping that's
+already **accurate enough (≤ 65 m) commits immediately**, so a phone with a quick
+sharp fix frames in a fraction of a second. Otherwise pings are **collected for up to
+3 seconds**, keeping the most accurate, and the best one commits when that ceiling
+fires — nothing recenters, zooms or loads location data until the fix **commits**.
+There is **no absolute accuracy cut-off**: a phone with precise location off (every ping ~2 km
 accuracy) still commits its best ping — a couple of km beats an IP centroid hundreds
 of miles away. The IP lookup (ipwho.is) is **fallback only**, used solely if GPS
 delivers nothing (denied/unavailable) within ~6 s; if GPS shows up later anyway, the
