@@ -371,6 +371,7 @@ const isHeli=a=>a.category==='A7'||/helicopter|\brotor/i.test(a.desc||'');
 function acProps(a,kind){
   return {_kind:kind, heli:isHeli(a)?1:0,
     flight:String(a.flight||a.r||a.hex||'?').trim(),
+    reg:String(a.r||'').trim(),   // tail registration (N-number etc.), a line-2 fallback
     type:a.t||'?',desc:a.desc||'',op:a.ownOp||'',
     alt:a.alt_baro??a.alt_geom??'?',
     // barometric (pressure-altitude) value kept separate so AGL can QNH-correct
@@ -520,7 +521,11 @@ const gl = new maplibregl.Map({
   center:[-96,39], zoom:3.4, minZoom:1.1, maxZoom:16,   // start over the USA until a location fix lands
   renderWorldCopies:true, attributionControl:false
 });
-// No on-map controls — zoom is scroll/pinch and recentre is the ⌖ ME button.
+// Apply the panel padding IMMEDIATELY (before the first render), so the very first
+// view is already framed into the open map area left of the docked 360px panel, not
+// centred under it. setMapPadding() on load keeps it in sync on resize/orientation.
+gl.setPadding(MQ_MOBILE.matches?{top:0,right:0,bottom:0,left:0}:{top:20,left:24,right:376,bottom:24});
+// No on-map controls — the map is locked and centred on your location.
 window.__sitrep={map:gl}; // debug/test handle
 
 // Zoom is a SEPARATE action from panning. MapLibre's built-in scroll, double-
@@ -1417,7 +1422,6 @@ function setUserFix(lat,lon,src,meta){
   if(first){
     // first fix: one clean, guarded animation to the 10 mi VIEW framing
     frameNow(lat,lon);
-    flyRender();   // reveal the chart pane now that we have a location (skeleton → data)
   } else {
     // the map follows the fix — it moves when your location moves, and only then.
     lockFollow();
@@ -1442,11 +1446,16 @@ const cut=(s,n)=>escapeHtml(String(s==null?'':s).trim().slice(0,n));
 // never "ground ft". planesNear/TRFC already skip it (+'ground' → NaN).
 const ALT=f=>{const a=f.properties.alt;
   return a==='ground'?'on ground':a!=null&&a!=='?'?a+U(' ft'):'—';};
-// Aircraft line-2 label: the human-readable description ("aircraft"), else the
-// ICAO type (skipping a bare '?'), else the operator, and only '?' as a last
-// resort — so a card never reads a bare '?' when a type or operator is known.
-const acSub=f=>{const p=f.properties, type=p.type&&p.type!=='?'?p.type:'';
-  return escapeHtml(p.desc||type||p.op||'?');};
+// Aircraft line-2 label — a cascade that NEVER shows '?', blank, or a repeat of the
+// line-1 tail: human description → ICAO type code → operator → tail registration (if
+// it differs from what line 1 already shows) → a generic by kind (military / heli /
+// aircraft). So there's always a meaningful, non-duplicate second line.
+const acSub=f=>{const p=f.properties;
+  const type=p.type&&p.type!=='?'?p.type:'';
+  const tail=String(p.flight||p.hex||'').trim().toUpperCase();
+  const reg=p.reg&&p.reg.toUpperCase()!==tail?p.reg:'';
+  const generic=p.mil?'military aircraft':(p.heli?'helicopter':'aircraft');
+  return escapeHtml(p.desc||type||p.op||reg||generic);};
 // Aircraft card icon — just two glyphs for EVERY aircraft (civil, military,
 // emergency, low-aircraft): ✈️ plane / 🚁 helicopter. Military vs civil vs
 // emergency is carried by COLOUR instead — the tail-number string is tinted to
@@ -1830,8 +1839,50 @@ function sitrepTick(){
   });
   general.forEach(c=>cards.push(c));   // area-wide context cards sink to the bottom
   spcCards.forEach(c=>cards.push(c));  // SPC outlook (info) sits just above weather
-  if(!wxc.pin) cards.push(wxc.card);   // routine conditions card — the bottom card
-                                       // (a gate/outage already pinned it up top)
+  if(!wxc.pin) cards.push(wxc.card);   // routine conditions card — the bottom in-range
+                                       // card (a gate/outage already pinned it up top)
+
+  // -- ON-SCREEN CONTEXT: every map object VISIBLE on the map but OUTSIDE its ring
+  //    (aircraft beyond the 5 mi grey ring, other zones beyond the 1 mi red ring)
+  //    becomes a NEUTRAL, distance-sorted card appended BELOW the weather card — a
+  //    full read-out of what's on screen, not just what's in range. No hazard tier
+  //    and no flash: these are context, not in-range threats, so they never colour
+  //    the title. Kept recognisable by the same icon + polygon/aircraft colour. --
+  const bounds=gl.getBounds();
+  const inView=pt=>{ try{ return !!pt&&bounds.contains(pt); }catch(e){ return false; } };
+  const ctx=[];
+  CATS.forEach(cfg=>{
+    const ringRad=cfg.air?warnKm:rangeKm;
+    let feats=featsIn(cfg.src); if(cfg.filter) feats=feats.filter(cfg.filter);
+    feats.forEach(f=>{
+      const g=f.geometry; if(!g) return;
+      let pt,km;
+      if(g.type==='Point'){ pt=g.coordinates; km=havKm(lat,lon,pt[1],pt[0]); }
+      else { const ne=nearestEdge(f,lon,lat); if(!ne) return;
+        pt=ne.pt; km=pointInFeature(f,lon,lat)?0:ne.km; }
+      if(km<=ringRad) return;   // already shown as an in-ring card above
+      if(!inView(pt)) return;   // not on screen
+      ctx.push({cfg,f,pt,km});
+    });
+  });
+  // collapse airspace shelves (same class+name) to the nearest, like the in-ring set
+  const ctxKey=it=>(it.f.properties.cls||'')+'|'+(it.f.properties.name||'');
+  const ctxAsp=new Map();
+  ctx.forEach(it=>{ if(it.cfg.src!=='airspace') return; const k=ctxKey(it),ex=ctxAsp.get(k); if(!ex||it.km<ex.km) ctxAsp.set(k,it); });
+  const CTX_CAP=24;
+  ctx.filter(it=>it.cfg.src!=='airspace'||ctxAsp.get(ctxKey(it))===it)
+     .sort((a,z)=>a.km-z.km).slice(0,CTX_CAP)
+     .forEach(({cfg,f,pt})=>{
+       const ic=typeof cfg.icon==='function'?cfg.icon(f):cfg.icon;
+       const head=cfg.head(f);
+       const sub=(cfg.sub?cfg.sub(f):'')||'—';
+       const detTxt=cfg.detail?cfg.detail(f):'';
+       let l3=dirMi(pt[1],pt[0])+(detTxt?' · '+detTxt:'');
+       if(cfg.air){ const s=Number(f.properties.spd); if(isFinite(s)) l3+=' · '+Math.round(toMph(s))+U(' mph'); }
+       const rawCol=cfg.src==='airspace'?f.properties._col:cfg.air?AC_COL[cfg.src]:null;
+       const col=/^#[0-9a-fA-F]{3,8}$/.test(rawCol||'')?rawCol:undefined;
+       cards.push(['', ic, head, sub, l3, '', false, undefined, col]);   // neutral, no hazard/flash
+     });
 
   // title severity: 0 none · 1 alert (amber) · 2 warn (red). Driven by the
   // flyability NOW column FIRST — any grounding value/condition reds it, any
@@ -2429,9 +2480,8 @@ function flySkeletonHtml(){
 // no settings box or range control to render; the chart just paints from data.
 function flyRender(){
   const board=$('#fly-board'); if(!board) return;
-  // The chart is meaningless without a location, so keep the whole pane HIDDEN until
-  // the first fix — no empty/skeleton slot at the top of the panel on initial load.
-  const pane=$('#fly-pane'); if(pane) pane.style.display=USER.lat==null?'none':'';
+  // Before data lands the board shows the loading skeleton (the chart's own loading
+  // view); once FLY.detail exists it paints the real grid. The pane is always visible.
   board.innerHTML=FLY.detail?flyBoardHtml(FLY.detail.board):flySkeletonHtml();
 }
 function flyPaint(){ FLY.detail=FLY.data?flyComputeDetail():null; flyRender(); }

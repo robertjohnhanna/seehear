@@ -77,11 +77,14 @@ outer dotted).
 
 ## The SITREP cards
 
-Everything is measured from the **crosshair** (map centre) and limited to the
-1 mi range ring (aircraft are the exception — tracked out to the 5 mi grey ring,
-see below). Cards are tiered — red hazards, amber hazards, then routine
-traffic — and distance-sorted within each tier (capped at 14, plus pinned and
-context cards):
+Everything is measured from the **map centre** (your location) and the top of the
+list is limited to the 1 mi range ring (aircraft are the exception — tracked out to
+the 5 mi grey ring, see below). Cards are tiered — red hazards, amber hazards, then
+routine traffic — and distance-sorted within each tier (capped at 14, plus pinned and
+context cards). **Below the bottom weather card**, every other map object that's
+**visible on screen but outside its ring** is listed too — a neutral, distance-sorted
+read-out of what's on the map (out-of-range airspace, farther traffic), so nothing on
+screen is a mystery:
 
 - ✈️/🚁 **AIRCRAFT & LOW AIRCRAFT** — every aircraft is **tracked out to the 5 mi
   grey ring** (the light-grey dotted ring) as an ordinary, distance-sorted card,
@@ -105,7 +108,10 @@ context cards):
   map halo, so card, chart and halo agree. The chart's **TRFC** cell marks the
   highest usable band (plane AGL − 500, clamped to the grid), flashing at that
   ceiling with every row above it red and the rows below green. Every plane card
-  shows its ADS-B **ground speed** (MPH) on line 3, right after the altitude.
+  shows its ADS-B **ground speed** (MPH) on line 3, right after the altitude. Line 2
+  cascades through the best available identity — description → ICAO type → operator →
+  tail registration → a generic ("military aircraft" / "helicopter" / "aircraft") — so
+  it's never blank, never a bare "?", and never a repeat of the line-1 tail number.
 - ⛔ **FAA NO-FLY / FAA CEILING** — surfaces the chart's own airspace gate: it
   reads the exact `aspCapFt` the flyability chart's FAA column computes (the
   FAA LAANC UASFM grid + defense TFRs swept over the range ring), so the card
