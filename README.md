@@ -70,11 +70,10 @@ reduced/unverified, red grounded — so the one-glance colour reaches the map ev
 when the panel is off-screen; they stay distinguishable by dash (inner dashed,
 outer dotted).
 - **VIEW · 10 mi** (2× grey) — the framing radius the map opens to on a location
-  fix and resets to on the ⌖ button, and the **tightest allowed zoom**: the view
-  never shows less than a 10-mile radius. The locked framing is a **fixed scale**
-  computed from latitude alone (not the window size), so it's identical on every
-  layout — phone portrait, phone landscape, tablet, desktop. Pan north and the
-  camera eases back out to hold the cap.
+  fix and holds at. The locked framing is a **fixed scale** computed from latitude
+  alone (not the window size), so it's identical on every layout — phone portrait,
+  phone landscape, tablet, desktop. The map is always locked here; it never zooms
+  in or out.
 
 ## The SITREP cards
 
@@ -185,14 +184,13 @@ context cards):
   colour and no title contribution (an outlook is "expected", not a warning) —
   sitting just above the 🌡️ local forecast (always present).
 
-Tap any card to fly the map there (airspace/TFR zones recentre on the polygon
-centre; other polygons fly to their nearest edge — the same edge distance used
-for sorting and range inclusion). If the map was follow-locked, flying to a card
-**unlocks** it (so the next GPS fix doesn't snap you back off the target) — the
-next ⌖ tap re-locks and re-centres on you. The **SITREP title**
-is the one-glance verdict: red when the NOW column is grounded or a red hazard
-is in range, amber for a reduced ceiling, an amber hazard, or any unverified
-gate input.
+Every card carries a distance + bearing to its item (airspace/TFR zones by the
+polygon's nearest edge — the same edge distance used for sorting and range
+inclusion). The map stays locked on you and never moves, so on mobile a card tap
+just drops back to the map, where the item already sits inside the fixed 10-mile
+view. The **SITREP title** is the one-glance verdict: red when the NOW column is
+grounded or a red hazard is in range, amber for a reduced ceiling, an amber hazard,
+or any unverified gate input.
 
 ## Map layers
 
@@ -204,54 +202,43 @@ gate input.
 | NWS warning polygons (US) — red outline for Extreme/Severe, amber otherwise | api.weather.gov | 15 s |
 | NEXRAD reflectivity mosaic | Iowa State Mesonet | 60 s (source updates ~5 min) |
 | SPC Day-1 outlook (hidden; feeds cards) | NOAA SPC | 15 min |
-| FAA airspace + restrictions (**national cache**) — the whole USA pulled **once at boot**, before any location fix, then drawn everywhere and never re-downloaded | FAA ArcGIS ×5 services | once at boot |
-| NPS lands (regional cache) | NPS ArcGIS | on travel |
+| FAA airspace + restrictions — scoped to the **visible map**, refetched when the map recenters on your new location | FAA ArcGIS ×5 services | on move |
+| NPS lands — scoped to the **visible map**, same as airspace | NPS ArcGIS | on move |
 
 **One pulse, per-feed cadences.** The unified refresh pulse fires every **5 s** —
 that's how often live traffic updates. Each feed then keeps its own natural cadence
 on top of it (NWS 15 s, winds-aloft 15 s, Kp ~3 min, radar 60 s, SPC 15 min), so the
 fast pulse never hammers a source whose data doesn't change that fast.
 
-**FAA airspace is a national cache.** The drawn airspace set is bounded (controlled
-airspace B/C/D + surface-E2, national-defense TFRs, low special-use airspace, security
-UAS zones, stadiums), so — filtered server-side and **paged** — the whole USA comes back
-in one cache. It's pulled **once at boot, before the location fix** (alongside the
-military-aircraft, radar and NWS feeds), drawn at *every* zoom wherever you go, and
-**never re-downloaded** — it doesn't depend on where you are. A single FAA request can't
-return the country in one shot (the service caps each response and flags
-`exceededTransferLimit`), so the loader pages through each feed until the service stops
-flagging more. *NPS lands* stay a **regional cache** (every park boundary at full
-precision is far too large to pull nationwide): pulled once for a ~85-mile box around
-you and re-pulled only when you travel out of it. Every loader retries with backoff, a
-failing feed backs off instead of being re-hammered, and a failure never wipes the map.
+**Everything is scoped to the visible map.** The map is locked to the fixed ~10-mile
+VIEW, so every geo query is a small box around you: aircraft (sized to the view),
+FAA airspace, and NPS lands all query just what's on screen. Because the map moves
+*only* when your location moves, those overlays refetch exactly when they need to —
+when the map recenters onto your new spot — not on the periodic pulse. Small box ⇒
+each pull is fast and reliable. The drawn airspace set is bounded (controlled airspace
+B/C/D + surface-E2, national-defense TFRs, low special-use airspace, security UAS
+zones, stadiums). Every loader retries with backoff, a failing feed backs off instead
+of being re-hammered, and a failure never wipes the map.
 
 The map has **no click popups** — everything inside the range ring is described
 by the SITREP cards, so the map stays a clean picture and the panel carries the
 detail.
 
-**The panel has no header in any layout.** The CANIFLY verdict and the lock control
-live on the **map's corners** instead — **top-left** and **bottom-right** — so the
-panel is just the flyability chart + the SITREP cards. The map-corner controls carry a
-**black outline** (a black glyph outline on the CANIFLY tag) so they read over any map.
-The CANIFLY tag mirrors the same green/amber/red verdict + breach-flash the panel
-drives, so the one-glance go/no-go is always on the map. Data **auto-refreshes every
-5 s** (no manual refresh control). On a **docked** layout (desktop / iPad landscape /
-iPhone landscape) the corner controls sit just inside the map, clearing the 360px
-panel — positioned off the panel edge, **not** the safe-area inset (the panel sits
-flush at the screen edge, so adding the inset would leave a gap).
+**The panel has no header in any layout, and the map has no controls.** The map is
+always locked and centred on you — there's no pan, no zoom, and no buttons. The only
+on-map chrome is the **CANIFLY verdict tag** in the **top-left corner** (a black glyph
+outline so it reads over any map); it mirrors the same green/amber/red verdict +
+breach-flash the panel drives, so the one-glance go/no-go is always on the map. The
+panel itself is just the flyability chart + the SITREP cards. Data **auto-refreshes
+every 5 s** — no manual refresh control.
 
 **Mobile portrait** (iPhone, and any ≤1000px-wide portrait screen) is a **two-page
 toggle**: the map and the panel are separate full-screen pages. **Tap the map** to
 bring the panel up; **tap anywhere on the panel** — the chart, any empty space — to
-drop back to the map. The only exception is a **SITREP card**, which runs its own
-fly-to / open action. No drag, no snap points — one tap flips the page, and each gets
-the whole screen (the panel uses the dynamic viewport height so it never spills below
-Safari's address bar). The map-corner controls move to the true screen edges there,
-since the panel is an overlay sheet rather than docked.
-
-Data **auto-refreshes every 5 s** — there's no manual refresh control. The **lock
-control's glyph tracks the CANIFLY verdict colour** (green/amber/red), so it carries
-the same one-glance go/no-go as the rings and the CANIFLY tag.
+drop back to the map. The only exception is a **SITREP card**, which reveals the map
+(the item already sits inside the fixed 10-mile view) or opens a source page. No drag,
+no snap points — one tap flips the page, and each gets the whole screen (the panel uses
+the dynamic viewport height so it never spills below Safari's address bar).
 
 ## Location & privacy
 
@@ -266,20 +253,17 @@ map heals onto the real spot. After the commit the watch keeps the green
 **you-are-here dot live**, EMA-smoothed so it glides; a ping is dropped only if it's
 junk *relative* to the best accuracy the device has shown.
 
-The ⌖ button lives in the map's **bottom-right corner** and **starts locked**.
-**Locked = the map moves only when your location moves.** Every user camera input is
-dead — pan, wheel, double-tap, pinch, the custom touch navigation, all of it — and the
-zoom is held at the 10 mi framing. The map **follows you**: inside a ~25 m jitter
-deadband it holds still; walk past it and the centre glides onto the fix (zoom
-untouched); a huge correction (a late GPS grant fixing an IP fallback) re-frames
-outright. The **first tap unlocks** (pan + zoom free again, icon back to the
-crosshair); the **next tap centers you and resets the zoom** to the 10 mi view, then
-re-locks — the two-state toggle repeats. **Want to zoom out? Unlock.** Data loads are
-**positionally gated** while locked: nothing fetches unless the view is actually on
-your fix, so nothing can ever load data for a spot you aren't at — and as
-belt-and-braces, any stray gesture that somehow nudges the map snaps straight back
-onto the fix. Position is resolved client-side and never leaves the browser except as
-anonymous lat/lon query parameters to the public weather APIs.
+**The map is always locked and centred on you — it moves only when your location
+moves.** There is no lock button and no unlock: every user camera input is dead —
+pan, wheel, double-tap, pinch, the custom touch navigation, all of it — and the zoom
+is held at the 10 mi framing (a fixed scale, identical on every device). The map
+**follows you**: inside a ~25 m jitter deadband it holds still; walk past it and the
+centre glides onto the fix (zoom untouched); a huge correction (a late GPS grant fixing
+an IP fallback) re-frames outright. Data loads are **positionally gated**: nothing
+fetches unless the view is actually on your fix, so nothing can ever load data for a
+spot you aren't at — and as belt-and-braces, any stray gesture that somehow nudges the
+map snaps straight back onto the fix. Position is resolved client-side and never leaves
+the browser except as anonymous lat/lon query parameters to the public weather APIs.
 
 ## Design notes & honest caveats
 
