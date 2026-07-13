@@ -1107,7 +1107,14 @@ function setUserFix(lat,lon,src,meta){
   } else userMarker.setLngLat([lon,lat]);
   updateRing();   // snap the rings onto the new fix (they're anchored to USER, not the map centre)
   // first fix flies in from the world view; a later refinement only gently recenters
-  if(first) frameNow(lat,lon);
+  if(first){
+    frameNow(lat,lon);
+    // Kick the viewport feeds (aircraft/airspace/NPS) IMMEDIATELY on the first fix — they
+    // query around USER (just set), so we don't have to wait out the ~1.5 s fly-in animation
+    // and its moveend for the initial pull. The moveend still fires later; the generation
+    // token makes the overlap harmless. This is why the first aircraft draw isn't missed.
+    LAYERS.forEach(cfg=>{ if(cfg.viewport){ const st=LAYER_STATE[cfg.id]; if(st&&st.started&&!st.loading) runLayer(cfg); } });
+  }
   else lockFollow();   // follows the fix — moves only when your location moves
   sitrepTick();
 }
@@ -1340,11 +1347,21 @@ function sitrepTick(){
     if(k==='asp') blip = blip || aspOverlayFailing;
     if(never) redFeeds.push(label); else if(blip) amberFeeds.push(label);
   }
+  // AIRCRAFT is traffic, not a flyability gate — so it's AMBER (missing traffic ≠ grounded),
+  // never red. Show it until the planes are actually drawn (post-fix, never loaded, none on
+  // the map) or while the feed is failing, so the card reflects the map. (features>0 = drawn.)
+  const acOv=LAYER_STATE.nearair;
+  const acPending=!!(acOv && acOv.started && !acOv.everLoaded && (acOv.features||[]).length===0 && USER.lat!=null);
+  const acFailing=!!(acOv && acOv.failSince && Date.now()-acOv.failSince>=DATA_ERR_GRACE_MS);
+  if(acPending||acFailing) amberFeeds.push('aircraft');
   const dataFeeds=[...redFeeds,...amberFeeds];
   if(dataFeeds.length){
     const red=redFeeds.length>0;
+    // hazard flag colours the verdict — true for a real gate problem, FALSE when the only
+    // thing pending is aircraft (traffic is informational; planes still loading ≠ caution)
+    const dataHazard=dataFeeds.some(f=>f!=='aircraft');
     cards.push([red?'danger':'alert','📡', red?'DATA NOT LOADED':'DATA UNVERIFIED',
-      cut(dataFeeds.join(' · '),30), red?'acquiring — verify before flying':'retrying every 5 s', true]);
+      cut(dataFeeds.join(' · '),30), red?'acquiring — verify before flying':'retrying every 5 s', dataHazard]);
   }
   // weather-feed health: down = never loaded (red), stale = last-good shows (amber)
   const wxState=wxStale?(FLY.data?'stale':'down'):'ok';
