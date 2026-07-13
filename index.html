@@ -607,31 +607,34 @@ defLayer({
     ((cls&&cls.features)||[]).forEach(f=>{ const p=f.properties||{},cl=p.CLASS;
       if(!(/^[BCD]$/.test(cl)||p.LOCAL_TYPE==='CLASS_E2')||!f.geometry) return;
       push(f.geometry,{_kind:'airspace',sev:'ctrl',cls:cl,code:cl,name:p.NAME||'',_col:CTRL[cl]||'#c06ad0'}); });
-    // national-defense TFR zones — hard no-fly (verdict red)
+    // national-defense TFR zones — hard no-fly. Airspace fills use a COOL identity palette
+    // kept OFF the green/amber/red verdict colours (violet = no-fly · cyan = conditional ·
+    // blue/magenta = controlled · steel = advisory); severity is carried by the card position,
+    // icon and ring, not the fill hue.
     ((def&&def.features)||[]).forEach(f=>push(f.geometry,{_kind:'airspace',sev:'hard',cls:'DEF',code:'DEF',
-      name:(f.properties&&f.properties.NAME)||'',_col:'#ff4455'}));
+      name:(f.properties&&f.properties.NAME)||'',_col:'#7c5cff'}));
     // special-use airspace, right-sized to a drone at ≤400 ft:
     //   • Prohibited (P)        → HARD no-fly (red)
     //   • Restricted (R)        → CONDITIONAL no-fly (amber, only when active)
     //   • MOA/Warning/Alert/Danger → ADVISORY (they don't restrict a Part-107
     //     drone — military/hazard activity to be aware of, not a no-fly)
     // zones whose FLOOR is above the drone band (400 ft) are dropped — irrelevant here
-    // hard→verdict red · conditional→verdict amber · advisory→cool steel (clearly "just aware")
-    const SUA={P:['hard','PROH','#ff4455'],R:['caution','RSTD','#ffb454'],
+    // hard→violet · conditional→cyan · advisory→steel — none in the verdict (R/A/G) palette
+    const SUA={P:['hard','PROH','#7c5cff'],R:['caution','RSTD','#22d3ee'],
       MOA:['advisory','MOA','#8fa3bf'],W:['advisory','WARN','#8fa3bf'],A:['advisory','ALRT','#8fa3bf'],D:['advisory','DNGR','#8fa3bf']};
     ((sua&&sua.features)||[]).forEach(f=>{ const p=f.properties||{},t=SUA[p.TYPE_CODE]; if(!t||!f.geometry) return;
       if(floorFt(p.LOWER_VAL)>SPEC.regFt) return;   // starts above the drone band → irrelevant
       push(f.geometry,{_kind:'airspace',sev:t[0],cls:p.TYPE_CODE,code:t[1],
         name:p.NAME||'',lo:p.LOWER_VAL,hi:p.UPPER_VAL,_col:t[2]}); });
-    // part-time national-security UAS zones — hard no-fly for drones (verdict red)
+    // part-time national-security UAS zones — hard no-fly for drones (violet)
     ((nsufr&&nsufr.features)||[]).forEach(f=>{ const p=f.properties||{};
       if(floorFt(p.Floor)>SPEC.regFt) return;
       push(f.geometry,{_kind:'airspace',sev:'hard',cls:'NSUFR',code:'NSUF',
-        name:p.Facility||'security zone',lo:p.Floor,hi:p.Ceiling,_col:'#ff4455'}); });
-    // stadiums → 3 nm (5.556 km) rings (the 99.7 event TFR), conditional (verdict amber)
+        name:p.Facility||'security zone',lo:p.Floor,hi:p.Ceiling,_col:'#7c5cff'}); });
+    // stadiums → 3 nm (5.556 km) rings (the 99.7 event TFR), conditional (cyan, not verdict amber)
     ((stad&&stad.features)||[]).forEach(f=>{ const g=f.geometry; if(!g||g.type!=='Point') return;
       push({type:'Polygon',coordinates:[circleRing(g.coordinates[1],g.coordinates[0],5.556,48)]},
-        {_kind:'airspace',sev:'caution',cls:'STDM',code:'STDM',name:(f.properties&&f.properties.NAME)||'stadium',_col:'#ffb454'}); });
+        {_kind:'airspace',sev:'caution',cls:'STDM',code:'STDM',name:(f.properties&&f.properties.NAME)||'stadium',_col:'#22d3ee'}); });
     return {type:'FeatureCollection',features:feats};
   }
 });
