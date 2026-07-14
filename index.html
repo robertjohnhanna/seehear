@@ -34,8 +34,11 @@
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;
     -webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
   /* height:100% (not dvh — iOS Safari's floating URL bar makes dvh resolve short) */
+  /* text-size-adjust:100% stops iOS Safari from auto-inflating the list text for a beat
+     on an orientation flip (the "fonts go wild for a second" glitch). */
   html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
     font-family:var(--mono);font-size:13px;overflow:hidden;
+    -webkit-text-size-adjust:100%;text-size-adjust:100%;
     overscroll-behavior:none;touch-action:manipulation;text-transform:uppercase}
   /* the SITREP still scrolls, but double-tap / pinch zoom is disabled everywhere */
   #sit-body{touch-action:pan-y}
@@ -117,6 +120,17 @@
   /* units keep their own casing/spacing inside the upper-cased body (.lc = keep lowercase) */
   .u{letter-spacing:0;font-style:normal}
   .u.lc{text-transform:none}
+
+  /* ---- LANDSCAPE — a wide, short viewport has no room for chart-over-list, so lay them
+          SIDE BY SIDE: chart on the LEFT, the scrolling SITREP on the RIGHT. ---- */
+  @media (orientation:landscape){
+    #app{flex-direction:row;max-width:none}
+    #fly-pane{flex:0 1 auto;max-width:60%;min-width:0;justify-content:center;
+      border-bottom:none;border-right:1px solid var(--line);
+      padding:10px 14px;padding-left:calc(env(safe-area-inset-left,0px) + 14px)}
+    #sit-body{flex:1 1 0;padding-top:calc(var(--safe-top) + 4px);
+      padding-right:calc(env(safe-area-inset-right,0px))}
+  }
 </style>
 </head>
 <body>
@@ -1187,11 +1201,12 @@ function sitrepTick(){
      });
 
   // -- PERMANENT LOCATION CARD — your live GPS fix, always shown so position status is never
-  //    ambiguous (there is no map to glance at). Neutral card; km=-1 heads the general list. --
+  //    ambiguous (there is no map to glance at). Sits in the bottom WEATHER group, as the very
+  //    last card (appended to wxTail below). --
   const locCard=mkCard('','📍','GPS LOCK',
     USER.acc!=null?'accuracy ±'+Math.round(USER.acc)+U(' m'):'locating…',
     lat.toFixed(4)+', '+lon.toFixed(4), false);
-  locCard.km=-1; cards.push(locCard);
+  wxTail.push(locCard);
 
   // verdict severity: 0 go (green) · 1 caution (yellow) · 2 no-go (red). Driven by the
   // flyability NOW column FIRST — any grounding value/condition reds it, any reduced ceiling
