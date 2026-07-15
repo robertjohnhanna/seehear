@@ -783,7 +783,7 @@ const GOOD_ACCURACY_M=65;         // a ping at least this accurate commits immed
 const POSITION_SMOOTHING=0.25;    // low-pass factor for stationary jitter (0 frozen … 1 raw)
 const REAL_MOVE_KM=0.05;          // a fix farther than this from the smoothed point = a real move → snap
 const REFETCH_MOVE_KM=0.5;        // moving this far refetches nearby aircraft/airspace for the new area
-const ACC_WARN_M=100;             // GPS accuracy worse than this (m ≈ 328 ft) → yellow GPS card + can raise verdict to caution
+const ACC_WARN_M=50;             // GPS accuracy worse than this (m ≈ 164 ft) → yellow GPS card + can raise verdict to caution
 
 let firstFixCommitted=false, bestFirstPing=null, bestAccuracyM=Infinity;
 let smoothedLat=null, smoothedLon=null;
