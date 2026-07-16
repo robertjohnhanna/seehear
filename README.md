@@ -2,8 +2,9 @@
 
 Keyless, single-file drone preflight brief (`index.html`, vanilla JS, no build/backend).
 Located by GPS; answers **can I fly here, now, and how high?** No map — a flyability chart
-(with a verdict clock) over a distance-sorted SITREP. This file maps **where data comes from,
-how it's shaped, and how the verdict is decided.** For reference only.
+(a white clock in its corner, the verdict colour on its NOW column) over a distance-sorted
+SITREP. This file maps **where data comes from, how it's shaped, and how the verdict is
+decided.** For reference only.
 
 ---
 
@@ -48,7 +49,8 @@ a card never votes), and `assessTraffic()` is the one traffic assessment they al
 | `sampleRadarPrecip` | Iowa Mesonet NEXRAD tiles | reflectivity (sampled off-screen) | 1 mi & 5 mi | 60 s window |
 | `ensureGroundElev` | open-meteo `/v1/elevation` | ground elevation for AGL | per ~1 km cell | on demand |
 
-Winds are requested in **mph** and aircraft speed converted from knots — the only unit conversion left.
+Winds are requested straight in **mph** — the unit shown and gated on — so no wind conversion
+is needed anywhere; aircraft ground speed still arrives in knots and is converted to mph.
 
 ---
 
@@ -63,10 +65,11 @@ Winds are requested in **mph** and aircraft speed converted from knots — the o
 
 ---
 
-## How the verdict is decided — the chart
+## The chart — the can-I-fly grid
 
-Per forecast hour, the highest flyable altitude is a **ceiling = min of five caps**, and the
-column is **grounded (red)** if any hard gate trips.
+Per forecast hour (NOW..+3h), each 50-ft cell is **binary** — green fly / red can't. The
+column's ceiling is a **min of five caps**, and the whole column is **grounded** (all red) if
+any hard gate trips.
 
 ```
 capFt  = min( 400 (Part 107),  cloudCapFt,  windCeilFt,  aspCapFt,  trafficCeil )
@@ -74,25 +77,26 @@ maxFly = highest 50-ft step ≤ capFt
 grounded  ⇢  capFt < 0   OR   any grounding gate below
 ```
 
-| Gate | Source | Rule | Effect |
+| Gate | Source | Rule | Effect on the grid |
 |---|---|---|---|
-| **Cloud** | winds-aloft cloud base | `cloudCapFt = base − 500` (500 ft below cloud) | caps ceiling |
-| **Wind aloft** | winds 10–180 m | first level ≥ 27 mph, minus 50 | caps ceiling |
-| **FAA** | LAANC grid | grid ceiling (< 400 caps, ≤ 0 = no-fly) | caps / grounds |
-| **Traffic** | nearby aircraft AGL | manned traffic < 900 ft AGL (NOW only) | caps / grounds |
-| **Gust** | surface gust | ≥ 27 mph | **grounds** |
-| **Visibility** | surface vis | < 3 SM | **grounds** |
-| **Kp** | SWPC Kp | ≥ 7 grounds · 5–6 cautions | grounds / yellow |
-| **Precip** | NEXRAD | echo ≤ 1 mi grounds · ≤ 5 mi = yellow nearby | grounds / yellow |
-| **Airspace** | defense TFR · prohibited · security · NPS | in range | **grounds** |
+| **Cloud** | winds-aloft cloud base | `cloudCapFt = base − 500` (500 ft below cloud) | caps |
+| **Wind aloft** | winds 10–180 m | first level ≥ 27 mph, minus 50 | caps |
+| **FAA** | LAANC grid + defense TFR (1 mi query) | grid ceiling < 400 caps · ≤ 0 or defense active = no-fly | caps / grounds |
+| **Traffic** | in-ring aircraft AGL | manned plane < 900 ft AGL in the 1 mi ring, drone stays 500 below (NOW only) | caps / grounds |
+| **Gust** | surface gust | ≥ 27 mph | grounds |
+| **Visibility** | surface vis | < 3 SM | grounds |
+| **Kp** | SWPC Kp | ≥ 7 (G3+) | grounds |
+| **Precip** | NEXRAD | echo ≤ 1 mi | grounds NOW |
+| **Restriction** | prohibited · security · NPS **under you** | inside the zone | grounds all hours |
 
-Unknown ≠ clear: a feed that hasn't loaded yet grounds (red) at startup and cautions (yellow)
-on a later blip (fail-safe, `feedTier()`). The chart cells themselves stay strictly binary
-(green fly / red can't-fly) — all caution/verdict colour lives on the NOW header.
+The cells are strictly binary — **no yellow ever lives in the grid**. Softer conditions
+(Kp 5–6, precip within 5 mi, a plane that only caps, an unverified feed) colour the
+**verdict** alone, below. Unknown ≠ clear: a required feed that hasn't loaded grounds the
+verdict (red) at startup and cautions (yellow) on a later blip (fail-safe, `feedTier()`).
 
 ---
 
-## Verdict colour (clock + NOW header)
+## Verdict colour (NOW column header)
 
 `verdictSeverity = max` over the **gate table** (`evalGates()`) — the single point of
 verdict logic. Each gate scores 0/1/2; cards display a gate's info and rank by its
@@ -101,13 +105,13 @@ severity, but never vote.
 | Severity | Colour | Meaning | Gates that score it |
 |---|---|---|---|
 | 0 | 🟢 green | GO | nothing scores |
-| 1 | 🟡 yellow | CAUTION | ceiling < 400 (FAA / wind / cloud / traffic) · Kp 5–6 · precip within 5 mi · low aircraft (capping or in the bubble) · zone nearby · non-severe warning · poor GPS · stale feed |
-| 2 | 🔴 red | NO-GO | any grounding gate (the chart NOW column reds with it) · severe/extreme warning here · inside a prohibited / security / park zone · required feed never verified · no GPS fix |
+| 1 | 🟡 yellow | CAUTION | reduced ceiling < 400 (FAA / wind aloft / cloud) · a plane that caps (in the ring) or any low plane out to 5 mi · Kp 5–6 · precip within 5 mi · a zone nearby (incl. hard) · non-severe warning here · poor GPS · stale feed |
+| 2 | 🔴 red | NO-GO | **a grounding chart gate** — gust · vis · Kp G3+ · precip ≤ 1 mi · FAA no-fly · in-ring plane ≤ 500 ft AGL · inside a prohibited / security / park zone (the NOW column reds with each) — **plus** what the chart can't show: severe/extreme warning here · required feed never verified · no GPS fix |
 
-A gate may exceed the chart's state only for conditions the chart can't express (a warning
-polygon, a nearby zone, GPS, data health); altitude gates score from the very values the
-chart paints, so the NOW colour never reads no-go over flyable green cells.
-The clock itself is white; the **NOW column header** carries the colour.
+Altitude gates score from the very values the chart paints, so the NOW colour never reads
+no-go over flyable green cells. A gate exceeds the chart's own state only for conditions the
+chart can't express (a warning polygon, a nearby zone, GPS, data health). The clock stays
+white; the **NOW column header** carries the colour.
 
 ---
 
@@ -115,14 +119,14 @@ The clock itself is white; the **NOW column header** carries the colour.
 
 | # | Category | Contents | Sort |
 |---|---|---|---|
-| 1 | Red warning | grounding aircraft (≤ 500 ft AGL in the 1 mi ring) · severe warning · INSIDE hard airspace / NPS · FAA no-fly · Kp G3+ · weather groundings | by range |
+| 1 | Red warning | grounding aircraft (≤ 500 ft AGL in the 1 mi ring) · severe warning · INSIDE hard airspace / NPS · FAA no-fly · Kp G3+ · weather groundings · required feed not loaded | by range |
 | 2 | Yellow alert | low aircraft (capping, or out to 5 mi) · zones nearby (incl. hard) · restricted/stadium · reduced ceiling · Kp 5–6 · poor GPS · stale feed | by range |
 | 3 | General | every non-promoted object < 25 mi — aircraft (incl. military) + airspace, interleaved | by range |
 | 4 | Weather | SPC outlook, then general conditions | fixed |
 | 5 | Location | GPS lock / accuracy | last |
 
 Object colours are **identity only** (violet no-fly · cyan conditional · blue/magenta controlled ·
-steel advisory airspace; white aircraft) — green/amber/red is reserved for the verdict.
+steel advisory airspace; white aircraft) — green/yellow/red is reserved for the verdict.
 
 ---
 
@@ -130,8 +134,8 @@ steel advisory airspace; white aircraft) — green/amber/red is reserved for the
 
 | Ring | Radius | Role |
 |---|---|---|
-| RED | 1 mi | FAA point query · low-aircraft **red** · traffic cap · **precip grounds** |
-| GREY | 5 mi | traffic net · low-aircraft **yellow** · **precip nearby** (yellow) |
+| RED | 1 mi | FAA point query · traffic caps the chart · low-aircraft **grounds → red** (≤ 500 ft AGL) else caps → yellow · **precip grounds** |
+| GREY | 5 mi | traffic net · any low aircraft → **yellow** heads-up · **precip nearby** (yellow) |
 | DATA #3 | 25 mi | everything pulled + carded on the SITREP |
 
 ---
