@@ -235,8 +235,26 @@ async function adsbViewport(){
   const j=await adsb('/point/'+USER.lat.toFixed(3)+'/'+USER.lon.toFixed(3)+'/'+adsbRadiusNm());
   return {ac:j.ac||[]};
 }
-// rotorcraft? ICAO emitter category A7, else a helicopter/rotor mention in the description
-const isHeli=a=>a.category==='A7'||/helicopter|\brotor/i.test(a.desc||'');
+// Rotorcraft ICAO type designators (Doc 8643). The feed's `t` field is the RELIABLE signal —
+// the ADS-B emitter category (A7) is frequently sent late or not at all, which is why a Bell
+// 407 flickered plane→heli and a Robinson R66 stayed a plane (their descriptions are just
+// "BELL 407" / "ROBINSON R66" — no "helicopter"/"rotor" word to catch either).
+const HELI_TYPES=new Set([
+  'R22','R44','R66',                                                                   // Robinson
+  'B06','B06T','B47','B204','B205','B206','B212','B214','B222','B230','B407','B412',    // Bell
+  'B427','B429','B430','B505','B525','UH1',
+  'AS32','AS3B','AS50','AS55','AS65','SA30','ALO3','LAMA','GAZL','PUMA',                 // Airbus/Aerospatiale
+  'EC20','EC25','EC30','EC35','EC45','EC55','EC75',
+  'H120','H125','H130','H135','H140','H145','H155','H160','H175','H215','H225',
+  'A109','A119','A129','A139','A149','A169','A189','AW09','EH10',                       // Leonardo/Agusta
+  'S51','S55','S58','S61','S64','S65','S70','S76','S92','H53','H60','S300','S330',       // Sikorsky
+  'MD52','H500','H600','EXPL','H269','S269','EN28','EN48','CBRA',                       // MD/Schweizer/Enstrom/Guimbal
+  'KA26','KA32','KA50','KA52','MI2','MI8','MI17','MI24','MI26','MI28','MI34','MI38','NH90','LYNX' // Kamov/Mil/others
+]);
+const HELI_NAME=/helicopter|rotorcraft|\brotor|robinson|sikorsky|eurocopter|\bagusta|kamov|\bbell\s*\d/i;
+const isHeli=a=> a.category==='A7'
+  || HELI_TYPES.has(String(a.t||'').trim().toUpperCase())
+  || HELI_NAME.test(a.desc||'');
 // ONE property builder for every ADS-B contact (civil/mil/emergency feeds), so the
 // card / chart / AGL fields never drift apart between feeds.
 function acProps(a,kind){
