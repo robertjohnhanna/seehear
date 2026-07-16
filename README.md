@@ -22,8 +22,9 @@ flowchart LR
   SITREP --> CARDS["ranked cards"]
 ```
 
-**Manipulation happens in three pure functions:** `flyComputeDetail()` (the chart + verdict),
-`sitrepTick()` (the cards), `planesNear()` (the traffic net). Everything else fetches or renders.
+**The decision logic is concentrated in three functions** (they read the store, never fetch):
+`flyComputeDetail()` (the chart + verdict), `sitrepTick()` (the cards), `planesNear()` (the
+traffic net). Everything else fetches or renders.
 
 ---
 
@@ -31,16 +32,17 @@ flowchart LR
 
 | Feed / call | Endpoint | Provides | Scope | Refresh |
 |---|---|---|---|---|
-| `nearair` | airplanes.live / adsb.fi `/point/{lat}/{lon}/{r}` | all civil aircraft | ~25 mi around you | 5 s |
-| `mil` | …live/fi `/mil` | military aircraft | global feed | 5 s |
-| `nws` | api.weather.gov `/alerts/active` | active **warnings** (polygons) | US | 15 s |
+| `nearair` | airplanes.live / adsb.fi `/point/{lat}/{lon}/{r}` | civil aircraft | ~25 mi around you | 5 s |
+| `mil` | the **same** `/point` pull, split by the dbFlags military bit | military aircraft | ~25 mi around you | 5 s |
+| `nws` | api.weather.gov `/alerts/active?point=` | active **warnings** covering you | your point | 15 s |
 | `spc` | spc.noaa.gov `day1otlk_*` | severe-wx / tornado outlook | US | 15 min |
-| `airspace` | FAA ArcGIS `services6…` (5 layers) | Class B/C/D, TFR, SUA, NSUFR, stadiums | 25 mi box | on move |
+| `airspace` | FAA ArcGIS `services6…` (5 layers) | Class B/C/D, TFR, SUA, NSUFR, stadiums | 25 mi box | 15 min + on move |
 | `nps` | NPS ArcGIS `services1…` | national-park lands (no-fly) | 25 mi box | on move |
 | `getAloft` | open-meteo `/v1/forecast` | winds 10–180 m + gust + dir + cloud + vis (NOW..+3h) | point | ~15 s |
 | `loadWeather` | open-meteo `/v1/forecast` (current) | temp / feels / code / wind / hi-lo | point | ~5 min |
 | `getKp` | swpc.noaa.gov Kp forecast | planetary Kp (3-hr bins) | global | ~3 min |
-| `getAirspace` | FAA ArcGIS LAANC grid + defense TFR | drone ceiling + no-fly | 1 mi point | cached 6 h |
+| `getLaancCeil` | FAA ArcGIS LAANC grid | drone grid ceiling | 1 mi point | cached 6 h |
+| `getDefense` | FAA defense-TFR areas | hard no-fly (ceiling → 0) | 1 mi point | ~10 min |
 | `sampleRadarPrecip` | Iowa Mesonet NEXRAD tiles | reflectivity (sampled off-screen) | 1 mi & 5 mi | 60 s window |
 | `ensureGroundElev` | open-meteo `/v1/elevation` | ground elevation for AGL | per ~1 km cell | on demand |
 
@@ -55,7 +57,7 @@ Winds are requested in **mph** and aircraft speed converted from knots — the o
 | `pulse()` every 5 s | pull due feeds + chart + weather + radar |
 | GPS move ≥ `REFETCH_MOVE_KM` (0.5 mi) | refetch position-scoped feeds for the new area |
 | page hidden | pulse **pauses**; on return → one immediate pulse |
-| per feed | self-throttles (weather 5 min, Kp 3 min, airspace cached, radar 60 s) |
+| per feed | self-throttles (weather 5 min, Kp 3 min, LAANC 6 h / defense TFR 10 min, radar 60 s) |
 
 ---
 
@@ -83,7 +85,8 @@ grounded  ⇢  capFt < 0   OR   any grounding gate below
 | **Airspace** | defense TFR · prohibited · security · NPS | in range | **grounds** |
 
 Unknown ≠ clear: a feed that hasn't loaded yet grounds (red) at startup and cautions (yellow)
-on a later blip (fail-safe, `feedTier()`).
+on a later blip (fail-safe, `feedTier()`). An unverified FAA gate additionally marks the
+chart's 400 ft row with a yellow `FAA?` cell — the grid never silently reads "clear to 400".
 
 ---
 
