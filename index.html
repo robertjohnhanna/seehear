@@ -770,9 +770,9 @@ function wxCard(wxState, wn, kpNow){
       return {pin:true, card:mkCard('alert', wind?'💨':'☁️', wind?'HIGH WIND ALOFT':'LOW CLOUD',
         'max fly '+flyMax+U(' ft')+' · '+why, condLine(), true)};
     }
-    // PRECIPITATION NEARBY: an echo within the 5 mi GREY bubble but not yet grounding — yellow
+    // PRECIPITATION NEARBY: an echo within the 5 mi BUFFER ring but not yet grounding — yellow
     if(wn.precipInbound){
-      return {pin:true, card:mkCard('alert','🌧️','PRECIPITATION NEARBY','radar echo within '+GREY_MI+U(' mi'),condLine(),true)};
+      return {pin:true, card:mkCard('alert','🌧️','PRECIPITATION NEARBY','radar echo within '+BUFFER_MI+U(' mi'),condLine(),true)};
     }
   }
   // no gate — routine conditions card at the bottom (neutral / yellow-if-stale)
@@ -994,9 +994,9 @@ function sitrepTick(){
   // SITREP reflects what's within the OPERATIONAL RANGE (RED_MI) around your GPS position;
   // fully synchronous — reads only already-loaded state.
   const rangeKm=RED_MI*MI_TO_KM;
-  // aircraft are tracked further out (the 5 mi GREY bubble) so you see traffic approaching:
-  // low in the grey bubble → yellow heads-up; low inside the 1 mi red ring → escalated.
-  const warnKm=GREY_MI*MI_TO_KM;
+  // aircraft are tracked further out (the 5 mi BUFFER ring) so you see traffic approaching:
+  // low in the buffer ring → yellow heads-up; low inside the 1 mi operational ring → escalated.
+  const warnKm=BUFFER_MI*MI_TO_KM;
   // THE VERDICT — one traffic assessment, one gate table, one fold. Computed before any
   // card exists: cards below are pure info + ranking views of the same gates.
   const tr=assessTraffic();
@@ -1039,7 +1039,7 @@ function sitrepTick(){
   //    so card, gate and chart can never disagree. The plane's OWN card (below) transforms
   //    while it's low and reverts on climb-out — exactly ONE card per plane. Colour follows
   //    the gate math: RED only when the plane GROUNDS the chart (AGL ≤ separation, in the
-  //    1 mi ring — the NOW column reds with it); a capping or grey-bubble plane is a
+  //    1 mi ring — the NOW column reds with it); a capping or buffer-ring plane is a
   //    YELLOW heads-up. AGL = QNH-corrected MSL − ground elevation UNDER THE PLANE.
   //    Keyed by the FEATURE OBJECT (the card loop iterates the same stored features) —
   //    an id string would collide for anonymous contacts with no hex and no callsign.
@@ -1133,7 +1133,7 @@ function sitrepTick(){
     let cls=cfg.cls?cfg.cls(f,inside):'', det=null, headOv=null, subOv=null, icOv=null, hazardOv=null;
     // LOW AIRCRAFT: a low plane's own card BECOMES the alert and reverts on climb-out —
     // one card per plane, never two. Colour = the gate math: RED only when it GROUNDS
-    // the chart (the NOW column reds with it); capping / grey-bubble = YELLOW heads-up
+    // the chart (the NOW column reds with it); capping / buffer-ring = YELLOW heads-up
     const bi=cfg.air?breachInfo.get(f):null;
     if(bi){
       icOv=acIcon(f); hazardOv=true; headOv='LOW AIRCRAFT';   // ✈️/🚁, same as every card
@@ -1288,15 +1288,16 @@ const FAA_SEP_FT=500;
 // fires the LOW AIRCRAFT alert AND caps the chart's NOW column — one shared number.
 const WARN_AGL_FT=SPEC.regFt+FAA_SEP_FT;   // 400 + 500 = 900
 const LIM={wind:27};   // aircraft max wind [mph] — gates surface gust + caps the wind-aloft scan
-// two FIXED radii [statute miles], both centred on your GPS position: RED = OPERATIONAL
-// RANGE (1 mi) — the FAA point query, the RED low-aircraft warning, the TRFC cap, and the RED
-// precipitation grounding. GREY = OPERATIONAL BUBBLE (5 mi) — the traffic net + the YELLOW
-// low-aircraft heads-up + the YELLOW "precipitation nearby".
-const RED_MI=1, GREY_MI=5;
+// The three FIXED range rings [statute miles], all centred on your GPS position:
+//   • OPERATIONAL ring (red, 1 mi)  — the FAA point query, the low-aircraft red warning,
+//     the TRFC cap, and the precipitation grounding.
+//   • BUFFER ring (yellow, 5 mi)    — the traffic net + the yellow low-aircraft heads-up
+//     + the yellow "precipitation nearby".
+const RED_MI=1, BUFFER_MI=5;
 const RNG={mi:RED_MI};
-// #3 DATA RADIUS [mi] — a FIXED radius, centred on YOU, identical on every device: everything
-// within it is PULLED (aircraft, airspace) and carded on the SITREP. Fixed (not a pixel
-// viewport) so results never vary by screen. (Precipitation is gated by the 1/5 mi rings above.)
+//   • DATA ring (25 mi) — a FIXED radius, identical on every device: everything within it
+// is PULLED (aircraft, airspace) and carded on the SITREP. Fixed (not a pixel viewport)
+// so results never vary by screen. (Precipitation is gated by the 1/5 mi rings above.)
 const DATA_MI=25;
 // Altitude ladder, 50 ft steps through the FAA band (matches the grid rows).
 const ALTS_UP=(()=>{const a=[];for(let f=0;f<=SPEC.regFt;f+=50)a.push(f);return a;})();
@@ -1451,11 +1452,11 @@ function persistAsp(){ store(ASP_CACHE_KEY,JSON.stringify(aspCache)); }
 
 // ---- PCPN: NEXRAD reflectivity within `rngMi` of the point? Samples the same Iowa
 // Mesonet mosaic, at native z8, on an offscreen canvas. Called twice per
-// refresh — RED ring (1 mi, grounds NOW) and GREY bubble (5 mi, the yellow "nearby"). Returns
+// refresh — OPERATIONAL ring (1 mi, grounds NOW) and BUFFER ring (5 mi, the yellow "nearby"). Returns
 // true/false, or null when tiles can't be read (fails OPEN, yellows via FLY.err). ----
 const RADAR_Z=8, RADAR_ALPHA=80, RADAR_MIN_PX=2;
 const radarMemo=new Map();   // key → val: identical minute+point+range reuses the scan.
-const RADAR_MEMO_MAX=8;      // small LRU so the grey-ring + screen samples don't evict each other
+const RADAR_MEMO_MAX=8;      // small LRU so the buffer-ring + screen samples don't evict each other
 async function sampleRadarPrecip(lat,lon,rngMi){
   const n=1<<RADAR_Z, d=Math.PI/180;
   const xf=(lon+180)/360*n;
@@ -1501,8 +1502,8 @@ async function sampleRadarPrecip(lat,lon,rngMi){
 
 // ---- TRAFFIC — the ONE assessment shared by the chart's TRFC gate, the traffic gate in
 // the verdict table, and the LOW AIRCRAFT cards, so they can never disagree. Scans the
-// GREY bubble (5 mi) for planes under the warning altitude; each is tagged inRange
-// (inside the 1 mi RED ring) and, in range, imposes a NOW ceiling: the highest 50-ft
+// BUFFER ring (5 mi) for planes under the warning altitude; each is tagged inRange
+// (inside the 1 mi operational ring) and, in range, imposes a NOW ceiling: the highest 50-ft
 // band STRICTLY below (plane AGL − FAA_SEP_FT). The most restrictive plane wins
 // (ceilFt Infinity = none, < 0 = grounds); grounds is also tagged per plane so a
 // card's colour derives from the same math as the chart column. ----
@@ -1510,7 +1511,7 @@ function assessTraffic(){
   if(USER.lat==null) return {ceilFt:Infinity,low:[]};
   const lat=USER.lat,lon=USER.lon;
   const cross=groundElevFt(lat,lon);   // ft AMSL at your position, fallback ground
-  const near=planesNear(lat,lon,GREY_MI*MI_TO_KM);
+  const near=planesNear(lat,lon,BUFFER_MI*MI_TO_KM);
   ensureGroundElev([[lat,lon],...near.filter(a=>a.alt<AGL_CAND_MAX_FT).map(a=>[a.pt[1],a.pt[0]])]);
   const rKm=RNG.mi*MI_TO_KM;
   let ceilFt=Infinity; const low=[];
@@ -1535,8 +1536,8 @@ function assessTraffic(){
 const FLY={
   data:null,     // last good {lat,lon,aloft,kp,asp} — lat/lon = where it was fetched
   detail:null,   // computed render model (kept for tests/debug)
-  precip:null,   // radar echo within the RED ring (1 mi)? true/false/null → grounds NOW
-  precipInbound:null,   // radar echo within the GREY bubble (5 mi) but NOT the 1 mi RED ring → yellow "nearby"
+  precip:null,   // radar echo within the operational ring (1 mi)? true/false/null → grounds NOW
+  precipInbound:null,   // radar echo within the BUFFER ring (5 mi) but NOT the 1 mi operational ring → yellow "nearby"
   // Every gate starts UNVERIFIED (true), not clear — so the app never opens falsely-green.
   // Each clears as its feed pulls + prints; while a gate has NEVER loaded the verdict
   // GROUNDS RED (can't confirm → don't fly) and a red DATA card names it, immediately (no
@@ -1633,7 +1634,7 @@ function evalGates(tr){
   // FAA: LAANC/defense ceiling (unknown scores 0 here — g.data carries the unknown)
   g.faa=(d&&!d.aspUnknown)?capSev(d.aspCapFt):0;
   // traffic: a GROUNDING plane reds (the chart NOW column reds with it); a capping or
-  // in-bubble low plane cautions — the chart shows the cap, so the NOW colour never
+  // in-buffer-ring low plane cautions — the chart shows the cap, so the NOW colour never
   // reads no-go over flyable green cells
   g.traffic=tr.ceilFt<0?2:(tr.ceilFt<SPEC.regFt||tr.low.length?1:0);
   // hard restriction UNDER you (the chart grounds every column) vs zones merely NEAR
@@ -1860,10 +1861,10 @@ async function flyRefresh(){
     const pKp    = kpKeep?Promise.resolve(FLY.data.kp):retry(()=>getKp(),2).catch(()=>null);
     const pGrid  = fresh?Promise.resolve({ceilFt:cc.ceilFt}):getLaancCeil(base.lat,base.lon,rngMi).catch(()=>null);
     const pDef   = defFresh?Promise.resolve({active:dc.active}):getDefense(base.lat,base.lon,rngMi).catch(()=>null);
-    // two radar samples, BOTH centred on YOU: an echo in the 1 mi RED ring GROUNDS NOW; an
-    // echo in the 5 mi GREY bubble (but not the 1 mi ring) is the YELLOW "nearby" heads-up
+    // two radar samples, BOTH centred on YOU: an echo in the 1 mi operational ring GROUNDS NOW; an
+    // echo in the 5 mi BUFFER ring (but not the 1 mi ring) is the YELLOW "nearby" heads-up
     const pPrecipRed = retry(()=>sampleRadarPrecip(base.lat,base.lon,RED_MI),2).catch(()=>null);
-    const pPrecipGrey= retry(()=>sampleRadarPrecip(base.lat,base.lon,GREY_MI),2).catch(()=>null);
+    const pPrecipBuf= retry(()=>sampleRadarPrecip(base.lat,base.lon,BUFFER_MI),2).catch(()=>null);
 
     const aloft=await pAloft;
     if(aloft){
@@ -1877,7 +1878,7 @@ async function flyRefresh(){
       FLY.err.om=true;   // weather pull failed — keep the stale grid; next pulse retries
     }
 
-    const [kpRaw,gridRaw,defRaw,precipRed,precipGrey]=await Promise.all([pKp,pGrid,pDef,pPrecipRed,pPrecipGrey]);
+    const [kpRaw,gridRaw,defRaw,precipRed,precipBuf]=await Promise.all([pKp,pGrid,pDef,pPrecipRed,pPrecipBuf]);
     if(!aloftKeep&&aloft!=null) flyAloftAt=Date.now();   // a fresh aloft pull resets its clock
     if(!kpKeep&&kpRaw!=null) flyKpAt=Date.now();
     // Kp failed: fall back to recent last-good rather than lose the gate to one blip;
@@ -1894,8 +1895,8 @@ async function flyRefresh(){
     // TFR in range forces the combined ceiling to 0 (no-fly)
     const asp=(gridRes!=null&&defRes!=null)?{ceilFt:defRes.active?0:gridRes.ceilFt}:null;
     FLY.precip=precipRed; FLY.err.radar=precipRed==null;
-    // yellow "nearby" = an echo within the 5 mi GREY bubble but NOT already in the 1 mi RED ring
-    FLY.precipInbound = precipGrey===true && precipRed!==true;
+    // yellow "nearby" = an echo within the 5 mi BUFFER ring but NOT already in the 1 mi operational ring
+    FLY.precipInbound = precipBuf===true && precipRed!==true;
     if(aloft){
       FLY.data={lat:base.lat,lon:base.lon,aloft,kp,asp};
       FLY.err.om=false; FLY.err.asp=asp==null;
