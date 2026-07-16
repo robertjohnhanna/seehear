@@ -724,7 +724,7 @@ const mkCard=(cls,ic,l1,l2,l3,hazard,col)=>({cls,ic,l1,l2,l3,hazard,col});
 // yellow reduced-ceiling) with conditions folded onto line 3; otherwise it's the routine
 // bottom conditions card ('stale' = last-good yellow, 'down' = never loaded, red+promoted).
 // Returns {pin, card}: pin floats it up with hazards.
-function wxCard(wxState, wn){
+function wxCard(wxState, wn, kpNow){
   const rnd=n=>n==null?null:Math.round(n);
   // compact conditions line — reused as line 3 of a promoted card so temp/sky/wind show once
   const condLine=()=>{
@@ -782,7 +782,10 @@ function wxCard(wxState, wn){
   const l1=(t!=null?t+'°':'—')+' · '+desc.toUpperCase();
   const wd=WX.windDir!=null?compass(WX.windDir)+' ':'';
   const l2='WIND '+wd+(w!=null?w+U(' mph'):'—')+(f!=null?' · FEELS '+f+'°':'');
-  const l3=(hi!=null?'HIGH '+hi+'°':'')+(hi!=null&&lo!=null?' · ':'')+(lo!=null?'LOW '+lo+'°':'');
+  // line 3: daily HIGH/LOW plus the current planetary Kp (from the chart's own kpNow, so
+  // they agree). Kp is omitted when unknown — never shown as a bare "KP —".
+  const l3=[hi!=null?'HIGH '+hi+'°':'', lo!=null?'LOW '+lo+'°':'',
+    kpNow!=null?'KP '+Math.round(kpNow):''].filter(Boolean).join(' · ');
   if(wxState==='stale') return {pin:false, card:mkCard('alert',emoji,l1,l2,(l3?l3+' · ':'')+'STALE',true)};
   return {pin:false, card:mkCard('',emoji,l1,l2,l3,false)};
 }
@@ -1101,7 +1104,7 @@ function sitrepTick(){
   // weather-feed health: down = never loaded (red), stale = last-good shows (yellow)
   const wxState=wxStale?(FLY.data?'stale':'down'):'ok';
   // a limiting weather gate (or a down feed) pins here; a routine card sinks to the bottom
-  const wxc=wxCard(wxState, wn);
+  const wxc=wxCard(wxState, wn, kpNow);
   if(wxc.pin) cards.push(wxc.card);
 
   // SPC Day-1 outlook: are you under a severe/tornado risk today? Just an
