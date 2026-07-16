@@ -78,6 +78,18 @@ Aircraft also re-pull every 5 s pulse regardless of movement.
 
 ---
 
+## Location pipeline (GPS only — no IP fallback)
+
+One persistent `watchPosition()` stream — GPS listens continuously and never rides the
+pulse. The **first fix** commits after a 3 s settle window in which pings compete on
+accuracy (a ping ≤ 65 m sharp commits immediately). **After lock**: a fix farther than
+~160 ft snaps (real move); inside that it's low-pass smoothed (jitter); a fix worse than
+3× the device's best accuracy (min 150 m) is dropped as junk. Denied or unavailable
+geolocation → a permanent red LOCATION card and a red verdict (gps gate). Position never
+leaves the browser except as lat/lon query params to the keyless data feeds.
+
+---
+
 ## The chart — the can-I-fly grid
 
 Per forecast hour (NOW..+3h), each 50-ft cell is **binary** — green fly / red can't. The
@@ -104,8 +116,20 @@ grounded  ⇢  capFt < 0   OR   any grounding gate below
 
 The cells are strictly binary — **no yellow ever lives in the grid**. Softer conditions
 (Kp 5–6, precip within 5 mi, a plane that only caps, an unverified feed) color the
-**verdict** alone, below. Unknown ≠ clear: a required feed that hasn't loaded grounds the
-verdict (red) at startup and cautions (yellow) on a later blip (fail-safe, `feedTier()`).
+**verdict** alone, below.
+
+**Method notes.** Traffic AGL = QNH-corrected ADS-B pressure altitude − ground elevation
+**under that plane** (cached ~0.7 mi cells; unknown terrain fails toward *not* flagging).
+Kp NOW takes the worse of the last finalized observation and the in-progress estimate (a
+rising storm shows in the estimate first). Radar is *sampled*, not drawn: tiles composite
+on an offscreen canvas and ≥2 opaque pixels inside the ring counts as an echo (kills
+speckle), one fresh mosaic per 60 s window. Cloud base = the lowest pressure deck with
+≥12% cover, min'd with an LCL estimate from the temp/dew-point spread.
+
+**Unknown ≠ clear** (`feedTier()`, one classifier for every feed): a required feed that has
+**never loaded** grounds the verdict (red) immediately — no grace; a feed that *was* loaded
+and fails past a ~35 s grace window cautions (yellow). The verdict and the DATA card change
+color together, and last-good data keeps painting throughout.
 
 ---
 
@@ -124,7 +148,7 @@ severity, but never vote.
 Altitude gates score from the very values the chart paints, so the NOW color never reads
 no-go over flyable green cells. A gate exceeds the chart's own state only for conditions the
 chart can't express (a warning polygon, a nearby zone, GPS, data health). The clock stays
-white; the **NOW column header** carries the color.
+white; the **NOW column header** carries the color. All times shown are device-local.
 
 ---
 
