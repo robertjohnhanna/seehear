@@ -34,7 +34,7 @@ a card never votes), and `assessTraffic()` is the one traffic assessment they al
 
 | Feed / call | Endpoint | Provides | Scope | Refresh |
 |---|---|---|---|---|
-| `nearair` | airplanes.live / adsb.fi `/point/{lat}/{lon}/{r}` | ALL aircraft (civil + military, no distinction) | ~25 mi around you | 5 s |
+| `nearair` | airplanes.live `/point/…` · fallback adsb.fi `/lat/…/dist/…` (own route + shape) | ALL aircraft (civil + military, no distinction) | ~25 mi around you | 5 s |
 | `nws` | api.weather.gov `/alerts/active?point=` | active **warnings** covering you | your point | 15 s |
 | `spc` | spc.noaa.gov `day1otlk_*` | severe-wx / tornado outlook | US | 15 min |
 | `airspace` | FAA ArcGIS `services6…` (5 layers) | Class B/C/D, TFR, SUA, NSUFR, stadiums | 25 mi box | 15 min + on move |

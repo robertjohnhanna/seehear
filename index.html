@@ -154,22 +154,24 @@ const U = s => `<span class="u">${s}</span>`;   // unit-token wrapper (keeps its
 const fmtMi = mi =>   // under half a mile reads in feet
   mi<0.5?Math.round(mi*5280)+U(' ft'):mi<100?mi.toFixed(1)+U(' mi'):Math.round(mi)+U(' mi');
 
-// ADS-B source — airplanes.live primary, adsb.fi fallback (readsb /v2 schema)
-const ADSB_HOSTS=['https://api.airplanes.live/v2','https://opendata.adsb.fi/api/v2'];
-async function adsb(path){
-  let err;
-  for(const h of ADSB_HOSTS){   // 9 s/host — fail to the mirror before a stuck host hangs the load
-    try{ return await getJSON(h+path,{timeout:9000}); }catch(e){ err=e; }
-  }
-  throw err||new Error('all ADS-B hosts unreachable');   // caller keeps last-good planes and retries
-}
-const MI_TO_NM=0.868976, ADSB_MAX_NM=100;   // /point takes NAUTICAL miles (the aviation unit) — the only NM in the app
+// ADS-B sources — airplanes.live primary, adsb.fi fallback. Each host declares its OWN point
+// route and list key: adsb.fi has no /point route (400) and wraps results in `aircraft`, so a
+// shared path/shape would make the fallback permanently dead (verified live).
+const ADSB_HOSTS=[
+  {point:(la,lo,r)=>`https://api.airplanes.live/v2/point/${la}/${lo}/${r}`,       list:j=>j.ac||[]},
+  {point:(la,lo,r)=>`https://opendata.adsb.fi/api/v2/lat/${la}/lon/${lo}/dist/${r}`, list:j=>j.aircraft||[]},
+];
+const MI_TO_NM=0.868976, ADSB_MAX_NM=100;   // point radii are NAUTICAL miles (the aviation unit) — the only NM in the app
 function adsbRadiusNm(){   // pull radius = the DATA ring; 15 nm floor covers the 5 mi net, 100 nm guard cap
   return Math.min(ADSB_MAX_NM,Math.max(15,Math.ceil(DATA_MI*MI_TO_NM)));
 }
 async function adsbViewport(){   // centred on your GPS position (only ever called after a fix)
-  const j=await adsb('/point/'+USER.lat.toFixed(3)+'/'+USER.lon.toFixed(3)+'/'+adsbRadiusNm());
-  return {ac:j.ac||[]};
+  const la=USER.lat.toFixed(3), lo=USER.lon.toFixed(3), r=adsbRadiusNm();
+  let err;
+  for(const h of ADSB_HOSTS){   // 9 s/host — fail to the mirror before a stuck host hangs the load
+    try{ const j=await getJSON(h.point(la,lo,r),{timeout:9000}); return {ac:h.list(j)}; }catch(e){ err=e; }
+  }
+  throw err||new Error('all ADS-B hosts unreachable');   // caller keeps last-good planes and retries
 }
 const HELI_TYPES=new Set([   // rotorcraft ICAO types (Doc 8643) — the feed's `t` beats the flaky A7 emitter category
   'R22','R44','R66',                                                                   // Robinson
@@ -195,7 +197,7 @@ function acProps(a){   // ONE property builder per contact — card/chart/AGL fi
     alt:a.alt_baro??a.alt_geom??'?',
     altBaro:(typeof a.alt_baro==='number'?a.alt_baro:null),   // raw baro kept so AGL can QNH-correct it
     spd:a.gs!=null?Math.round(a.gs):'?',   // ground speed [kt]
-    hex:a.hex||'',cat:a.category||''};   // ADS-B emitter category (line-2 fallback for odd traffic)
+    hex:a.hex||'',cat:a.category||'',src:a.type||''};   // emitter category + message source (line-2 fallbacks)
 }
 const acFeature=a=>({type:'Feature',
   geometry:{type:'Point',coordinates:[a.lon,a.lat]},
@@ -629,12 +631,14 @@ function setUserFix(lat,lon,acc){   // adopt a committed fix — first fix kicks
 const cut=(s,n)=>escapeHtml(String(s==null?'':s).trim().slice(0,n));   // clip + escape (CSS adds the …)
 const ALT=f=>{const a=f.properties.alt;   // readsb reports alt_baro:'ground' for taxiing aircraft
   return a==='ground'?'on ground':a!=null&&a!=='?'?a+U(' ft'):'—';};
-const CAT_LABEL={B1:'glider',B2:'balloon',B4:'ultralight',B6:'drone'};   // emitter categories the ✈️/🚁 icon can't show — broadcast over-air, so present when DB enrichment isn't
+const CAT_LABEL={A1:'light',A2:'small',A3:'large',A4:'large',A5:'heavy',A6:'high-perf',   // emitter category — broadcast over-air, so often present when DB enrichment isn't
+  B1:'glider',B2:'balloon',B4:'ultralight',B6:'drone',B7:'rocket'};                       // (A7 rotorcraft omitted — the 🚁 already says it)
+const SRC_LABEL=s=>/^tisb/.test(s)?'radar-only target':/^mlat/.test(s)?'mlat-only target':'';   // ID-less ghosts: say WHY there's no identity
 const acSub=f=>{const p=f.properties;   // line-2 cascade — never '?', blank, or a repeat of line 1
   const type=p.type&&p.type!=='?'?p.type:'';
   const tail=String(p.flight||p.hex||'').trim().toUpperCase();
   const reg=p.reg&&p.reg.toUpperCase()!==tail?p.reg:'';
-  return escapeHtml(p.desc||type||p.op||reg||CAT_LABEL[p.cat]||'unknown');};   // desc → type → operator → tail reg → odd-category → unknown (emoji carries plane/heli)
+  return escapeHtml(p.desc||type||p.op||reg||CAT_LABEL[p.cat]||SRC_LABEL(p.src)||'unknown');};   // desc → type → operator → tail reg → category → source → unknown
 const AIRCRAFT_COLOR='#eaf1f8';   // the ONE aircraft identity color (white) — tints the tail number
 const acIcon=f=>f.properties.heli?'🚁':'✈️';
 const acTail=(f,n,fb)=>cut(f.properties.flight||f.properties.hex||fb||'?',n);   // callsign → hex → fallback, clipped
