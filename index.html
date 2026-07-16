@@ -694,7 +694,7 @@ const WMO={0:['☀️','clear'],1:['🌤️','mostly clear'],2:['⛅','partly cl
   95:['⛈️','thunderstorm'],96:['⛈️','storm, hail'],99:['⛈️','storm, hail']};
 async function loadWeather(force){
   if(wxBusy || USER.lat==null) return;   // GPS-located only
-  if(!force && WX && wxLat!=null && havKm(wxLat,wxLon,USER.lat,USER.lon)<2 && Date.now()-wxAt<300000) return;
+  if(!force && WX && wxLat!=null && havKm(wxLat,wxLon,USER.lat,USER.lon)<WX_MOVE_KM && Date.now()-wxAt<300000) return;
   wxBusy=true;
   try{
     // Pull wind straight in MPH (the unit we display + gate in) — the chart does too — so the
@@ -807,8 +807,18 @@ const FIRST_FIX_SETTLE_MS=3000;   // collect pings this long, then commit the mo
 const GOOD_ACCURACY_M=65;         // a ping at least this accurate commits immediately
 const ACC_WARN_M=50;              // GPS accuracy worse than this (m ≈ 164 ft) → yellow GPS card + hazard (promoted to alert section)
 const POSITION_SMOOTHING=0.25;    // low-pass factor for stationary jitter (0 frozen … 1 raw)
-const REAL_MOVE_KM=0.05;          // a fix farther than this from the smoothed point = a real move → snap
-const REFETCH_MOVE_KM=0.5;        // moving this far refetches nearby aircraft/airspace for the new area
+
+// --- MOVEMENT REFRESH LADDER — the distance a GPS move must exceed to refresh each
+//     product. Deliberately NOT one number: the tolerance scales with the product's own
+//     spatial reach, so the farther-reaching the query, the farther you can move before it
+//     is meaningfully stale. These are independent physical judgements — a 1 mi FAA point
+//     query goes stale per-metre faster than a 25 mi disk, which beats a regional temp
+//     reading — NOT multiples of a single base. All compared via havKm() [km]; the _MI rung
+//     converts at its call site. (Aircraft ignore the ladder — they re-pull every 5 s pulse.)
+const REAL_MOVE_KM=0.05;     //  50 m  — below this a fix is jitter → low-pass smoothed; above → a real move, snap
+const ASP_TOL_KM=0.15;       // 150 m  — re-query the POINT products: FAA gate (LAANC + defense) + winds aloft
+const REFETCH_MOVE_MI=0.5;   // 0.5 mi (~0.8 km) — recentre the 25 mi listing footprint (airspace / NPS) + kick the aircraft pull
+const WX_MOVE_KM=2;          //   2 km — refetch the regional conditions card (temp / feels / wind / hi-lo)
 
 let firstFixCommitted=false, bestFirstPing=null, bestAccuracyM=Infinity;
 let smoothedLat=null, smoothedLon=null;
@@ -868,7 +878,7 @@ function setUserFix(lat,lon,acc){
   USER.lat=lat; USER.lon=lon;
   if(acc!=null) USER.acc=acc;
   if(first){ refetchNearbyFeeds(); loadWeather(true); }
-  else if(lastFetchLat==null || havKm(lastFetchLat,lastFetchLon,lat,lon)>=REFETCH_MOVE_KM){
+  else if(lastFetchLat==null || havKm(lastFetchLat,lastFetchLon,lat,lon)>=REFETCH_MOVE_MI*MI_TO_KM){
     refetchNearbyFeeds();
   }
   sitrepTick();
@@ -1439,7 +1449,7 @@ function makeProfile(pts){
 const ASP_CACHE_KEY='canifly.asp';
 const ASP_TTL=6*60*60*1000, ASP_HARD_TTL=24*60*60*1000;
 const DEF_TTL=10*60*1000, DEF_HARD_TTL=60*60*1000;
-const ASP_TOL_KM=0.15;   // GPS/GPS position jitter tolerance — small next to the ≥0.5 mi radius
+// position match uses ASP_TOL_KM — see the MOVEMENT REFRESH LADDER (fix-pipeline section)
 let aspCache=null;
 let defCache=null;   // {lat,lon,rng,active,ts} — in-memory only (short-lived by design)
 function hydrateAsp(){

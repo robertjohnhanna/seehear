@@ -59,9 +59,22 @@ is needed anywhere; aircraft ground speed still arrives in knots and is converte
 | Trigger | Action |
 |---|---|
 | `pulse()` every 5 s | pull due feeds + chart + weather + radar |
-| GPS move ≥ `REFETCH_MOVE_KM` (0.5 mi) | refetch position-scoped feeds for the new area |
+| GPS move | each product refreshes once you pass **its** tolerance (see the ladder below) |
 | page hidden | pulse **pauses**; on return → one immediate pulse |
 | per feed | self-throttles (weather 5 min, Kp 3 min, LAANC 6 h / defense TFR 10 min, radar 60 s) |
+
+**Movement refresh ladder** — a move refreshes each product once it exceeds that product's
+own tolerance, scaled to its spatial reach (deliberately *not* one distance for everything —
+a 1 mi point query goes stale per-metre faster than a 25 mi disk):
+
+| Move exceeds | Refreshes |
+|---|---|
+| **50 m** (`REAL_MOVE_KM`) | registers as real movement — the fix snaps instead of smoothing jitter |
+| **150 m** (`ASP_TOL_KM`) | the point products — FAA gate (LAANC + defense) + winds aloft |
+| **0.5 mi** (`REFETCH_MOVE_MI`) | the 25 mi listing footprint (airspace / NPS) + an immediate aircraft pull |
+| **2 km** (`WX_MOVE_KM`) | the regional conditions card (temp / feels / wind / hi-lo) |
+
+Aircraft also re-pull every 5 s pulse regardless of movement.
 
 ---
 
