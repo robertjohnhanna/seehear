@@ -41,13 +41,13 @@ a card never votes), and `assessTraffic()` is the one traffic assessment they al
 | `spc` | spc.noaa.gov `day1otlk_*` | severe-wx / tornado outlook | US | 15 min |
 | `airspace` | FAA ArcGIS `services6…` (5 layers) | Class B/C/D, TFR, SUA, NSUFR, stadiums | 25 mi box | 15 min + on move |
 | `nps` | NPS ArcGIS `services1…` | national-park lands (no-fly) | 25 mi box | on move |
-| `getAloft` | open-meteo `/v1/forecast` | winds 10–180 m + gust + dir + cloud + vis (NOW..+3h) | point | ~15 s |
+| `getAloft` | open-meteo `/v1/forecast` | winds to ~590 ft + gust + dir + cloud + vis (NOW..+3h) | point | ~15 s |
 | `loadWeather` | open-meteo `/v1/forecast` (current) | temp / feels / code / wind / hi-lo | point | ~5 min |
 | `getKp` | swpc.noaa.gov Kp forecast | planetary Kp (3-hr bins) | global | ~3 min |
 | `getLaancCeil` | FAA ArcGIS LAANC grid | drone grid ceiling | 1 mi point | cached 6 h |
 | `getDefense` | FAA defense-TFR areas | hard no-fly (ceiling → 0) | 1 mi point | ~10 min |
 | `sampleRadarPrecip` | Iowa Mesonet NEXRAD tiles | reflectivity (sampled off-screen) | 1 mi & 5 mi | 60 s window |
-| `ensureGroundElev` | open-meteo `/v1/elevation` | ground elevation for AGL | per ~1 km cell | on demand |
+| `ensureGroundElev` | open-meteo `/v1/elevation` | ground elevation for AGL | per ~0.7 mi cell | on demand |
 
 Winds are requested straight in **mph** — the unit shown and gated on — so no wind conversion
 is needed anywhere; aircraft ground speed still arrives in knots and is converted to mph.
@@ -65,14 +65,14 @@ is needed anywhere; aircraft ground speed still arrives in knots and is converte
 
 **Movement refresh ladder** — a move refreshes each product once it exceeds that product's
 own tolerance, scaled to its spatial reach (deliberately *not* one distance for everything —
-a 1 mi point query goes stale per-metre faster than a 25 mi disk):
+a 1 mi point query goes stale per-foot faster than a 25 mi disk):
 
 | Move exceeds | Refreshes |
 |---|---|
-| **50 m** (`REAL_MOVE_KM`) | registers as real movement — the fix snaps instead of smoothing jitter |
-| **150 m** (`ASP_TOL_KM`) | the point products — FAA gate (LAANC + defense) + winds aloft |
+| **~160 ft** (`REAL_MOVE_MI`) | registers as real movement — the fix snaps instead of smoothing jitter |
+| **~530 ft** (`ASP_TOL_MI`) | the point products — FAA gate (LAANC + defense) + winds aloft |
 | **0.5 mi** (`REFETCH_MOVE_MI`) | the 25 mi listing footprint (airspace / NPS) + an immediate aircraft pull |
-| **2 km** (`WX_MOVE_KM`) | the regional conditions card (temp / feels / wind / hi-lo) |
+| **1.25 mi** (`WX_MOVE_MI`) | the regional conditions card (temp / feels / wind / hi-lo) |
 
 Aircraft also re-pull every 5 s pulse regardless of movement.
 
@@ -93,7 +93,7 @@ grounded  ⇢  capFt < 0   OR   any grounding gate below
 | Gate | Source | Rule | Effect on the grid |
 |---|---|---|---|
 | **Cloud** | winds-aloft cloud base | `cloudCapFt = base − 500` (500 ft below cloud) | caps |
-| **Wind aloft** | winds 10–180 m | first level ≥ 27 mph, minus 50 | caps |
+| **Wind aloft** | winds to ~590 ft | first level ≥ 27 mph, minus 50 | caps |
 | **FAA** | LAANC grid + defense TFR (1 mi query) | grid ceiling < 400 caps · ≤ 0 or defense active = no-fly | caps / grounds |
 | **Traffic** | in-ring aircraft AGL | manned plane < 900 ft AGL in the 1 mi ring, drone stays 500 below (NOW only) | caps / grounds |
 | **Gust** | surface gust | ≥ 27 mph | grounds |
@@ -165,4 +165,4 @@ steel advisory airspace; white aircraft) — green/yellow/red is reserved for th
 | `SPEC.kpCaut / kpGnd` | 5 / 7 | Kp caution / ground |
 | `LIM.wind` | 27 mph | max wind/gust |
 | `WARN_AGL_FT` | 900 ft | low-aircraft alert altitude (400 + 500 sep) |
-| `ACC_WARN_M` | 50 m | GPS accuracy worse than this → yellow |
+| `ACC_WARN_M` | ~164 ft (50 m) | GPS accuracy worse than this → yellow (the browser reports accuracy in metres) |
