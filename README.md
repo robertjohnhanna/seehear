@@ -12,15 +12,13 @@ decided.** For reference only.
 
 ```mermaid
 flowchart LR
-  GPS["GPS watch<br/>watchPosition"] --> USER[("USER<br/>lat / lon / acc")]
-  USER --> PULSE{"pulse()<br/>every 5 s"}
-  PULSE --> FEEDS["FETCH (keyless, CORS-open)<br/>aircraft · airspace · NPS · NWS · SPC<br/>weather · winds-aloft · Kp · radar · elevation"]
-  FEEDS --> STORE[("STORE<br/>LAYER_STATE[id].features<br/>FLY.data · WX")]
+  GPS["GPS watch — watchPosition<br/>→ USER lat / lon / acc"] --> PULSE["pulse() every 5 s → FETCH (keyless, CORS-open)<br/>aircraft · airspace · NPS · NWS · SPC · weather<br/>winds-aloft · Kp · radar · elevation"]
+  PULSE --> STORE[("STORE<br/>LAYER_STATE[id].features<br/>FLY.data · WX")]
   STORE --> GATES["evalGates()<br/>→ gate table (0/1/2)"]
   STORE --> CHART["flyComputeDetail()<br/>→ can-I-fly grid"]
   STORE --> SITREP["sitrepTick()<br/>→ SITREP cards"]
   GATES --> NOW["verdict = max(gates)<br/>→ NOW header color"]
-  CHART --> BOARD["chart grid (400→sfc × NOW..+3h)"]
+  CHART --> BOARD["chart grid<br/>(400→sfc × NOW..+3h)"]
   SITREP --> CARDS["ranked cards"]
 ```
 

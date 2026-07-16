@@ -62,7 +62,7 @@
   #fly-pane .ghead .ga,#fly-pane .ghead .gc{border-bottom:1px solid var(--line);
     padding-bottom:5px;font-weight:500;font-size:12px;color:var(--ink)}
   #fly-pane .ghead .gc{border-left:0}
-  #fly-pane .ghead .gc.now{font-weight:700}
+  #fly-pane .ghead .gc.now{font-weight:800;font-size:15px;letter-spacing:.02em}   /* NOW matches the clock's size/weight — it carries the verdict */
   #fly-pane .ghead .gc.now.go{color:var(--go)}   /* the NOW header carries the verdict color */
   #fly-pane .ghead .gc.now.caution{color:var(--caution)}
   #fly-pane .ghead .gc.now.nogo{color:var(--nogo)}
@@ -1148,53 +1148,6 @@ const layerTier=id=>{ const st=LAYER_STATE[id]||{}; return feedTier(true, st.fai
 function flyNeverVerified(){ return Object.keys(FLY_ERR_LABEL).some(k=>gateTier(k)==='red'); }   // any required gate never verified
 window.__sitrep.fly={FLY,SPEC,LIM,RNG,paint:flyPaint,refresh:flyRefresh};   // debug/test handle
 
-// 8. verdict gate table — the ONE point of verdict logic; every condition scored once (0/1/2),
-// verdict = max over the table, cards + chart are views (model: README "Verdict color")
-const SEV_CLS=['','alert','danger'];   // gate severity → card display class
-const nwsSev=f=>/Extreme|Severe/i.test(f.properties.severity)?2:1;   // the ONE NWS classifier — gate AND card color
-function zonesNearSev(){   // hazard zone within the ring = PROXIMITY caution (being NEAR is legal; INSIDE is g.restrict's no-go)
-  if(USER.lat==null) return 0;
-  const rMi=RED_MI;
-  const near=f=>{ if(pointInFeature(f,USER.lon,USER.lat)) return true;
-    const ne=nearestEdge(f,USER.lon,USER.lat); return !!ne&&ne.mi<=rMi; };
-  if(featsIn('airspace').some(f=>(f.properties.sev==='hard'||f.properties.sev==='caution')&&near(f))) return 1;
-  if(featsIn('nps').some(near)) return 1;
-  return 0;   // (a defense TFR in range still reds via g.faa — its gate query grounds the ceiling)
-}
-function nwsGateSev(){   // worst NWS warning covering you, or with an edge inside the ring
-  if(USER.lat==null) return 0;
-  const rMi=RED_MI;
-  let sev=0;
-  featsIn('nws').forEach(f=>{ if(sev===2) return;
-    if(pointInFeature(f,USER.lon,USER.lat)){ sev=Math.max(sev,nwsSev(f)); return; }
-    const ne=nearestEdge(f,USER.lon,USER.lat);
-    if(ne&&ne.mi<=rMi) sev=Math.max(sev,nwsSev(f));
-  });
-  return sev;
-}
-function evalGates(tr){   // tr = the shared assessTraffic() result, so gate and cards read one assessment
-  const d=FLY.detail, wn=d&&d.wxNow;
-  const capSev=c=>c==null?0:c<0?2:c<SPEC.regFt?1:0;   // ceiling → severity (Infinity → 0)
-  const g={};
-  g.gps=USER.lat==null?2:(USER.acc!=null&&USER.acc>ACC_WARN_M?1:0);   // no fix = nothing briefable · poor accuracy = caution
-  g.data=flyNeverVerified()?2   // a required feed never verified grounds (unknown ≠ clear)…
-    :(Object.keys(FLY_ERR_LABEL).some(k=>gateTier(k)==='yellow')
-      ||layerTier('airspace')==='yellow'||layerTier('nps')==='yellow')?1:0;   // …stale past grace cautions — verdict + DATA card flip together
-  g.gust=wn&&wn.gust?2:0;                      // weather gates — the same NOW values the chart paints
-  g.vis =wn&&wn.vis?2:0;
-  g.wind=wn?capSev(wn.windCeilFt):0;
-  g.cloud=wn?capSev(wn.cloudCapFt):0;
-  g.precip=wn?(wn.precip?2:wn.precipInbound?1:0):0;
-  const kpv=d?d.kpNow:null;
-  g.kp=kpv==null?0:kpv>=SPEC.kpGnd?2:kpv>=SPEC.kpCaut?1:0;   // one Kp gate, both thresholds
-  g.faa=(d&&!d.aspUnknown)?capSev(d.aspCapFt):0;   // unknown scores 0 here — g.data carries the unknown
-  g.traffic=tr.ceilFt<0?2:(tr.ceilFt<SPEC.regFt||tr.low.length?1:0);   // red only when a plane GROUNDS the chart; capping/in-ring = caution
-  g.restrict=flyRestriction()?2:0;   // hard restriction UNDER you — the chart grounds with it
-  g.zones=zonesNearSev();
-  g.nws=nwsGateSev();   // severe/extreme warning here = no-go, other warnings = caution
-  return g;
-}
-
 function flyRestriction(){   // hard zone UNDER you (PROH/NSUF/NPS; DEF excluded — the FAA cap grounds those)
   const c={lat:USER.lat,lng:USER.lon}; let hit=null;
   featsIn('airspace').forEach(f=>{
@@ -1403,6 +1356,53 @@ async function flyRefresh(){
     flyBusy=false;
     if(flyAgain){ flyAgain=false; flyRefresh(); }
   }
+}
+
+// 8. verdict gate table — the ONE point of verdict logic; every condition scored once (0/1/2),
+// verdict = max over the table, cards + chart are views (model: README "Verdict color")
+const SEV_CLS=['','alert','danger'];   // gate severity → card display class
+const nwsSev=f=>/Extreme|Severe/i.test(f.properties.severity)?2:1;   // the ONE NWS classifier — gate AND card color
+function zonesNearSev(){   // hazard zone within the ring = PROXIMITY caution (being NEAR is legal; INSIDE is g.restrict's no-go)
+  if(USER.lat==null) return 0;
+  const rMi=RED_MI;
+  const near=f=>{ if(pointInFeature(f,USER.lon,USER.lat)) return true;
+    const ne=nearestEdge(f,USER.lon,USER.lat); return !!ne&&ne.mi<=rMi; };
+  if(featsIn('airspace').some(f=>(f.properties.sev==='hard'||f.properties.sev==='caution')&&near(f))) return 1;
+  if(featsIn('nps').some(near)) return 1;
+  return 0;   // (a defense TFR in range still reds via g.faa — its gate query grounds the ceiling)
+}
+function nwsGateSev(){   // worst NWS warning covering you, or with an edge inside the ring
+  if(USER.lat==null) return 0;
+  const rMi=RED_MI;
+  let sev=0;
+  featsIn('nws').forEach(f=>{ if(sev===2) return;
+    if(pointInFeature(f,USER.lon,USER.lat)){ sev=Math.max(sev,nwsSev(f)); return; }
+    const ne=nearestEdge(f,USER.lon,USER.lat);
+    if(ne&&ne.mi<=rMi) sev=Math.max(sev,nwsSev(f));
+  });
+  return sev;
+}
+function evalGates(tr){   // tr = the shared assessTraffic() result, so gate and cards read one assessment
+  const d=FLY.detail, wn=d&&d.wxNow;
+  const capSev=c=>c==null?0:c<0?2:c<SPEC.regFt?1:0;   // ceiling → severity (Infinity → 0)
+  const g={};
+  g.gps=USER.lat==null?2:(USER.acc!=null&&USER.acc>ACC_WARN_M?1:0);   // no fix = nothing briefable · poor accuracy = caution
+  g.data=flyNeverVerified()?2   // a required feed never verified grounds (unknown ≠ clear)…
+    :(Object.keys(FLY_ERR_LABEL).some(k=>gateTier(k)==='yellow')
+      ||layerTier('airspace')==='yellow'||layerTier('nps')==='yellow')?1:0;   // …stale past grace cautions — verdict + DATA card flip together
+  g.gust=wn&&wn.gust?2:0;                      // weather gates — the same NOW values the chart paints
+  g.vis =wn&&wn.vis?2:0;
+  g.wind=wn?capSev(wn.windCeilFt):0;
+  g.cloud=wn?capSev(wn.cloudCapFt):0;
+  g.precip=wn?(wn.precip?2:wn.precipInbound?1:0):0;
+  const kpv=d?d.kpNow:null;
+  g.kp=kpv==null?0:kpv>=SPEC.kpGnd?2:kpv>=SPEC.kpCaut?1:0;   // one Kp gate, both thresholds
+  g.faa=(d&&!d.aspUnknown)?capSev(d.aspCapFt):0;   // unknown scores 0 here — g.data carries the unknown
+  g.traffic=tr.ceilFt<0?2:(tr.ceilFt<SPEC.regFt||tr.low.length?1:0);   // red only when a plane GROUNDS the chart; capping/in-ring = caution
+  g.restrict=flyRestriction()?2:0;   // hard restriction UNDER you — the chart grounds with it
+  g.zones=zonesNearSev();
+  g.nws=nwsGateSev();   // severe/extreme warning here = no-go, other warnings = caution
+  return g;
 }
 
 // 9. clock + verdict paint — the clock is plain white; the NOW header carries the verdict color
