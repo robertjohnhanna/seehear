@@ -812,7 +812,9 @@ function sitrepTick(){   // fully synchronous — reads only already-loaded stat
     if(bi){   // LOW AIRCRAFT override — red only when it GROUNDS the chart; capping/buffer = yellow heads-up
       icOv=acIcon(f); hazardOv=true; headOv='LOW AIRCRAFT';
       cls=bi.grounds?'danger':'alert';
-      subOv='<span style="color:'+AIRCRAFT_COLOR+'">'+acTail(f,12,'aircraft')+'</span>';
+      const idTxt=acSub(f);   // keep the identity data the headline displaced: tail · original line 2
+      subOv='<span style="color:'+AIRCRAFT_COLOR+'">'+acTail(f,12,'aircraft')+'</span>'
+        +(idTxt&&idTxt!=='unknown'?' · '+idTxt:'');   // skip a bare "unknown" — it adds nothing
       det=bi.label;   // '254 ft AGL'
     }
     const hazard=hazardOv!=null?hazardOv:cfg.hazard;   // override tiers the card as a warning
