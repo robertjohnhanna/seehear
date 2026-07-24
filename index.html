@@ -447,6 +447,7 @@ let sitrepTimer=null;
 
 const FIRST_FIX_SETTLE_MS=3000;   // collect pings this long, then commit the most accurate
 const GOOD_ACCURACY_M=65;         // a ping this sharp commits immediately [m — the browser's unit]
+const ACC_BAD_M=100;              // a committed fix worse than this (~330 ft) → a neutral "weak signal" heads-up (never changes the verdict)
 const POSITION_SMOOTHING=0.25;    // low-pass factor for stationary jitter (0 frozen … 1 raw)
 
 // movement refresh ladder [statute miles] — one tolerance per product, scaled to its spatial reach (see README)
@@ -455,7 +456,7 @@ const ASP_TOL_MI=0.1;        // ~530 ft: re-query the point products — FAA gat
 const REFETCH_MOVE_MI=0.5;   // recentre the 25 mi listing footprint + kick the aircraft pull
 
 let firstFixCommitted=false, bestFirstPing=null, bestAccuracyM=Infinity;
-let smoothedLat=null, smoothedLon=null;
+let smoothedLat=null, smoothedLon=null, geoBlocked=false;   // geoBlocked = permission denied / no geolocation API (distinct from "still acquiring")
 let geoWatchId=null;
 let lastFetchLat=null, lastFetchLon=null;   // where the listing footprint was last centred
 
@@ -485,13 +486,13 @@ function onGeoPing(lat,lon,acc){
 }
 function startGpsWatch(){   // ONE persistent watchPosition — GPS streams continuously, it never rides the pulse
   if(geoWatchId!=null) return;
-  if(!navigator.geolocation){ sitrepTick(); return; }   // no geolocation → no fix ever; the gps gate holds the verdict red
+  if(!navigator.geolocation){ geoBlocked=true; sitrepTick(); return; }   // no geolocation → no fix ever; the gps gate holds the verdict red
   try{
     geoWatchId=navigator.geolocation.watchPosition(
       pos=>onGeoPing(pos.coords.latitude,pos.coords.longitude,pos.coords.accuracy),
-      err=>{ if(err&&err.code===1) sitrepTick(); },   // PERMISSION_DENIED → stays fixless, verdict stays red
+      err=>{ if(err&&err.code===1){ geoBlocked=true; sitrepTick(); } },   // PERMISSION_DENIED → stays fixless, verdict stays red
       {enableHighAccuracy:true,timeout:10000,maximumAge:5000});
-  }catch(e){ sitrepTick(); }
+  }catch(e){ geoBlocked=true; sitrepTick(); }
 }
 function locate(){ startGpsWatch(); }
 
@@ -598,8 +599,12 @@ function sitrepTick(){   // fully synchronous — reads only already-loaded stat
     t.classList.remove('warn','alert');
     if(verdictSeverity>=2) t.classList.add('warn');   // binary verdict — only the no-go class is ever set
   }}
-  if(USER.lat==null){   // no fix yet — the gps gate already holds the verdict red; no card
-    $('#sit-body').innerHTML='';
+  if(USER.lat==null){   // no fix — the gps gate holds the verdict red; show the one GPS card explaining why
+    $('#sit-body').innerHTML=
+      '<div class="sit-row danger"><span class="ic">📍</span><span class="tx">'
+      +'<span class="s1">NO GPS FIX</span>'
+      +'<span class="s2">'+(geoBlocked?'location is blocked for this site':'acquiring your position…')+'</span>'
+      +'<span class="s3">'+(geoBlocked?'enable location, then reload':'hold still a moment')+'</span></span></div>';
     return;
   }
   const lat=USER.lat, lon=USER.lon;
@@ -611,21 +616,20 @@ function sitrepTick(){   // fully synchronous — reads only already-loaded stat
 
   const cards=[];
 
-  const breachInfo=new Map();   // LOW AIRCRAFT tags: feature → {label,grounds}, straight from the shared traffic math
+  const breachInfo=new Map();   // LOW AIRCRAFT tags: feature → {label}, straight from the shared traffic math
   tr.low.forEach(a=>{           // (object-keyed — an id string would collide for anonymous contacts)
     breachInfo.set(a.f,{
-      label:Math.max(0,Math.round(a.agl))+U(' ft')+(a.ground==null?'':' AGL'),
-      grounds:a.grounds});
+      label:Math.max(0,Math.round(a.agl))+U(' ft')+(a.ground==null?'':' AGL')});
   });
 
-  if(FLY.detail && !FLY.detail.aspUnknown){   // FAA card (pinned) — value = chart's aspCapFt; no-fly reds, a reduced ceiling is neutral info
-    const rangeTxt='within '+RNG.mi.toFixed(1)+U(' mi');
+  if(FLY.detail && !FLY.detail.aspUnknown){   // FAA CEILING (pinned) — a reduced-but-flyable LAANC ceiling; a 0-ceiling no-fly is left to the chart's FAA code + any red in-range airspace card
     const faaCap=FLY.detail.aspCapFt;
-    if(faaCap<0)
-      cards.push(mkCard('danger','⛔','FAA NO-FLY','LAANC grid · 0 ft ceiling',rangeTxt,true));
-    else if(faaCap<SPEC.regFt)
-      cards.push(mkCard('','🛑','FAA CEILING '+faaCap+U(' ft'),'LAANC grid',rangeTxt,false));   // reduced ceiling — the chart caps the grid
+    if(faaCap>=0 && faaCap<SPEC.regFt)
+      cards.push(mkCard('','🛑','FAA CEILING '+faaCap+U(' ft'),'LAANC grid','within '+RNG.mi.toFixed(1)+U(' mi'),false));   // reduced ceiling — the chart caps the grid
   }
+
+  if(USER.acc!=null && USER.acc>ACC_BAD_M)   // WEAK GPS SIGNAL (pinned) — neutral heads-up; the fix still flies, it's just imprecise
+    cards.push(mkCard('','🛰️','WEAK GPS SIGNAL','±'+Math.round(USER.acc*M_TO_FT)+U(' ft')+' — position may be off','',false));
 
   // (a Kp ≥ 7 storm still grounds via the kp gate and shows as the chart's KP<n> code — no separate card)
 
@@ -655,9 +659,9 @@ function sitrepTick(){   // fully synchronous — reads only already-loaded stat
     const inside=g.type!=='Point'&&pointInFeature(f,lon,lat);   // inside → "overhead", range 0
     let cls=cfg.cls?cfg.cls(f,inside):'', det=null, headOv=null, subOv=null, icOv=null, hazardOv=null;
     const bi=cfg.air?breachInfo.get(f):null;
-    if(bi){   // LOW AIRCRAFT override — red only when it GROUNDS the chart; a plane that merely caps is neutral info
+    if(bi){   // LOW AIRCRAFT override — any manned plane < 900 ft AGL in the 1 mi ring reds, whether it caps or grounds
       icOv=AC_ICON; hazardOv=true; headOv='LOW AIRCRAFT';
-      cls=bi.grounds?'danger':'';
+      cls='danger';
       const idTxt=acSub(f);   // keep the identity data the headline displaced: tail · original line 2
       subOv='<span style="color:'+AIRCRAFT_COLOR+'">'+acTail(f,12,'aircraft')+'</span>'
         +(idTxt&&idTxt!=='unknown'?' · '+idTxt:'');   // skip a bare "unknown" — it adds nothing
@@ -921,8 +925,8 @@ function assessTraffic(){
     if(agl>=WARN_AGL_FT) return;              // too high to intrude on the 0–400 band
     const safeFloor=agl-FAA_SEP_FT;           // the drone must stay below this
     let top=-50; for(const ft of ALTS){ if(ft<safeFloor){ top=ft; break; } }   // highest band STRICTLY below (−50 = none)
-    if(top<ceilFt) ceilFt=top;                // most restrictive plane wins; < 0 = grounds
-    low.push({f:a.f,agl,ground,grounds:top<0});
+    if(top<ceilFt) ceilFt=top;                // most restrictive plane wins; < 0 grounds the chart via ceilFt
+    low.push({f:a.f,agl,ground});
   });
   return {ceilFt,low};
 }
