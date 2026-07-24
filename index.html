@@ -1210,6 +1210,9 @@ function boot(){
   ['gesturestart','gesturechange','gestureend'].forEach(ev=>
     document.addEventListener(ev,e=>e.preventDefault(),{passive:false}));        // …no iOS pinch gestures
   document.addEventListener('visibilitychange',()=>{ if(!document.hidden) pulse(); });   // back to visible → refresh at once
+  { const sb=$('#sit-body');   // tap the SITREP list → scroll it back to the top (a scroll-drag fires no click, so only a real tap triggers it)
+    if(sb) sb.addEventListener('click',()=>sb.scrollTo({top:0,
+      behavior:matchMedia('(prefers-reduced-motion:reduce)').matches?'auto':'smooth'})); }
   initLayers();
   LAYERS.forEach(cfg=>{ LAYER_STATE[cfg.id].started=true; if(!cfg.viewport) runLayer(cfg); });   // every layer is position-scoped — all wait for a fix
   refreshBase=Date.now(); setInterval(refreshTick,1000); refreshTick();   // 5 s data pulse
